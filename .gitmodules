@@ -1,0 +1,6 @@
+[submodule "libdeflate"]
+	path = libdeflate
+	url = git@github.com:NVIDIA/libdeflate.git
+[submodule "libdeflater"]
+	path = libdeflater
+	url = git@github.com:c-ola/libdeflater.git

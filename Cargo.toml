@@ -1,0 +1,35 @@
+[package]
+name = "mhwsgen"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+#bincode = "1.3.3"
+byteorder = "1.5.0"
+clap = { version = "4.5.20", features = ["derive"] }
+image = "0.25.5"
+#murmur3 = "0.5"
+#zstd = "0.13"
+once_cell = "1.5"
+serde = { version = "1.0", features = ["rc"] }
+serde_derive = { version =">=1.0.188" }
+serde_json = "1.0"
+#bytes = "*"
+bitflags = "2"
+nalgebra-glm = { version = "0.19", features = ["serde-serialize"]}
+nalgebra = "*"
+#glium = "0.32"
+#ordered-float = "4"
+#compress = "0.2"
+#astc-decode = "0.3"
+#num-bigint = "0.4"
+#base64 = "0.22"
+#minidump = "0.22"
+#md-5 = "0.10"
+#sha2 = "0.10"
+uuid = "1.11.0"
+libdeflater = {git = "https://github.com/c-ola/libdeflater.git", branch = "master" }
+indexmap = { version = "2.7.0", features = ["serde"] }
+#libdeflater = {path = "../libdeflater"}
