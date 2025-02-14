@@ -1,3 +1,4 @@
+mod rsz_files;
 mod align;
 mod reerr;
 mod bitfield;
@@ -9,12 +10,16 @@ mod rsz;
 mod tex;
 mod user;
 mod dersz;
+mod pog;
 
 extern crate image;
 
 use clap::Parser;
-use dersz::{ENUM_FILE, RSZ_FILE};
+use dersz::{DeRsz, ENUM_FILE, RSZ_FILE};
 use msg::Msg;
+use pog::{Pog, PogList, PogPoint};
+use rsz::Rsz;
+use serde::Serialize;
 use std::error::Error;
 use std::fs::{self, read_to_string,File};
 use std::io::Write;
@@ -70,6 +75,8 @@ enum FileType {
     Msg(u32),
     User(u32),
     Tex(u32),
+    Pog,
+    PogList,
     Unknown
 }
 
@@ -91,6 +98,8 @@ fn get_file_ext(file_name: String) -> Result<FileType> {
                 "user" => FileType::User(version),
                 "msg" => FileType::Msg(version),
                 "tex" => FileType::Tex(version),
+                "pog" => FileType::Pog,
+                "poglst" => FileType::PogList,
                 _ => FileType::Unknown
             }
         },
@@ -188,6 +197,54 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                 image::ExtendedColorType::Rgba8,
             )?;
             Ok(())
+        },
+        FileType::Pog => {
+            let file = File::open(file_path.clone())?;
+            let pog = Pog::new(file)?;
+            let mut output_path = output_path.clone();
+            output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+            let nodes = pog.rszs.iter().map(|rsz| rsz.deserializev2(root_dir.clone())).collect::<Result<Vec<_>>>()?;
+            #[derive(Serialize)]
+            struct Wrapped {
+                points: Vec<PogPoint>,
+                nodes: Vec<DeRsz>,
+            }
+
+            let json_res = serde_json::to_string_pretty(&Wrapped {
+                points: pog.points,
+                nodes,
+            }); 
+            return match json_res {
+                Ok(json) => {
+                    let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                    let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
+                    f.write_all(json.as_bytes())?;
+                    println!("[INFO] Saved File {:?}", &output_path);
+                    Ok(())
+                },
+                Err(e) => {
+                    Err(format!("File: {file_path:?}\nReason: {e}").into())
+                }
+            }
+        },
+        FileType::PogList => {
+            let file = File::open(file_path.clone())?;
+            let poglst = PogList::new(file)?;
+            let mut output_path = output_path.clone();
+            output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+            let json_res = serde_json::to_string_pretty(&poglst);
+            return match json_res {
+                Ok(json) => {
+                    let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                    let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
+                    f.write_all(json.as_bytes())?;
+                    println!("[INFO] Saved File {:?}", &output_path);
+                    Ok(())
+                },
+                Err(e) => {
+                    Err(format!("File: {file_path:?}\nReason: {e}").into())
+                }
+            }
         },
         FileType::Unknown => return Err(format!("Unknown File Type {file_name:?}").into()),
     };

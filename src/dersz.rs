@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::file_ext::*;
+use crate::rsz_files::*;
 
 pub static RSZ_FILE: OnceLock<String> = OnceLock::new();
 pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
@@ -175,7 +176,10 @@ impl RszType {
                 }
                 RszType::GameObjectRef(buf)
             },
-            "Bool" => RszType::Bool(data.read_bool()?),
+            "Bool" => {
+                //println!("{:?}, {}", field.r#type, field.name);
+                RszType::Bool(data.read_bool().unwrap_or(false))
+            }
             "String" | "Resource" => {
                 //println!("{:x}", data.stream_position()?);
                 RszType::String(data.read_utf16str()?)
@@ -403,9 +407,9 @@ impl<'a> Serialize for RszTypeWithInfo<'a> {
                             }
                         };
 
-                        /*if struct_derefed.fields.len() == 0 {
+                        if struct_derefed.fields.len() == 0 {
                           return serializer.serialize_str(format!("{}, {:?}", ptr, struct_derefed).as_str());
-                          }*/
+                        }
                         let x = struct_derefed.fields[0].clone();
                         //serializer.serialize_str(format!("{x:?} name goes here").as_str());
                         let v = match &x {
@@ -626,6 +630,7 @@ impl RszMap<RszNameMapType> {
 
 pub struct RszDump;
 
+
 impl RszDump {
     pub fn parse_struct<'a, F: 'a + Read + Seek>(
         data: &mut F,
@@ -665,9 +670,21 @@ impl RszDump {
     pub fn rsz_map() -> &'static RszMap<RszMapType> {
         static HASHMAP: OnceLock<RszMap<RszMapType>> = OnceLock::new();
         HASHMAP.get_or_init(|| {
-            let file = std::fs::File::open(RSZ_FILE.get().unwrap()).unwrap();
-            let reader = BufReader::new(file);
-            let m: RszMapType = serde_json::from_reader(reader).unwrap();
+            let file = std::fs::read_to_string(RSZ_FILE.get().unwrap()).unwrap();
+            //let reader = BufReader::new(file);
+            //let m: RszMapType = serde_json::from_reader(reader).unwrap();
+
+            /*if let Some(file) = RSZ_FILE.get() {
+                if file.contains("wilds") {
+                    let m: RszMapType = serde_json::from_str(str::from_utf8(RSZ_WILDS).expect("idk")).unwrap();
+                    return RszMap(m)
+                } else if file.contains("rise") {
+                    let m: RszMapType = serde_json::from_str(str::from_utf8(RSZ_RISE).expect("idk")).unwrap();
+                    return RszMap(m)
+                }
+            }
+            let m: RszMapType = serde_json::from_str(str::from_utf8(RSZ_WILDS).expect("idk")).unwrap();*/
+            let m: RszMapType = serde_json::from_str(&file).unwrap();
             RszMap(m)
         })
     }
@@ -698,7 +715,7 @@ impl<'a> Serialize for DeRsz {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
-            let mut state = serializer.serialize_struct("Rsz", self.roots.len())?;
+            let mut state = serializer.serialize_seq(Some(self.roots.len()))?;
             let context = self.structs.clone();
             for i in 0..self.roots.len() {
                 let r#struct = self.roots[i].clone();
@@ -711,23 +728,17 @@ impl<'a> Serialize for DeRsz {
                     Some(v) => &v.name,
                     None => "unknown struct?"
                 };
-                /*println!("{i}: {:?}", self.extern_idxs);
-                if self.extern_idxs.contains(&(i as u32)) {
-                    for field in &r#struct.fields {
-                        match field {
-                            RszType::Extern(path) => {
-                                state.serialize_field(name, &path)?;
-                            },
-                            _ => {
 
-                            }
-                        }
-                    }
-                    continue;
-                }*/
+                #[derive(Serialize)]
+                struct Wrapped<'a> {
+                    r#type: &'a str,
+                    rsz: &'a RszValueWithInfo<'a>,
+                }
                 let val_with_context = RszValueWithInfo(&r#struct, &context, None);
-                //println!("{}", r#struct.name);
-                state.serialize_field(name, &val_with_context)?;
+                state.serialize_element(&Wrapped {
+                    r#type: name,
+                    rsz: &val_with_context,
+                })?;
             }
             state.end()
     }

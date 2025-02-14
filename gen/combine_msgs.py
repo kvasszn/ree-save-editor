@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 def combine_json_files(input_folder, output_file, extension):
     combined_data = {"msgs": {}, "name_to_uuid": {}}
@@ -23,9 +24,10 @@ def combine_json_files(input_folder, output_file, extension):
 
     print(f"Combined JSON saved to {output_file}")
 
-# Example usage
-extension = "msg.539100710.json"
-input_folder = "./outputs/rise"
-output_file = "./outputs/rise/combined_msgs.json"
-combine_json_files(input_folder, output_file, extension)
+version = sys.argv[1]
+folder = sys.argv[2]
+print(version, folder)
+version = 23
+extension = f"msg.{version}.json"
+combine_json_files(folder, os.path.join(folder, "combined_msgs.json"), extension)
 

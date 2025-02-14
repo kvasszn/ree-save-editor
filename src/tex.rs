@@ -114,7 +114,7 @@ impl Tex {
         }
 
         let mut total_size = 0;
-        let gdef_sections = if version == 240701001{
+        let gdef_sections = if version == 240701001 || version == 241106027{
             let sections = (0..mipmap_count * tex_count)
                 .into_iter()
                 .map(|_| {

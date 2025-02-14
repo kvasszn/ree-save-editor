@@ -38,6 +38,7 @@ impl User {
         let resource_list_offset = file.read_u64()?;
         let child_list_offset = file.read_u64()?;
         let rsz_offset = file.read_u64()?;
+        let rsz_offset_cap = file.read_u64()?;
 
         file.seek_assert_align_up(resource_list_offset, 16)?;
         let resource_name_offsets = (0..resource_count)
@@ -82,7 +83,7 @@ impl User {
             .collect::<Result<Vec<_>>>()?;
 
 
-        let rsz = Rsz::new(file, rsz_offset)?;
+        let rsz = Rsz::new(&mut file, rsz_offset, rsz_offset_cap)?;
 
         Ok(User {
             resource_names,

@@ -42,7 +42,7 @@ pub enum RszSlot {
 }
 
 impl Rsz {
-    pub fn new<F: Read + Seek>(mut file: F, base: u64) -> Result<Rsz> {
+    pub fn new<F: Read + Seek>(file: &mut F, base: u64, cap: u64) -> Result<Rsz> {
         file.seek(SeekFrom::Start(base))?;
         let magic = file.read_magic()?;
         let ext = core::str::from_utf8(&magic)?;
@@ -121,10 +121,14 @@ impl Rsz {
         //println!("{}", base + data_offset);
         //file.seek(SeekFrom::Start(base + data_offset))?;
         file.seek_assert_align_up(base + data_offset, 16)?;
-
-        let mut data = vec![];
-        file.read_to_end(&mut data)?;
-        //println!("{:?}", &data[0..128]);
+        println!("{cap}, {}", file.tell()?);
+        let mut data: Vec<u8> = vec![];
+        if cap != 0 {
+            data = vec![0u8; cap as usize - file.tell()? as usize];
+            file.read_exact(&mut data)?
+        } else {
+            file.read_to_end(&mut data)?;
+        };
         Ok(Rsz {
             roots,
             extern_slots,
@@ -168,14 +172,12 @@ impl Rsz {
             } else {
                 // check for object index and return that too
                 let something = RszDump::parse_struct(&mut cursor, TypeDescriptor{hash, crc})?;
-                //println!("{something:#?}");
                 structs.push(something);
             }
         }
 
         let mut roots = Vec::new();
         for root in &self.roots {
-            println!("ROot: {root}");
             match structs.get(*root as usize) {
                 None => eprintln!("Could not find root {}", root),
                 Some(obj) => {
