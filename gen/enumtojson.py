@@ -1,11 +1,19 @@
 import json
 import sys
+import os
 
 enums_internal = sys.argv[1]
-out_file = sys.argv[2]
-print(enums_internal, out_file)
 
-f = open(enums_internal)
+out_file = "enums.json"
+if len(sys.argv) == 3:
+    out_file = sys.argv[2]
+
+if not os.path.exists(enums_internal):
+    print(f"could not find enums_internal {enums_internal}")
+    exit(0)
+print(f"generating enum json from {enums_internal} to {out_file}")
+
+f = open(enums_internal, 'r', encoding="utf-8")
 data = f.read()
 tokens = data.split()
 len = len(tokens)
@@ -33,7 +41,11 @@ while i < len:
     if  tokens[i+1] == "=":
         enum_id = tokens[i]
         i += 2
-        enum_val = int(tokens[i].strip(","))
+        enum_val = 0
+        if tokens[i].startswith('0x'):
+            enum_val = int(tokens[i].strip(","))
+        else:
+            enum_val = int(tokens[i].strip(","))
         enum_vals[enum_id] = enum_val
         enum_vals_rev[enum_val] = enum_id
 

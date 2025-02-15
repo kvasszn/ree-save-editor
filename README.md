@@ -25,7 +25,7 @@ If you want to use this to dump user files, make sure to get an rsz dump from [h
 
 
 And if you want enums, get an `Enums_Internal.hpp` from RE framework and use the following command to generate a json file.
-You can also use the ones in `gen/`
+You can also use the already generated ones in `gen/`
 ```
 python3 gen/enumtojson.py <path/to/Enums_Internal.hpp> enums.json
 ```
