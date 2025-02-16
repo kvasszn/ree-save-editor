@@ -1,16 +1,15 @@
 use core::str;
 use std::{
-    collections::{HashMap, HashSet}, io::{BufReader, Read, Seek}, sync::OnceLock, time::Instant
+    collections::{HashMap, HashSet}, io::{Read, Seek}, sync::OnceLock
 };
 
 use crate::file_ext::*;
-use crate::rsz_files::*;
 
 pub static RSZ_FILE: OnceLock<String> = OnceLock::new();
 pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
 
 use nalgebra_glm::{Mat4x4, Vec2, Vec3, Vec4};
-use serde::{ser::{SerializeSeq, SerializeStruct}, Deserialize, Deserializer, Serialize};
+use serde::{ser::{SerializeSeq, SerializeStruct}, Deserialize, Serialize};
 use uuid::Uuid;
 use crate::rsz::TypeDescriptor;
 use crate::reerr::{Result, FileParseError::*};
@@ -303,18 +302,27 @@ impl TryInto<String> for RszType {
     }
 }
 
-pub struct RszTypeWithInfo<'a>(&'a RszType, &'a Vec<RszValue>, Option<&'a RszType>);
+struct RszSerializerContext<'a> {
+    structs: &'a[RszValue],
+    parent: Option<&'a RszType>,
+    parent_ptr: u32,
+}
 
-impl<'a> Serialize for RszTypeWithInfo<'a> {
+pub struct RszTypeWithContext<'a>(&'a RszType, &'a RszSerializerContext<'a>);
+
+impl<'a> Serialize for RszTypeWithContext<'a> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer 
     {
         let rsz_type = self.0;
-        let structs = self.1;
+        let context = self.1;
+        //println!("{rsz_type:?}");
         use RszType::*;
         return match rsz_type {
-            Extern(path) => serializer.serialize_str(path),
+            Extern(path) => {
+                serializer.serialize_str(path)
+            },
             Int8(v) => serializer.serialize_i8(*v), 
             Int16(v) => serializer.serialize_i16(*v), 
             Int32(v) => serializer.serialize_i32(*v), 
@@ -358,23 +366,92 @@ impl<'a> Serialize for RszTypeWithInfo<'a> {
                 serializer.serialize_str(&id.to_string().as_str())
             },
             RszType::Struct(r#struct) => {
-                let parent_info = match self.2 {
+                let struct_info = RszDump::rsz_map().get(RszDump::name_map().get(&r#struct.name).unwrap()).expect("Could not find struct in dump");
+                let parent_info = match context.parent {
                     Some(v) => v,
                     None => rsz_type,
                 };
-                let val = RszValueWithInfo(r#struct, structs, Some(parent_info));
-                val.serialize(serializer)
+
+                if let Some(RszType::Extern(path)) = r#struct.fields.get(0) {
+                    let mut state = serializer.serialize_struct("RszValue", 1)?;
+                    state.serialize_field(&struct_info.name, &path)?;
+                    return state.end()
+                }
+
+                let mut state = serializer.serialize_struct("RszValue", r#struct.fields.len())?;
+                for i in 0..r#struct.fields.len() {
+                    let field_value = &r#struct.fields[i];
+                    let field_info = &struct_info.fields[i];
+                    let name = &field_info.name;
+                    let ctx = RszSerializerContext {
+                        structs: context.structs,
+                        parent: Some(parent_info),
+                        parent_ptr: context.parent_ptr,
+                    };
+                    let serialize_context = RszTypeWithContext(field_value, &ctx);
+                    state.serialize_field(name, &serialize_context)?;
+                }
+                state.end()
             },
-            RuntimeType(v) => v.serialize(serializer),
-            Object(_info, ptr, _obj_type) => {
-                match &structs.get(*ptr as usize) {
+            RuntimeType(v) => {
+                v.serialize(serializer)
+            }
+            Object(_struct_info, ptr, obj_type) => {
+                if *ptr == context.parent_ptr {
+                    return Err(serde::ser::Error::custom("Detected Recursion in Objects, RSZ dump could be for an old version, or the RSZ data is corrupted"))
+                }
+                match &context.structs.get(*ptr as usize) {
                     Some(struct_derefed) => {
-                        let parent_info = match self.2 {
+                        let parent_info = match context.parent {
                             Some(v) => v,
                             None => rsz_type,
                         };
-                        let val = RszValueWithInfo(struct_derefed, structs, Some(parent_info));
-                        val.serialize(serializer)
+                        let struct_info = RszDump::rsz_map().get(RszDump::name_map().get(&struct_derefed.name).unwrap()).expect("Could not find struct in dump");
+                        let ctx = RszSerializerContext {
+                            structs: context.structs,
+                            parent: Some(parent_info),
+                            parent_ptr: *ptr,
+                        };
+
+                        if let Some(RszType::Extern(path)) = struct_derefed.fields.get(0) {
+                            let mut state = serializer.serialize_struct("RszValue", 1)?;
+                            state.serialize_field(&struct_info.name, &path)?;
+                            return state.end();
+                        }
+                        let mut state = serializer.serialize_struct("RszValue", struct_info.fields.len())?;
+                        for i in 0..struct_info.fields.len() {
+                            let field_value = &struct_derefed.fields[i];
+                            let field_info = &struct_info.fields[i];
+                            let _og_type = field_info.original_type.as_str();
+                            let name = field_info.name.as_str();
+                            match obj_type {
+                                ObjectType::EnumerableParam(v) => {
+                                    if name.contains("EnumValue") {
+                                        let val = match field_value {
+                                            RszType::UInt32(v) => v.to_string(),
+                                            RszType::Int32(v) => v.to_string(),
+                                            RszType::UInt64(v) => v.to_string(),
+                                            RszType::Int64(v) => v.to_string(),
+                                            _ =>  {
+                                                let serialize_context = RszTypeWithContext(field_value, &ctx);
+                                                state.serialize_field(name, &serialize_context)?;
+                                                continue;
+                                            },
+                                        };
+                                        let enum_name = get_enum_name(v.to_string(), val);
+                                        state.serialize_field(name, &enum_name)?;
+                                    } else {
+                                        let serialize_context = RszTypeWithContext(field_value, &ctx);
+                                        state.serialize_field(name, &serialize_context)?;
+                                    }
+                                },
+                                ObjectType::None => {
+                                    let serialize_context = RszTypeWithContext(field_value, &ctx);
+                                    state.serialize_field(name, &serialize_context)?;
+                                }
+                            }
+                        }
+                        state.end()
                     }
                     None => {
                         eprintln!("{rsz_type:?}");
@@ -396,7 +473,7 @@ impl<'a> Serialize for RszTypeWithInfo<'a> {
                 let underlying = *underlying.clone();
                 match underlying {
                     Object(_info, ptr, _obj_type) => {
-                        let res = &structs.get(ptr as usize);
+                        let res = &context.structs.get(ptr as usize);
                         let struct_derefed = match res {
                             Some(struct_derefed) => {
                                 struct_derefed
@@ -421,21 +498,22 @@ impl<'a> Serialize for RszTypeWithInfo<'a> {
                             RszType::Int32(v) => Ok(v.to_string()),
                             RszType::Int16(v) => Ok(v.to_string()),
                             RszType::Int8(v) => Ok(v.to_string()),
-                            RszType::Object(_info, ptr, _obj_type) => {
-                                match &structs.get(*ptr as usize) {
-                                    Some(struct_derefed) => {
-                                        let parent_info = match self.2 {
-                                            Some(v) => v,
-                                            None => rsz_type,
-                                        };
-                                        let val = RszValueWithInfo(struct_derefed, structs, Some(parent_info));
-                                        return val.serialize(serializer)
-                                    }
-                                    None => {
-                                        eprintln!("{rsz_type:?}");
-                                        Err(serde::ser::Error::custom("Could not find Object pointer in data"))
-                                    }
+                            RszType::Object(_info, _ptr, _obj_type) => {
+                                if *_ptr == context.parent_ptr {
+                                    return Err(serde::ser::Error::custom("Detected Recursion in Objects, RSZ dump could be for an old version, or the RSZ data is corrupted"))
                                 }
+                                let parent_info = match context.parent {
+                                    Some(v) => v,
+                                    None => rsz_type,
+                                };
+
+                                let ctx = RszSerializerContext {
+                                    structs: context.structs,
+                                    parent: Some(parent_info),
+                                    parent_ptr: *_ptr,
+                                };
+                                let serialize_context = RszTypeWithContext(&x, &ctx);
+                                return serialize_context.serialize(serializer)
                             },
                             _ => {
                                 eprintln!("{rsz_type:?}");
@@ -462,8 +540,8 @@ impl<'a> Serialize for RszTypeWithInfo<'a> {
                 //let struct_derefed = &structs.get(*ptr as usize).expect("Struct not in context");
                 let mut state = serializer.serialize_seq(Some(vec_of_types.len()))?;
                 for r#type in vec_of_types {
-                    let type_with_context = RszTypeWithInfo(r#type, structs, self.2);
-                    state.serialize_element(&type_with_context)?;
+                    let serialize_context = RszTypeWithContext(&r#type, context);
+                    state.serialize_element(&serialize_context)?;
                 }
                 state.end()
             }
@@ -538,9 +616,9 @@ impl<'de> Deserialize<'de> for RszStruct<RszField> {
 
 pub type RszValue = RszStruct<RszType>;
 
-pub struct RszValueWithInfo<'a>(&'a RszValue, &'a Vec<RszValue>, Option<&'a RszType>);
+pub struct RszValueWithContext<'a>(&'a RszValue, &'a RszSerializerContext<'a>);
 
-impl<'a> Serialize for RszValueWithInfo<'a> {
+impl<'a> Serialize for RszValueWithContext<'a> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
@@ -548,62 +626,28 @@ impl<'a> Serialize for RszValueWithInfo<'a> {
             let r#struct = self.0;
             let context = self.1;
             let struct_info = RszDump::rsz_map().get(RszDump::name_map().get(&r#struct.name).unwrap()).expect("Could not find struct in dump");
-            let mut state = serializer.serialize_struct("RszValue", r#struct.fields.len())?;
             let mut names = vec![];
             for e in &struct_info.fields {
                 names.push(e.name.clone());
             }
+
             if let Some(RszType::Extern(path)) = r#struct.fields.get(0) {
+                let mut state = serializer.serialize_struct("RszValue", 1)?;
                 state.serialize_field(&struct_info.name, &path)?;
                 return state.end()
             }
-            match self.2 {
-                Some(RszType::Object(_, _, ot)) => {
-                    for i in 0..struct_info.fields.len() {
-                        let field_value = &r#struct.fields[i];
-                        let field_info = &struct_info.fields[i];
-                        let _og_type = field_info.original_type.as_str();
-                        let name = field_info.name.as_str();
-                        match ot {
-                            ObjectType::EnumerableParam(v) => {
-                                if name.contains("EnumValue") {
-                                    let val = match field_value {
-                                        RszType::UInt32(v) => v.to_string(),
-                                        RszType::Int32(v) => v.to_string(),
-                                        RszType::UInt64(v) => v.to_string(),
-                                        RszType::Int64(v) => v.to_string(),
-                                        _ =>  {
-                                            let serialize_context = RszTypeWithInfo(field_value, context, self.2);
-                                            state.serialize_field(name, &serialize_context)?;
-                                            continue;
-                                        },
-                                    };
-                                    let enum_name = get_enum_name(v.to_string(), val);
-                                    state.serialize_field(name, &enum_name)?;
-                                } else {
-                                    let serialize_context = RszTypeWithInfo(&field_value, context, self.2);
-                                    state.serialize_field(name, &serialize_context)?;
-                                }
-                            },
-                            ObjectType::None => {
-                                let serialize_context = RszTypeWithInfo(&field_value, context, self.2);
-                                state.serialize_field(name, &serialize_context)?;
-                            }
-                        }
-                    }
-                },
-                None | Some(_) => {
-                    for i in 0..struct_info.fields.len() {
-                        let field_value = &r#struct.fields[i];
-                        let field_info = &struct_info.fields[i];
-                        let name = &field_info.name;
-                        let serialize_context = RszTypeWithInfo(field_value, context, self.2);
-                        state.serialize_field(name, &serialize_context)?;
-                    }
-                }
+
+            let mut state = serializer.serialize_struct("RszValue", r#struct.fields.len())?;
+            for i in 0..struct_info.fields.len() {
+                let field_value = &r#struct.fields[i];
+                let field_info = &struct_info.fields[i];
+                let _og_type = field_info.original_type.as_str();
+                let name = field_info.name.as_str();
+
+                let serialize_context = RszTypeWithContext(field_value, context);
+                state.serialize_field(name, &serialize_context)?;
             }
             state.end()
-
     }
 }
 
@@ -706,7 +750,7 @@ impl RszDump {
 
 #[derive(Debug, Clone)]
 pub struct DeRsz {
-    pub roots: Vec<RszValue>,
+    pub roots: Vec<u32>,
     pub structs: Vec<RszValue>,
     pub extern_idxs: HashSet<u32>,
 }
@@ -716,9 +760,9 @@ impl<'a> Serialize for DeRsz {
     where
         S: serde::Serializer {
             let mut state = serializer.serialize_seq(Some(self.roots.len()))?;
-            let context = self.structs.clone();
             for i in 0..self.roots.len() {
-                let r#struct = self.roots[i].clone();
+                let ptr = self.roots[i];
+                let r#struct = self.structs[ptr as usize].clone();
                 use serde::ser::Error;
                 let hash = r#struct.hash().ok_or(
                     Error::custom(format!("struct hash not found for {}", r#struct.name))
@@ -732,9 +776,14 @@ impl<'a> Serialize for DeRsz {
                 #[derive(Serialize)]
                 struct Wrapped<'a> {
                     r#type: &'a str,
-                    rsz: &'a RszValueWithInfo<'a>,
+                    rsz: &'a RszValueWithContext<'a>,
                 }
-                let val_with_context = RszValueWithInfo(&r#struct, &context, None);
+                let ctx = RszSerializerContext {
+                    structs: &self.structs,
+                    parent: None,
+                    parent_ptr: ptr,
+                };
+                let val_with_context = RszValueWithContext(&r#struct, &ctx);
                 state.serialize_element(&Wrapped {
                     r#type: name,
                     rsz: &val_with_context,

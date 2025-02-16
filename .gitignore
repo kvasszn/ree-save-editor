@@ -1,5 +1,3 @@
 /target
-/output*
-rszmhwilds.json
-rszmhrise.json
+/output/*
 /misc

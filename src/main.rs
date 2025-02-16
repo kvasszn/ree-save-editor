@@ -1,4 +1,3 @@
-mod rsz_files;
 mod align;
 mod reerr;
 mod bitfield;
@@ -82,6 +81,9 @@ enum FileType {
 
 fn get_file_ext(file_name: String) -> Result<FileType> {
     let split = file_name.split('.').collect::<Vec<_>>();
+    if split.len() < 2 {
+        return Ok(FileType::Unknown)
+    }
 
     let version = match u32::from_str_radix(split[2], 10) {
         Ok(val) => val,
@@ -135,12 +137,12 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
         FileType::User(_v) => {
             let file = File::open(file_path.clone())?;
             let rsz = Box::new(User::new(file)?.rsz);
-            let  nodes = Box::new(rsz.deserializev2(root_dir)?);
+            let  nodes = rsz.deserializev2(root_dir)?;
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
             //output_path.push(file_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
 
-            let json_res = serde_json::to_string_pretty(&Box::new(nodes)); 
+            let json_res = serde_json::to_string_pretty(&nodes); 
             return match json_res {
                 Ok(json) => {
                     let _ = fs::create_dir_all(output_path.parent().unwrap())?;
@@ -287,6 +289,7 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
                 continue
             }
         };
+        eprintln!("Dumping File: {file_path:?}");
         match dump_file(root_dir.clone(), file_path.clone(), output_path.clone()) {
             Ok(()) => (),
             Err(e) => {
@@ -313,7 +316,7 @@ fn main() -> Result<()> {
     RSZ_FILE.set(rsz_file)?;
 
     let enum_file = std::env::var("ENUM_FILE").unwrap_or_else(
-        |_| "gen/enums.json".to_string()
+        |_| "enums.json".to_string()
     );
     if !Path::new(&enum_file).exists() {
         eprintln!("BIG WARNING: {} not found", enum_file);

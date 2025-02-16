@@ -121,7 +121,6 @@ impl Rsz {
         //println!("{}", base + data_offset);
         //file.seek(SeekFrom::Start(base + data_offset))?;
         file.seek_assert_align_up(base + data_offset, 16)?;
-        println!("{cap}, {}", file.tell()?);
         let mut data: Vec<u8> = vec![];
         if cap != 0 {
             data = vec![0u8; cap as usize - file.tell()? as usize];
@@ -167,7 +166,7 @@ impl Rsz {
                 let dersz = Box::new(extern_rsz.deserializev2(root_dir.clone())?);
                 structs.push(Box::new(dersz.roots[0].clone()));
                 //node_buf.push(NodeSlot::Extern(slot_extern.path.clone()));
-                //println!("{:?}", node_buf);*/
+                println!("{:?}", node_buf);*/
                 continue;
             } else {
                 // check for object index and return that too
@@ -175,7 +174,7 @@ impl Rsz {
                 structs.push(something);
             }
         }
-
+        //println!("{structs:#?}");
         let mut roots = Vec::new();
         for root in &self.roots {
             match structs.get(*root as usize) {
@@ -202,23 +201,11 @@ impl Rsz {
         }
 
         Ok(DeRsz {
-            roots,
+            roots: self.roots.clone(),
             structs,
             extern_idxs,
         })
     }
-
-    /*pub fn verify_crc(&self, crc_mismatches: &mut BTreeMap<&str, u32>, print_all: bool) {
-        for td in &self.type_descriptors {
-            if let Some(type_info) = RSZ_TYPE_MAP.get(&td.hash) {
-                if print_all
-                    || (!type_info.versions.contains_key(&td.crc) && !type_info.versions.is_empty())
-                {
-                    crc_mismatches.insert(type_info.symbol, td.crc);
-                }
-            }
-        }
-    }*/
 }
 
 
