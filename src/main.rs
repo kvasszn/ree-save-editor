@@ -10,11 +10,13 @@ mod tex;
 mod user;
 mod dersz;
 mod pog;
+mod font;
 
 extern crate image;
 
 use clap::Parser;
 use dersz::{DeRsz, ENUM_FILE, RSZ_FILE};
+use font::Oft;
 use msg::Msg;
 use pog::{Pog, PogList, PogPoint};
 use rsz::Rsz;
@@ -74,6 +76,7 @@ enum FileType {
     Msg(u32),
     User(u32),
     Tex(u32),
+    Oft,
     Pog,
     PogList,
     Unknown
@@ -84,8 +87,8 @@ fn get_file_ext(file_name: String) -> Result<FileType> {
     if split.len() < 2 {
         return Ok(FileType::Unknown)
     }
-
-    let version = match u32::from_str_radix(split[2], 10) {
+    let v = *split.get(2).unwrap_or_else(|| &"0");
+    let version = match u32::from_str_radix(v, 10) {
         Ok(val) => val,
         Err(e) => {
             eprintln!("{e}?, continuing without file version extension");
@@ -102,6 +105,7 @@ fn get_file_ext(file_name: String) -> Result<FileType> {
                 "tex" => FileType::Tex(version),
                 "pog" => FileType::Pog,
                 "poglst" => FileType::PogList,
+                "oft" => FileType::Oft,
                 _ => FileType::Unknown
             }
         },
@@ -155,32 +159,6 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                     Err(format!("File: {file_path:?}\nReason: {e}").into())
                 }
             }
-            /*let res = match *res {
-                Ok(nodes) => {
-                    let mut output_path = output_path.clone();
-                    output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-                    //output_path.push(file_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-
-                    let json_res = serde_json::to_string_pretty(&nodes); 
-                    match json_res {
-                        Ok(json) => {
-                            let _ = fs::create_dir_all(output_path.parent().unwrap())?;
-                            let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
-                            f.write_all(json.as_bytes())?;
-                            println!("[INFO] Saved File {:?}", &output_path);
-                            Ok(())
-                        },
-                        Err(e) => {
-                            Err(format!("File: {file_path:?}\nReason: {e}").into())
-                        }
-                    }
-                },
-                Err(e) => {
-                    Err(format!("File: {file_path:?}\nReason: {e}").into())
-                }
-            };
-            res*/
-            //Ok(())
         },
         FileType::Tex(_v) => {
             let file = File::open(file_path.clone())?;
@@ -248,6 +226,17 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                 }
             }
         },
+        FileType::Oft => {
+            let file = File::open(file_path.clone())?;
+            let oft = Oft::new(file)?;
+            let mut output_path = output_path.clone();
+            output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".otf");
+            let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+            let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
+            f.write(&oft.data)?;
+            println!("[INFO] Saved File {:?}", &output_path);
+            Ok(())
+        }
         FileType::Unknown => return Err(format!("Unknown File Type {file_name:?}").into()),
     };
     res
