@@ -73,18 +73,18 @@ pub enum RszType {
     String(String),
     Guid([u8; 16]),
     Array(Vec<RszType>),
-    Object(RszStruct<RszField>, u32, ObjectType),
+    Object(RszStruct<RszField>, u32),
     RuntimeType(String),
     Struct(RszStruct<RszType>),
     Enum(Box<RszType>, String),
     OBB,
     Data(Vec<u8>),
 
-    Nullable(Box<Option<RszType>>, String, String, String, String)
+    Nullable(Box<Option<RszType>>, String, String, String, String),
 }
 
 impl RszType {
-    fn from_field<F: Read + Seek>(data: &mut F, field: &RszField, parent_object: ObjectType) -> Result<RszType> {
+    fn from_field<F: Read + Seek>(data: &mut F, field: &RszField) -> Result<RszType> {
         data.seek_align_up(field.align.into())?;
         let r#type = match field.r#type.as_str() {
             "S8" => RszType::Int8(data.read_i8()?),
@@ -244,21 +244,10 @@ impl RszType {
                 RszType::RuntimeType(rtype)
             },
             "Object" | "UserData" => {
-                let obj_type = if field.original_type.starts_with("app.cEnumerableParam") {
-                    let x = field.original_type.strip_prefix("app.cEnumerableParam`2<").unwrap().to_string();
-                    let enum_name = x.split(",").collect::<Vec<_>>()[0];
-                    ObjectType::EnumerableParam(enum_name.to_string())
-                } else if let ObjectType::EnumerableParam(_) = parent_object {
-                    parent_object
-                }
-                else {
-                    ObjectType::None
-                };
-
                 let x;
                 if let Some(mapped_hash) = RszDump::name_map().get(&field.original_type) {
                     if let Some(r#struct) = RszDump::rsz_map().get(&mapped_hash) {
-                        x = RszType::Object(r#struct.clone(), data.read_u32()?, obj_type)
+                        x = RszType::Object(r#struct.clone(), data.read_u32()?)
                     } else {
                         return Err(format!("Name crc not in hash map {:X}", mapped_hash).into())
                     };
@@ -273,9 +262,10 @@ impl RszType {
         };
         let enum_val = enum_map().get(&field.original_type.replace("[]", "")).is_some();
         if  enum_val || field.original_type.ends_with("Serializable") || field.original_type.ends_with("Fixed") 
-            || field.original_type.ends_with("Serializable[]") || field.original_type.ends_with("Fixed[]"){
+            || field.original_type.ends_with("Serializable[]") || field.original_type.ends_with("Fixed[]")
+            || field.original_type.ends_with("Bit") || field.original_type.ends_with("Bit[]") {
                 Ok(RszType::Enum(Box::new(r#type), field.original_type.clone()))
-            } else {
+        } else {
                 Ok(r#type)
         }
     }
@@ -302,9 +292,9 @@ impl TryInto<String> for RszType {
     }
 }
 
+#[derive(Debug, Clone)]
 struct RszSerializerContext<'a> {
-    structs: &'a[RszValue],
-    parent: Option<&'a RszType>,
+    structs: &'a Vec<RszValue>,
     parent_ptr: u32,
 }
 
@@ -317,6 +307,8 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
     {
         let rsz_type = self.0;
         let context = self.1;
+        let parent_struct = &context.structs[context.parent_ptr as usize];
+        let parent_name = &parent_struct.name;
         //println!("{rsz_type:?}");
         use RszType::*;
         return match rsz_type {
@@ -367,10 +359,6 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
             },
             RszType::Struct(r#struct) => {
                 let struct_info = RszDump::rsz_map().get(RszDump::name_map().get(&r#struct.name).unwrap()).expect("Could not find struct in dump");
-                let parent_info = match context.parent {
-                    Some(v) => v,
-                    None => rsz_type,
-                };
 
                 if let Some(RszType::Extern(path)) = r#struct.fields.get(0) {
                     let mut state = serializer.serialize_struct("RszValue", 1)?;
@@ -385,7 +373,6 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
                     let name = &field_info.name;
                     let ctx = RszSerializerContext {
                         structs: context.structs,
-                        parent: Some(parent_info),
                         parent_ptr: context.parent_ptr,
                     };
                     let serialize_context = RszTypeWithContext(field_value, &ctx);
@@ -396,60 +383,93 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
             RuntimeType(v) => {
                 v.serialize(serializer)
             }
-            Object(_struct_info, ptr, obj_type) => {
+            Object(_struct_info, ptr) => {
                 if *ptr == context.parent_ptr {
                     return Err(serde::ser::Error::custom("Detected Recursion in Objects, RSZ dump could be for an old version, or the RSZ data is corrupted"))
-                }
-                match &context.structs.get(*ptr as usize) {
+                } 
+                match context.structs.get(*ptr as usize) {
                     Some(struct_derefed) => {
-                        let parent_info = match context.parent {
-                            Some(v) => v,
-                            None => rsz_type,
-                        };
+                        // why not just use passed on struct info???
                         let struct_info = RszDump::rsz_map().get(RszDump::name_map().get(&struct_derefed.name).unwrap()).expect("Could not find struct in dump");
-                        let ctx = RszSerializerContext {
-                            structs: context.structs,
-                            parent: Some(parent_info),
-                            parent_ptr: *ptr,
-                        };
 
                         if let Some(RszType::Extern(path)) = struct_derefed.fields.get(0) {
                             let mut state = serializer.serialize_struct("RszValue", 1)?;
                             state.serialize_field(&struct_info.name, &path)?;
                             return state.end();
                         }
+
+                        // Handle bitset, ace.Bitset`1<>
+                        if let Some(r#type) = struct_info.name.strip_prefix("ace.Bitset`1<") {
+                            let mut r#type = r#type.strip_suffix(">").unwrap().to_string(); // should be there, if not idk
+                            let is_bit = if enum_map().get(&(r#type.clone() + "Bit")).is_some() {
+                                r#type = r#type + "Bit";
+                                true
+                            } else { false };
+
+                            let values = &struct_derefed.fields[0];
+                            if let Int32(max) = &struct_derefed.fields[1] {
+                                if let Array(values) = values {
+                                    let values = values.iter().enumerate().filter_map(|(i, x)| {
+                                        if let UInt32(val) = x {
+                                            return Some((0..32).filter_map(|j| {
+                                                    if *val & (1 << j) != 0 && (i*32 + j < *max as usize){ 
+                                                        Some((i * 32 + j) as u32)
+                                                    } else { None }
+                                                }).collect::<Vec<_>>());
+                                        } else {None}
+                                    }).flatten().collect::<Vec<_>>();
+                                    let mut state = serializer.serialize_seq(Some(values.len()))?;
+
+                                    for val in &values {
+                                        let val = if is_bit {2u32.pow(*val)} else { *val };
+                                        match get_enum_name(&r#type, &(val).to_string()) {
+                                            Some(enum_name) => state.serialize_element(&enum_name)?,
+                                            None => state.serialize_element(&val.to_string())?,
+                                        }
+                                    }
+                                  //  state.serialize_element(format!("{max}").as_str())?;
+                                    return state.end();
+                                }
+                            }
+                        }
+
+                        let ctx = RszSerializerContext {
+                            structs: context.structs,
+                            parent_ptr: *ptr,
+                        };
+
+                        //enumerable param app.cEnumerableParam`2<>
+                        if let Some(r#type) = parent_name.strip_prefix("app.cEnumerableParam`2<") {
+                            let r#type = r#type.strip_suffix(">").unwrap().split(",").collect::<Vec<&str>>();
+                            let enum_type = r#type[0];
+                            let mut state = serializer.serialize_struct("app.cEnumerableParam", struct_derefed.fields.len())?;
+                            for i in 0..struct_derefed.fields.len() {
+                                if struct_info.fields[i].name.contains("EnumValue") {
+                                    let enum_val = &struct_derefed.fields[i];
+                                    if let Int32(enum_val) = enum_val {
+                                        match get_enum_name(&enum_type, &enum_val.to_string()) {
+                                            Some(enum_name) => state.serialize_field(&struct_info.fields[i].name, &enum_name)?,
+                                            None => state.serialize_field(&struct_info.fields[i].name, &enum_val.to_string())?,
+                                        }
+                                    }
+                                } else {
+                                    let field_value = &struct_derefed.fields[i];
+                                    let serialize_context = RszTypeWithContext(&field_value, &ctx);
+                                    state.serialize_field(&struct_info.fields[i].name, &serialize_context)?;
+                                }
+                            }
+                            return state.end();
+                        }
+
+
                         let mut state = serializer.serialize_struct("RszValue", struct_info.fields.len())?;
                         for i in 0..struct_info.fields.len() {
                             let field_value = &struct_derefed.fields[i];
                             let field_info = &struct_info.fields[i];
                             let _og_type = field_info.original_type.as_str();
                             let name = field_info.name.as_str();
-                            match obj_type {
-                                ObjectType::EnumerableParam(v) => {
-                                    if name.contains("EnumValue") {
-                                        let val = match field_value {
-                                            RszType::UInt32(v) => v.to_string(),
-                                            RszType::Int32(v) => v.to_string(),
-                                            RszType::UInt64(v) => v.to_string(),
-                                            RszType::Int64(v) => v.to_string(),
-                                            _ =>  {
-                                                let serialize_context = RszTypeWithContext(field_value, &ctx);
-                                                state.serialize_field(name, &serialize_context)?;
-                                                continue;
-                                            },
-                                        };
-                                        let enum_name = get_enum_name(v.to_string(), val);
-                                        state.serialize_field(name, &enum_name)?;
-                                    } else {
-                                        let serialize_context = RszTypeWithContext(field_value, &ctx);
-                                        state.serialize_field(name, &serialize_context)?;
-                                    }
-                                },
-                                ObjectType::None => {
-                                    let serialize_context = RszTypeWithContext(field_value, &ctx);
-                                    state.serialize_field(name, &serialize_context)?;
-                                }
-                            }
+                            let serialize_context = RszTypeWithContext(field_value, &ctx);
+                            state.serialize_field(name, &serialize_context)?;
                         }
                         state.end()
                     }
@@ -465,14 +485,15 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
             Enum(underlying, name) => {
 
                 let str_enum_name = |name: &str, val: &dyn ToString| { 
-                    match get_enum_name(name.to_string(), val.to_string()) {
-                            None => format!("{} // Could not find enum value in map {}", name, val.to_string()),
+                    match get_enum_name(name, &val.to_string()) {
+                            //None => format!("{} // Could not find enum value in map {}", name, val.to_string()),
+                            None => format!("NULL_BIT_ENUM_OR_COULD_NOT_FIND[{}]", val.to_string()),
                             Some(value) => value
                         }
                 };
                 let underlying = *underlying.clone();
                 match underlying {
-                    Object(_info, ptr, _obj_type) => {
+                    Object(_info, ptr) => {
                         let res = &context.structs.get(ptr as usize);
                         let struct_derefed = match res {
                             Some(struct_derefed) => {
@@ -498,19 +519,14 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
                             RszType::Int32(v) => Ok(v.to_string()),
                             RszType::Int16(v) => Ok(v.to_string()),
                             RszType::Int8(v) => Ok(v.to_string()),
-                            RszType::Object(_info, _ptr, _obj_type) => {
+                            RszType::Object(_info, _ptr) => {
                                 if *_ptr == context.parent_ptr {
                                     return Err(serde::ser::Error::custom("Detected Recursion in Objects, RSZ dump could be for an old version, or the RSZ data is corrupted"))
                                 }
-                                let parent_info = match context.parent {
-                                    Some(v) => v,
-                                    None => rsz_type,
-                                };
-
-                                let ctx = RszSerializerContext {
+                               let ctx = RszSerializerContext {
                                     structs: context.structs,
-                                    parent: Some(parent_info),
-                                    parent_ptr: *_ptr,
+                                    parent_ptr: ptr, //has to be se tto the original
+                                                     //underlying object of the enum
                                 };
                                 let serialize_context = RszTypeWithContext(&x, &ctx);
                                 return serialize_context.serialize(serializer)
@@ -520,8 +536,9 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
                                 Err(serde::ser::Error::custom("Unknown underlying Enum type"))
                             }
                         }?;
-                        match get_enum_name(name.to_string(), v.clone()){
-                            None => serializer.serialize_str(format!("{v} // Could not find enum value in map {name}").as_str()),
+                        match get_enum_name(name, &v) {
+                            //None => serializer.serialize_str(format!("{v} // Could not find enum value in map {name}").as_str()),
+                            None => serializer.serialize_str(format!("NULL_BIT_ENUM_OR_COULD_NOT_FIND[{}]", v.to_string()).as_str()),
                             Some(value) => serializer.serialize_str(&value)
                         }
                     },
@@ -693,12 +710,12 @@ impl RszDump {
                 let count = data.read_u32()?;
                 //println!("count: {}, {count}", field.name);
                 let vals = (0..count).map(|_| {
-                    RszType::from_field(data, field, ObjectType::None)
+                    RszType::from_field(data, field)
                 }).collect::<Result<Vec<RszType>>>()?;
                 field_values.push(RszType::Array(vals));
             } else {
                 //println!("name: {}", field.name);
-                let r#type = RszType::from_field(data, field, ObjectType::None)?;
+                let r#type = RszType::from_field(data, field)?;
                 //println!("{:?}", r#type);
                 field_values.push(r#type);
             }
@@ -780,7 +797,6 @@ impl<'a> Serialize for DeRsz {
                 }
                 let ctx = RszSerializerContext {
                     structs: &self.structs,
-                    parent: None,
                     parent_ptr: ptr,
                 };
                 let val_with_context = RszValueWithContext(&r#struct, &ctx);
@@ -803,17 +819,40 @@ pub fn enum_map() -> &'static HashMap<String, HashMap<String, String>> {
     })
 }
 
-pub fn get_enum_name(name: String, value: String) -> Option<String> {
-    let name = name.replace("[]", "").replace("_Serializable", "_Fixed");
-    if let Some(map) = enum_map().get(&name) {
-        if let Some(value) = map.get(&value){
+pub fn get_enum_name(name: &str, value: &str) -> Option<String> {
+    let name_tmp = name.replace("[]", "").replace("_Serializable", "_Fixed");
+    if let Some(map) = enum_map().get(&name_tmp) {
+        if let Some(value) = map.get(value){
             return Some(value.to_string())
         }
     }
-    let name = name.replace("_Fixed", "");
+    let name_tmp = name_tmp.replace("_Fixed", "");
+    if let Some(map) = enum_map().get(&name_tmp) {
+        if !name_tmp.ends_with("Bit") {
+            if let Some(value) = map.get(value){
+                return Some(value.to_string())
+            }
+        }
+    }
+
+    let enum_val: u64 = value.parse().unwrap_or(0);
+    let mut flag_enum_names = String::from("");
+    let name = name.replace("_Serializable", "");
     if let Some(map) = enum_map().get(&name) {
-        if let Some(value) = map.get(&value){
-            return Some(value.to_string())
+        for i in 0..64 {
+            let mask = 1 << i;
+            let bit_val = enum_val & mask;
+            if let Some(value) = map.get(&bit_val.to_string()){
+                if !flag_enum_names.contains(value) {
+                    if flag_enum_names != "" {
+                        flag_enum_names += "|";
+                    }
+                    flag_enum_names += value;
+                }
+            }
+        }
+        if flag_enum_names != "" {
+            return Some(flag_enum_names.to_string())
         }
     }
     None

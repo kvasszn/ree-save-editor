@@ -10,7 +10,7 @@ def combine_json_files(input_folder, output_file, extension):
                 filepath = os.path.join(root, name)
                 try:
                     # Load JSON data
-                    with open(filepath, 'r') as f:
+                    with open(filepath, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                         # Merge JSON content
                         combined_data['msgs'].update(data['msgs'])
@@ -20,7 +20,7 @@ def combine_json_files(input_folder, output_file, extension):
 
     # Write combined data to the output file
     with open(output_file, 'w') as f:
-        json.dump(combined_data, f, indent=4)
+        json.dump(combined_data, f, indent=4, ensure_ascii=False)
 
     print(f"Combined JSON saved to {output_file}")
 
