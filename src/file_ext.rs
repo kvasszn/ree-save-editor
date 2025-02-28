@@ -1,6 +1,7 @@
 use crate::align::*;
 use crate::reerr::FileParseError;
 use nalgebra_glm::*;
+use uuid::Uuid;
 use std::convert::TryInto;
 use std::error::Error;
 use std::io::{Read, Seek};
@@ -19,6 +20,7 @@ pub trait ReadExt {
     fn read_i16(&mut self) -> Result<i16>;
     fn read_i32(&mut self) -> Result<i32>;
     fn read_i64(&mut self) -> Result<i64>;
+    fn read_guid(&mut self) -> Result<Uuid>;
     fn read_magic(&mut self) -> Result<[u8; 4]>;
     fn read_u16str(&mut self) -> Result<String>;
     fn read_utf16str(&mut self) -> Result<String>;
@@ -40,6 +42,15 @@ pub trait SeekExt {
 }
 
 impl<T: Read + ?Sized> ReadExt for T {
+
+    fn read_guid(&mut self) -> Result<Uuid> {
+        let mut buf = [0; 16];
+        for i in 0..16 {
+            buf[i] = self.read_u8()?;
+        }
+        Ok(Uuid::from_bytes_le(buf))
+    }
+
     fn read_bool(&mut self) -> Result<bool> {
         let v = self.read_u8()?;
         if v > 1 {

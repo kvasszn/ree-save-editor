@@ -34,13 +34,6 @@ pub struct Rsz {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone)]
-pub enum RszSlot {
-    None,
-    Extern(Extern),
-    Intern(RszValue),
-}
-
 impl Rsz {
     pub fn new<F: Read + Seek>(file: &mut F, base: u64, cap: u64) -> Result<Rsz> {
         file.seek(SeekFrom::Start(base))?;

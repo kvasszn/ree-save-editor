@@ -11,6 +11,7 @@ mod user;
 mod dersz;
 mod pog;
 mod font;
+mod scn;
 
 extern crate image;
 
@@ -20,6 +21,7 @@ use font::Oft;
 use msg::Msg;
 use pog::{Pog, PogList, PogPoint};
 use rsz::Rsz;
+use scn::Scn;
 use serde::Serialize;
 use std::error::Error;
 use std::fs::{self, read_to_string,File};
@@ -75,6 +77,7 @@ fn construct_paths(file: String, prefix: Option<String>, out_dir_base: String, p
 enum FileType {
     Msg(u32),
     User(u32),
+    Scn,
     Tex(u32),
     Oft,
     Pog,
@@ -101,6 +104,7 @@ fn get_file_ext(file_name: String) -> Result<FileType> {
         Some(ext) => {
             match *ext {
                 "user" => FileType::User(version),
+                "scn" => FileType::Scn,
                 "msg" => FileType::Msg(version),
                 "tex" => FileType::Tex(version),
                 "pog" => FileType::Pog,
@@ -145,6 +149,27 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
             //output_path.push(file_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+
+            let json_res = serde_json::to_string_pretty(&nodes); 
+            return match json_res {
+                Ok(json) => {
+                    let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                    let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
+                    f.write_all(json.as_bytes())?;
+                    println!("[INFO] Saved File {:?}", &output_path);
+                    Ok(())
+                },
+                Err(e) => {
+                    Err(format!("File: {file_path:?}\nReason: {e}").into())
+                }
+            }
+        },
+        FileType::Scn => {
+            let file = File::open(file_path.clone())?;
+            let rsz = Box::new(Scn::new(file)?.rsz);
+            let  nodes = rsz.deserializev2(root_dir)?;
+            let mut output_path = output_path.clone();
+            output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
 
             let json_res = serde_json::to_string_pretty(&nodes); 
             return match json_res {
