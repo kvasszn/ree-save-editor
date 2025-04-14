@@ -45,8 +45,17 @@ struct Args {
     #[arg(short('l'), long)]
     list: Option<String>, 
 
+    #[arg(short('p'), long, default_value_t = true)]
+    preserve: bool,
+    
     #[arg(short('o'), long, default_value_t = String::from("outputs"))]
     out_dir: String,
+    
+    #[arg(long, default_value_t = String::from("rszmhwilds.json"))]
+    rsz: String,
+    
+    #[arg(long, default_value_t = String::from("enums.json"))]
+    enums: String,
 }
 
 fn construct_paths(file: String, prefix: Option<String>, out_dir_base: String, preserve_structure: bool) -> Result<(PathBuf, PathBuf)> {
@@ -59,7 +68,7 @@ fn construct_paths(file: String, prefix: Option<String>, out_dir_base: String, p
             match prefix {
                 Some(ref prefix) => {
                     let file = Path::new(&full_file_path);
-                    println!("{file:?}");
+                    //println!("{file:?}");
                     file.strip_prefix(prefix).unwrap().to_str().unwrap()
                 }
                 None => &file
@@ -74,9 +83,11 @@ fn construct_paths(file: String, prefix: Option<String>, out_dir_base: String, p
     Ok((full_file_path, output_path))
 }
 
+#[derive(Debug)]
 enum FileType {
     Msg(u32),
     User(u32),
+    Rsz,
     Scn,
     Tex(u32),
     Oft,
@@ -85,10 +96,12 @@ enum FileType {
     Unknown
 }
 
-fn get_file_ext(file_name: String) -> Result<FileType> {
-    let split = file_name.split('.').collect::<Vec<_>>();
+fn get_file_ext(file_name: String) -> Result<(FileType, bool)> {
+    let is_json = file_name.ends_with(".json");
+    let split = file_name.strip_suffix(".json").unwrap_or(&file_name).split('.').collect::<Vec<_>>();
+
     if split.len() < 2 {
-        return Ok(FileType::Unknown)
+        return Ok((FileType::Unknown, is_json))
     }
     let v = *split.get(2).unwrap_or_else(|| &"0");
     let version = match u32::from_str_radix(v, 10) {
@@ -108,6 +121,7 @@ fn get_file_ext(file_name: String) -> Result<FileType> {
                 "msg" => FileType::Msg(version),
                 "tex" => FileType::Tex(version),
                 "pog" => FileType::Pog,
+                "rsz" => FileType::Rsz,
                 "poglst" => FileType::PogList,
                 "oft" => FileType::Oft,
                 _ => FileType::Unknown
@@ -118,7 +132,7 @@ fn get_file_ext(file_name: String) -> Result<FileType> {
         }
     };
 
-    Ok(file_type)
+    Ok((file_type, is_json))
 }
 
 fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf) -> Result<()> {
@@ -128,7 +142,8 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             return Err(format!("Path does not contain file").into());
         }
     };
-    let file_type = get_file_ext(file_name.to_string_lossy().to_string())?;
+    let (file_type, is_json )= get_file_ext(file_name.to_string_lossy().to_string())?;
+    //println!("{:?}, {is_json}", file_type);
     let res = match file_type {
         FileType::Msg(_v) => {
             let mut output_path = output_path.clone();
@@ -143,31 +158,72 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             Ok(())
         },
         FileType::User(_v) => {
-            let file = File::open(file_path.clone())?;
-            let rsz = Box::new(User::new(file)?.rsz);
-            let  nodes = rsz.deserializev2(root_dir)?;
-            let mut output_path = output_path.clone();
-            output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-            //output_path.push(file_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-
-            let json_res = serde_json::to_string_pretty(&nodes); 
-            return match json_res {
-                Ok(json) => {
-                    let _ = fs::create_dir_all(output_path.parent().unwrap())?;
-                    let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
-                    f.write_all(json.as_bytes())?;
-                    println!("[INFO] Saved File {:?}", &output_path);
-                    Ok(())
-                },
-                Err(e) => {
-                    Err(format!("File: {file_path:?}\nReason: {e}").into())
+            return if !is_json {
+                let file = File::open(&file_path)?;
+                let rsz = User::new(file)?.rsz;
+                let nodes = rsz.deserialize()?;
+                let mut output_path = output_path.clone();
+                output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+                //output_path.push(file_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+                let json_res = serde_json::to_string_pretty(&nodes); 
+                match json_res {
+                    Ok(json) => {
+                        let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                        let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
+                        f.write_all(json.as_bytes())?;
+                        println!("[INFO] Saved File {:?}", &output_path);
+                        Ok(())
+                    },
+                    Err(e) => {
+                        Err(format!("File: {file_path:?}\nReason: {e}").into())
+                    }
                 }
+            } else {
+                let mut output_path = output_path.clone();
+                output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".custom");
+                let user = User::from_json_file(&file_path.to_str().unwrap())?;
+                let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                user.save_from_json(&output_path.to_str().unwrap())?;
+                println!("{output_path:?}");
+                Ok(())
             }
         },
+        FileType::Rsz => {
+            return if !is_json {
+                let mut file = File::open(&file_path)?;
+                let rsz = Rsz::new(&mut file, 0, 0)?;
+                let nodes = rsz.deserialize()?;
+                let mut output_path = output_path.clone();
+                output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+                //output_path.push(file_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+                let json_res = serde_json::to_string_pretty(&nodes); 
+                match json_res {
+                    Ok(json) => {
+                        let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                        let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
+                        f.write_all(json.as_bytes())?;
+                        println!("[INFO] Saved File {:?}", &output_path);
+                        Ok(())
+                    },
+                    Err(e) => {
+                        Err(format!("File: {file_path:?}\nReason: {e}").into())
+                    }
+                }
+            } else {
+                let mut output_path = output_path.clone();
+                output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".custom");
+                let rsz = Rsz::from_json_file(&file_path.to_str().unwrap())?;
+                let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                rsz.save_from_json(&output_path.to_str().unwrap())?;
+                println!("{output_path:?}");
+                Ok(())
+            }
+        },
+
         FileType::Scn => {
             let file = File::open(file_path.clone())?;
             let rsz = Box::new(Scn::new(file)?.rsz);
-            let  nodes = rsz.deserializev2(root_dir)?;
+            let  nodes = rsz.deserialize()?;
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
 
@@ -189,7 +245,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             let file = File::open(file_path.clone())?;
             let tex = Tex::new(file)?;
             let rgba = tex.to_rgba(0, 0)?;
-            println!("{}", rgba.data.len());
+            //println!("{}", rgba.data.len());
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".png");
             println!("saving to {output_path:?}");
@@ -208,7 +264,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             let pog = Pog::new(file)?;
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-            let nodes = pog.rszs.iter().map(|rsz| rsz.deserializev2(root_dir.clone())).collect::<Result<Vec<_>>>()?;
+            let nodes = pog.rszs.iter().map(|rsz| rsz.deserialize()).collect::<Result<Vec<_>>>()?;
             #[derive(Serialize)]
             struct Wrapped {
                 points: Vec<PogPoint>,
@@ -318,10 +374,11 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
 
 
 fn main() -> Result<()> {
+    let args = Args::parse();
     // Ugly but will change later
     let rsz_file = std::env::var("RSZ_FILE").unwrap_or_else( 
         |_| {
-            "rszmhwilds.json".to_string()
+            args.rsz
         }
     );
     if !Path::new(&rsz_file).exists() {
@@ -330,7 +387,7 @@ fn main() -> Result<()> {
     RSZ_FILE.set(rsz_file)?;
 
     let enum_file = std::env::var("ENUM_FILE").unwrap_or_else(
-        |_| "enums.json".to_string()
+        |_| args.enums
     );
     if !Path::new(&enum_file).exists() {
         eprintln!("BIG WARNING: {} not found", enum_file);
@@ -338,8 +395,7 @@ fn main() -> Result<()> {
     ENUM_FILE.set(enum_file)?;
 
     let now = SystemTime::now();
-    let args = Args::parse();
-    println!("{:#?}", args);
+    //println!("{:#?}", args);
 
     match args.list {
         Some(list) => {
@@ -347,7 +403,7 @@ fn main() -> Result<()> {
         }, 
         None => match args.file_name {
             Some(file_name) => {
-                let (file_path, output_path) = construct_paths(file_name.clone(), args.root_dir.clone(), args.out_dir.clone(), false)?;
+                let (file_path, output_path) = construct_paths(file_name.clone(), args.root_dir.clone(), args.out_dir.clone(), args.preserve)?;
                 dump_file(args.root_dir, file_path, output_path)?;
             },
             None => println!("Must provide file name"),

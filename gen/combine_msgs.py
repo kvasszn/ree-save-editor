@@ -4,6 +4,7 @@ import sys
 
 def combine_json_files(input_folder, output_file, extension):
     combined_data = {"msgs": {}, "name_to_uuid": {}}
+    #combined_data = {}
     for root, dirs, files in os.walk(input_folder):
         for name in files:
             if name.endswith(extension):
@@ -13,13 +14,17 @@ def combine_json_files(input_folder, output_file, extension):
                     with open(filepath, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                         # Merge JSON content
+                        #print(data)
+                        #for uuid, msg in data['msgs'].items():
+                            #print(uuid, msg['content']['English'])
+                        #    combined_data[uuid] = msg['content']['English']
                         combined_data['msgs'].update(data['msgs'])
-                        combined_data['name_to_uuid'].update(data['name_to_uuid'])
+                        #combined_data['name_to_uuid'].update(data['name_to_uuid'])
                 except Exception as e:
                     print(f"Error processing file {filepath}: {e}")
 
     # Write combined data to the output file
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(combined_data, f, indent=4, ensure_ascii=False)
 
     print(f"Combined JSON saved to {output_file}")

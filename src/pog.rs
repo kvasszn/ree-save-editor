@@ -40,19 +40,20 @@ impl Pog {
 
         let version = file.read_u32()?;
         let hash = file.read_u64()?;
-        let _ = file.read_u32()?;
+        let unk1 = file.read_u32()?;
+        println!("{unk1:?}");
         let num_points = file.read_u32()?;
         let struct_type_offset = file.read_u64()?;
         let _ = file.read_u64()?;
         let entry_offset = file.read_u64()?;
         let _ = file.read_u64()?;
-        println!("{:x}, {:x}, {:x}, {:x}", version, hash, num_points, struct_type_offset);
+        println!("{}, {:x}, {}, {:x}", version, hash, num_points, struct_type_offset);
 
         let mut rsz_offsets = vec![];
         for _i in 0..2 {
             rsz_offsets.push((file.read_u64()?, file.read_u64()?));
         }
-        println!("{rsz_offsets:?}");
+        println!("rsz_offsets: {rsz_offsets:?}");
         if version == 10 {
             file.seek(std::io::SeekFrom::Start(struct_type_offset))?;
             let struct_type = file.read_u16str()?;
@@ -60,15 +61,19 @@ impl Pog {
 
         file.seek(std::io::SeekFrom::Start(entry_offset.into()))?;
         let mut points: Vec<PogPoint> = Vec::with_capacity(num_points as usize);
+        let mut point_idxs: Vec<u64> = Vec::with_capacity(num_points as usize);
         for _i in 0..num_points {
             let _idx = file.read_u64()?;
-            let _ = file.read_u64()?;
-            //points.push(idx);
+            //let _ = file.read_u64()?;
+            point_idxs.push(_idx);
         }
+        println!("{point_idxs:?}");
         if version >= 12 {
-            let _ = file.read_u64()?;
+            println!("{:x}", file.tell()?);
             let points_start = file.read_u64()?;
-            let _ = file.read_u64()?;
+            //let _ = file.read_u64()?;
+            //let _ = file.read_u64()?;
+            println!("{points_start:x}");
             file.seek(std::io::SeekFrom::Start(points_start.into()))?;
             for _i in 0..num_points {
                 //let a = (file.read_u32()?, file.read_u32()?, file.read_u32()?, file.read_u32()?);
@@ -82,7 +87,6 @@ impl Pog {
 
         }
 
-        //assert_eq!(file.tell()?, rsz_offset1);
         let mut rszs = vec![];
         for (off, cap) in rsz_offsets {
             if off != 0 {

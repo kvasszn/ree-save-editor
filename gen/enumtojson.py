@@ -2,8 +2,17 @@ import json
 import sys
 import os
 
-enums_internal = sys.argv[1]
 
+if len(sys.argv) == 1:
+    print(
+"""Incorrect arguments, must pass in path to Enums_Internal.hpp
+    do something like: python3 gen/enumtojson.py <path/to/Enums_Internal.hpp> <outfile>
+    <outfile> default is "enums.json"
+    :D
+""")
+    exit(0)
+
+enums_internal = sys.argv[1]
 out_file = "enums.json"
 if len(sys.argv) == 3:
     out_file = sys.argv[2]
@@ -13,6 +22,7 @@ if not os.path.exists(enums_internal):
     exit(0)
 print(f"generating enum json from {enums_internal} to {out_file}")
 
+# this code is bad but whatever
 f = open(enums_internal, 'r', encoding="utf-8")
 data = f.read()
 tokens = data.split()
@@ -20,11 +30,9 @@ len = len(tokens)
 i = 0
 
 namespaces = {}
-namespaces_rev = {}
 name = ""
 enum_name = ""
 enum_vals = {}
-enum_vals_rev = {}
 
 while i < len:
     if tokens[i] == "namespace":
@@ -46,22 +54,18 @@ while i < len:
             enum_val = int(tokens[i].strip(","))
         else:
             enum_val = int(tokens[i].strip(","))
-        enum_vals[enum_id] = enum_val
-        enum_vals_rev[enum_val] = enum_id
+        enum_vals[enum_id] = str(enum_val)
+        enum_vals[enum_val] = enum_id
 
     if tokens[i] == "};":
         i += 1
         full_name = name.replace("::", ".") + "." + enum_name
         namespaces[full_name] = enum_vals
-        namespaces_rev[full_name] = enum_vals_rev
         name = ""
         enum_name = ""
         enum_vals = {}
-        enum_vals_rev = {}
 
     i += 1
 
-#print(namespaces_rev)
 with open(out_file, "w") as file:
-    json.dump(namespaces_rev, file, indent=4) 
-
+    json.dump(namespaces, file, indent=4) 

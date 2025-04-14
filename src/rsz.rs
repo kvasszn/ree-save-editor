@@ -1,14 +1,15 @@
+use byteorder::LittleEndian;
+use byteorder::WriteBytesExt;
+
 use crate::dersz::*;
 
 use crate::file_ext::*;
-use crate::user::User;
-use crate::user::UserChild;
-use serde::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::fs::File;
+use std::io::Write;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::path::PathBuf;
@@ -28,6 +29,8 @@ pub struct TypeDescriptor {
 
 #[derive(Debug)]
 pub struct Rsz {
+    version: u32,
+    offset: usize,
     pub roots: Vec<u32>,
     pub extern_slots: HashMap<u32, Extern>,
     pub type_descriptors: Vec<TypeDescriptor>,
@@ -61,7 +64,7 @@ impl Rsz {
 
         let type_descriptor_offset = file.read_u64()?;
         let data_offset = file.read_u64()?;
-        let string_table_offset = file.read_u64()?;
+        let extern_offset = file.read_u64()?;
 
         let roots = (0..root_count)
             .map(|_| file.read_u32())
@@ -81,7 +84,7 @@ impl Rsz {
             return Err(format!("The first type descriptor should be 0").into())
         }
 
-        file.seek_assert_align_up(base + string_table_offset, 16)?;
+        file.seek_assert_align_up(base + extern_offset, 16)?;
 
         let extern_slot_info = (0..extern_count)
             .map(|_| {
@@ -122,6 +125,8 @@ impl Rsz {
             file.read_to_end(&mut data)?;
         };
         Ok(Rsz {
+            version,
+            offset: base as usize,
             roots,
             extern_slots,
             type_descriptors,
@@ -130,7 +135,7 @@ impl Rsz {
     }
 
 
-    pub fn deserializev2(&self, root_dir: Option<String>) -> Result<DeRsz> {
+    pub fn deserialize(&self) -> Result<DeRsz> {
         //println!("{:?}", &self.data[0..128]);
         let mut cursor = Cursor::new(&self.data);
         let mut structs: Vec<RszValue> = Vec::new();
@@ -145,21 +150,6 @@ impl Rsz {
                 let x = struct_type.to_value(x);
                 structs.push(x);
                 extern_idxs.insert(i as u32);
-                /*
-                eprintln!("{:?}", slot_extern.path);
-                if slot_extern.hash != hash {
-                    return Err(format!("Extern hash mismatch").into())
-                }
-                let real_path = PathBuf::from(root_dir.clone().unwrap_or("/".to_string()));
-                let mut real_path = real_path.join("natives/stm").join(&slot_extern.path.to_lowercase());
-                real_path.set_extension("user.3");
-                eprintln!("{real_path:?}");
-                let file = File::open(&real_path)?;
-                let extern_rsz = Box::new(User::new(&file)?.rsz);
-                let dersz = Box::new(extern_rsz.deserializev2(root_dir.clone())?);
-                structs.push(Box::new(dersz.roots[0].clone()));
-                //node_buf.push(NodeSlot::Extern(slot_extern.path.clone()));
-                println!("{:?}", node_buf);*/
                 continue;
             } else {
                 // check for object index and return that too
@@ -174,12 +164,6 @@ impl Rsz {
                 None => eprintln!("Could not find root {}", root),
                 Some(obj) => {
                     roots.push(obj.clone());
-                    /*match obj {
-                        RszSlot::None => todo!(),
-                        RszSlot::Extern(_) => todo!(),
-                        RszSlot::Intern(rsz_struct) => roots.push(rsz_struct.to_owned()),
-                    }*/
-                    
                 }
             }
         }
@@ -194,65 +178,130 @@ impl Rsz {
         }
 
         Ok(DeRsz {
+            offset: self.offset,
             roots: self.roots.clone(),
             structs,
             extern_idxs,
         })
     }
-}
 
+    pub fn save_from_json(&self, file: &str) -> Result<()> {
+        let data = self.to_buf(0)?;
+        let mut file = File::create(file)?;
+        file.write_all(&data)?;
+        Ok(())
+    }
 
-#[derive(Debug, Serialize, Clone)]
-#[allow(dead_code)]
-pub enum ExternUser<T> {
-    Path(String),
-    Loaded(T),
-}
+    pub fn from_json_file(file: &str) -> Result<Rsz> {
+        let data = std::fs::read_to_string(file)?;
+        let json_data: serde_json::Value = serde_json::from_str(&data).unwrap();
+        let rsz: Rsz = Rsz::from_json(&json_data)?; 
+        Ok(rsz)
+    }
 
-/*impl<T: FromUser> ExternUser<T> {
-    pub fn load<'a>(
-        &'a mut self,
-        pak: &'_ mut crate::pak::PakReader<impl Read + Seek>,
-        version_hint: Option<u32>,
-    ) -> Result<&'a mut T> {
-        match self {
-            ExternUser::Path(path) => {
-                let index = pak.find_file(path)?;
-                let file = pak.read_file(index)?;
-                let user = crate::user::User::new(Cursor::new(file))?;
-                *self = ExternUser::Loaded(user.rsz.deserialize_single(version_hint)?);
-                if let ExternUser::Loaded(t) = self {
-                    Ok(t)
-                } else {
-                    unreachable!()
+    pub fn from_json(value: &serde_json::Value) -> Result<Rsz> {
+        assert!(value.is_array(), "Value should be array");
+        //let mut root_structs = vec![];
+        let version = match value.get("version") {
+            None => 0x10,
+            Some(value) => value.as_u64().unwrap_or_else(|| 0x10),
+        } as u32;
+        let base_addr = match value.get("offset") {
+            None => 0x0,
+            Some(value) => value.as_u64().unwrap_or_else(|| 0x0),
+        } as usize;
+        let mut objects: Vec<RszValue> = vec![];
+        let mut type_descriptors: Vec<TypeDescriptor> = vec![];
+        type_descriptors.push(TypeDescriptor{hash: 0, crc: 0});
+        let mut roots: Vec<u32> = vec![];
+        for root in value.as_array().unwrap() {
+            let r#type = root.get("type");
+            match r#type {
+                None => return Err(format!("Missing type information").into()),
+                Some(type_info) => {
+                    println!("{}", type_info.as_str().unwrap());
+                    let type_name = type_info.as_str().unwrap().to_string();
+                    let hash = RszDump::name_map().get(&type_name).unwrap();
+                    let rsz_type = RszDump::rsz_map().get(hash).unwrap();
+                    println!("Found Root with type {:?}", rsz_type);
+                    let rsz_json = root.get("rsz");
+                    match rsz_json {
+                        None => return Err(format!("Missing rsz json").into()),
+                        Some(rsz_json) => {
+                            let x = RszDump::parse_struct_from_json(rsz_json, *hash, &mut objects)?;
+                            objects.push(x);
+                            roots.push(objects.len() as u32);
+                        }
+                    }
+
                 }
             }
-            ExternUser::Loaded(t) => Ok(t),
         }
-    }
-
-    pub fn unwrap(&self) -> &T {
-        match self {
-            ExternUser::Path(_) => {
-                panic!("ExternUser not loaded")
-            }
-            ExternUser::Loaded(t) => t,
+        let mut data = vec![];
+        for object in &objects {
+            let hash = object.hash().unwrap();
+            type_descriptors.push(TypeDescriptor{hash: *hash, crc: object.crc});
+            data.extend(object.to_buffer(base_addr + data.len())?);
         }
+        //println!("{:#?}", objects);
+        Ok(Rsz {
+            version,
+            offset: base_addr,
+            roots,
+            extern_slots: HashMap::new(), // FIGURE THIS OUT IG, MAYBE JUST IF ERROR TRY EXTERN
+                                          // THINGY, OR MAKE IT SO THAT IF IT'S ORGINALLY EXTERN,
+                                          // HAS TO STAY EXTERN
+            type_descriptors,
+            data,
+        })
     }
-}*/
 
-/*impl<T> FieldFromRsz for ExternUser<T> {
-    fn field_from_rsz(rsz: &mut RszDeserializer) -> Result<Self> {
-        rsz.cursor.seek_align_up(4)?;
-        let extern_path = rsz.get_extern()?.to_owned();
-        Ok(ExternUser::Path(extern_path))
-    }
-}*/
+    pub fn to_buf(&self, _start_addr: usize) -> Result<Vec<u8>> {
+        let mut buf = vec![];
+        buf.write_all(b"RSZ\0")?;
+        buf.write_u32::<LittleEndian>(self.version)?;
+        buf.write_u32::<LittleEndian>(self.roots.len() as u32)?;
+        buf.write_u32::<LittleEndian>(self.type_descriptors.len() as u32)?;
+        buf.write_u32::<LittleEndian>(self.extern_slots.len() as u32)?;
+        buf.write_all(&[0; 4])?;
+        let type_descriptor_offset = buf.len() + self.roots.len() * size_of::<u32>() + 3 * size_of::<u64>();
 
-/*impl<T> FieldFromRsz for Option<ExternUser<T>> {
-    fn field_from_rsz(rsz: &mut RszDeserializer) -> Result<Self> {
-        rsz.cursor.seek_align_up(4)?;
-        let extern_path = rsz.get_extern_opt()?;
-        Ok(extern_path.map(|p| ExternUser::Path(p.to_owned())))
+        let mut extern_offset = type_descriptor_offset + self.type_descriptors.len() * size_of::<u64>();
+        if extern_offset % 16 != 0 { extern_offset += 16 - extern_offset % 16; }
+        let mut data_offset = extern_offset + self.extern_slots.len() * size_of::<u32>();
+        if data_offset % 16 != 0 { data_offset += 16 - data_offset % 16; }
+
+        println!("{:x}, {:x}, {:x}, {:x}", type_descriptor_offset, extern_offset, data_offset, _start_addr);
+        buf.write_u64::<LittleEndian>(type_descriptor_offset as u64)?;
+        buf.write_u64::<LittleEndian>(data_offset as u64)?;
+        buf.write_u64::<LittleEndian>(extern_offset as u64)?;
+        for root in &self.roots {
+            buf.write_u32::<LittleEndian>(*root)?;
+        }
+        if buf.len() != type_descriptor_offset {
+            //println!("here\n");
+            buf.extend(vec![0; buf.len() - type_descriptor_offset as usize]);
+        }
+        for descriptor in &self.type_descriptors {
+            buf.write_u32::<LittleEndian>(descriptor.hash)?;
+            buf.write_u32::<LittleEndian>(descriptor.crc)?;
+        }
+        println!("{}", buf.len());
+        if buf.len() != extern_offset {
+            buf.extend(vec![0; extern_offset as usize - buf.len()]);
+        }
+        println!("{}", size_of::<u32>());
+        // Figure this out
+        //for extern in &self.extern_slots {
+        //    buf.write_u32::<LittleEndian>(descriptor.hash)?;
+        //    buf.write_u32::<LittleEndian>(descriptor.crc)?;
+        //}
+        if buf.len() != data_offset {
+            println!("{}, {}", buf.len(), data_offset);
+            buf.extend(vec![0; data_offset as usize - buf.len()]);
+        }
+        buf.extend(&self.data);
+        Ok(buf)
     }
-}*/
+}
+

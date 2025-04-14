@@ -1,6 +1,12 @@
+use byteorder::LittleEndian;
+use byteorder::WriteBytesExt;
+use serde::Deserialize;
+
 use crate::file_ext::*;
 use crate::rsz::*;
 use crate::reerr::{Result, FileParseError::*};
+use std::fs::File;
+use std::io::Write;
 use std::io::{Read, Seek};
 
 #[allow(dead_code)]
@@ -91,6 +97,54 @@ impl User {
             rsz,
         })
     }
+    
+    pub fn to_buf(&self) -> Result<Vec<u8>> {
+
+        let mut buf = vec![];
+        buf.write_all(b"USR\0")?;
+        buf.write_u32::<LittleEndian>(self.resource_names.len() as u32)?;
+        buf.write_u32::<LittleEndian>(self.children.len() as u32)?;
+        buf.write_all(&[0; 4])?;
+        let resource_list_offset = buf.len() + size_of::<u64>() * 4;
+        // this has to be aligned by 16 likely
+        let child_list_offset = resource_list_offset + self.resource_names.len() * size_of::<u64>();
+        // this has to be aligned by 16 likely
+        let rsz_offset = child_list_offset + self.children.len() * (size_of::<u32>() * 2 + size_of::<u64>());
+        let rsz_buf = self.rsz.to_buf(rsz_offset)?;
+        buf.write_u64::<LittleEndian>(resource_list_offset as u64)?;
+        buf.write_u64::<LittleEndian>(child_list_offset as u64)?;
+        buf.write_u64::<LittleEndian>(rsz_offset as u64)?;
+        buf.write_u64::<LittleEndian>(0)?;
+        //buf.write_u64::<LittleEndian>(rsz_offset_cap as u64)?;
+        for child in &self.children {
+            buf.write_u32::<LittleEndian>(child.hash)?;
+            buf.write_all(&[0; 4])?;
+            buf.write_u64::<LittleEndian>(0)?;
+            // figure out where to put the string tables
+        }
+
+        buf.extend(rsz_buf);
+        Ok(buf)
+    }
+
+    pub fn save_from_json(&self, file: &str) -> Result<()> {
+        let data = self.to_buf()?;
+        let mut file = File::create(file)?;
+        file.write_all(&data)?;
+        Ok(())
+    }
+
+    pub fn from_json_file(file: &str) -> Result<User> {
+        let data = std::fs::read_to_string(file)?;
+        let json_data: serde_json::Value = serde_json::from_str(&data).unwrap();
+        let rsz: Rsz = Rsz::from_json(&json_data)?; 
+        Ok(User {
+            resource_names: vec![],
+            children: vec![],
+            rsz
+        })
+    }
 }
+
 
 
