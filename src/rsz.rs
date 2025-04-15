@@ -114,13 +114,28 @@ impl Rsz {
             })
             .collect::<Result<HashMap<u32, Extern>>>()?;
         //println!("{extern_slots:?}");
-        //println!("{}", base + data_offset);
         //file.seek(SeekFrom::Start(base + data_offset))?;
         file.seek_assert_align_up(base + data_offset, 16)?;
         let mut data: Vec<u8> = vec![];
         if cap != 0 {
-            data = vec![0u8; cap as usize - file.tell()? as usize];
-            file.read_exact(&mut data)?
+            let len = (cap) as usize - (base + data_offset) as usize;
+            let current_pos = file.seek(SeekFrom::Current(0))?;
+            let total_size = file.seek(SeekFrom::End(0))?;
+            file.seek(SeekFrom::Start(base + data_offset))?;
+            let remaining = (total_size - current_pos) as usize;
+            if len as u64 > remaining as u64 {
+                println!("[WARNING] adding extra bytes to end of RSZ");
+                data = vec![0u8; remaining];
+            }
+            else {
+                data = vec![0u8; len];
+            }
+            file.read_exact(&mut data)?;
+
+            // add some extra bytes in case
+            if len as u64 > remaining as u64 {
+                data.extend(vec![0; len - remaining]);
+            }
         } else {
             file.read_to_end(&mut data)?;
         };
@@ -136,7 +151,6 @@ impl Rsz {
 
 
     pub fn deserialize(&self) -> Result<DeRsz> {
-        //println!("{:?}", &self.data[0..128]);
         let mut cursor = Cursor::new(&self.data);
         let mut structs: Vec<RszValue> = Vec::new();
         let mut extern_idxs: HashSet<u32> = HashSet::new();
@@ -154,6 +168,7 @@ impl Rsz {
             } else {
                 // check for object index and return that too
                 let something = RszDump::parse_struct(&mut cursor, TypeDescriptor{hash, crc})?;
+                //println!("{something:?}");
                 structs.push(something);
             }
         }

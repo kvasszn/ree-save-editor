@@ -1,0 +1,96 @@
+//------------------------------------------------
+//--- 010 Editor v15.0.1 Binary Template
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+// File Mask: pog.*
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+LittleEndian();
+
+struct Vec4f {
+    float x;
+    float y;
+    float z;
+    float w;
+};
+
+struct Vec4i {
+    int x;
+    int y;
+    int z;
+    int w;
+};
+
+struct Pair {
+    uint32 p;
+    float v;
+};
+
+struct Point2 {
+    Pair pairs[3];
+};
+struct Point {
+    Vec4f a;
+    Vec4f b;
+    Vec4i c;
+};
+
+
+
+// File header
+struct POG_HEADER {
+    char magic[4];     // Signature, e.g. "POG\0"
+    uint32 version;
+    uint64 hash1;
+    uint32 num_unks;
+    uint32 num_nodes;
+    uint64 hash2;
+    uint64 unk_offset;
+    uint64 weights_offset;
+    uint64 points_offset;
+    uint64 rsz_start1;
+    uint64 rsz_end1;
+    uint64 rsz_start2;
+    uint64 rsz_end2;
+
+} header;
+
+struct GraphData {
+    local int offset = 0;
+    local int i = 0;
+    for(i = 0; i < header.num_nodes; i++) {
+        FSeek(header.weights_offset + offset);
+        struct NodeData {
+            uint32 i;
+            uint32 k; // this is dumb
+            //FSeek(header.weights_offset + offset);
+            uint64 lvar5;
+            if (lvar5 != 0) {
+                FSeek(lvar5); // this might be + 8
+                uint32 v;
+                float w;
+            }
+            offset += 0x10;  
+        } node;
+    } 
+} graph;
+
+struct PointData {
+    if (header.points_offset != 0) {
+        FSeek(header.points_offset);
+    
+        local int i = 0;
+        uint64 num_points;
+        uint64 data_offset;
+        FSeek(data_offset);
+        for(i = 0; i < num_points; i++) {
+            Point point;
+        }
+    }
+} points;

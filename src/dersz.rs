@@ -71,7 +71,7 @@ pub enum RszType {
     Struct(RszStruct<RszType>),
     Enum(Box<RszType>, String),
     OBB,
-    Data(Vec<u8>),
+    Data(Vec<u8>, Option<String>, Option<u32>, Option<f32>),
 
     Nullable(Box<Option<RszType>>, String, String, String, String),
 }
@@ -251,7 +251,27 @@ impl RszType {
                 for _ in 0..field.size {
                     v.push(data.read_u8()?);
                 }
-                RszType::Data(v)
+
+                // try to interpret as string, float, and u32, see what works
+                let float = if field.size == 4 {
+                    v.get(0..4).and_then(|slice| {
+                        let array: [u8; 4] = slice.try_into().ok()?;
+                        Some(f32::from_le_bytes(array))
+                    })
+                } else {
+                    None
+                };
+
+                let uint32 = if field.size == 4 {
+                    v.get(0..4).and_then(|slice| {
+                        let array: [u8; 4] = slice.try_into().ok()?;
+                        Some(u32::from_le_bytes(array))
+                    })
+                } else {
+                    None
+                };
+                RszType::Data(v, None, uint32, float)
+                //RszType::Data(v, None, None, None)
             },
             "AABB" => {
                 RszType::AABB((data.read_f32()?, data.read_f32()?, data.read_f32()?, data.read_f32()?,
@@ -473,7 +493,7 @@ impl RszType {
             "Mat4" => RszType::Mat4x4(serde_json::from_value(data.clone())?),
             "Range" => RszType::Range(serde_json::from_value(data.clone())?),
             "RangeI" => RszType::RangeI(serde_json::from_value(data.clone())?),
-            "Data" => RszType::Data(serde_json::from_value(data.clone())?),
+            "Data" => RszType::Data(serde_json::from_value(data.clone())?, None, None, None),
             "AABB" => RszType::AABB(serde_json::from_value(data.clone())?),
             "Capsule" => RszType::Capsule(serde_json::from_value(data.clone())?),
             "Rect" => RszType::Rect(serde_json::from_value(data.clone())?),
@@ -752,7 +772,7 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
                     }
                 }
             },
-            RszType::Data(val) => {
+            RszType::Data(val, _, _, _) => {
                 val.serialize(serializer)
             },
             Enum(underlying, name) => {

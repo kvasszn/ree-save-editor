@@ -9,22 +9,28 @@ use serde::Serialize;
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Pog {
-    magic: [u8; 4],
     version: u32,
-    hash: u64,
-    num_points: u32,
-    entry_offset: u64,
+    hash1: u64,
+    hash2: u64,
     pub points: Vec<PogPoint>,
+    pub nodes: Vec<PogNode>,
     pub rszs: Vec<Rsz>,
     // other rsz stuff
 }
 
 #[derive(Debug, Serialize)]
 pub struct PogPoint {
-    //a: (u32, u32, u32, u32),
     a: Vec4,
-    b: Vec4, //(u32, u32, u32, u32),
+    b: Vec4,
     c: (i32, i32, i32, i32),
+}
+
+#[derive(Debug, Serialize)]
+pub struct PogNode {
+    x: u32,
+    y: u32,
+    z: u32,
+    w: f32,
 }
 
 impl Pog {
@@ -39,68 +45,86 @@ impl Pog {
         }
 
         let version = file.read_u32()?;
-        let hash = file.read_u64()?;
-        let unk1 = file.read_u32()?;
-        println!("{unk1:?}");
-        let num_points = file.read_u32()?;
-        let struct_type_offset = file.read_u64()?;
-        let _ = file.read_u64()?;
-        let entry_offset = file.read_u64()?;
-        let _ = file.read_u64()?;
-        println!("{}, {:x}, {}, {:x}", version, hash, num_points, struct_type_offset);
 
-        let mut rsz_offsets = vec![];
-        for _i in 0..2 {
-            rsz_offsets.push((file.read_u64()?, file.read_u64()?));
-        }
-        println!("rsz_offsets: {rsz_offsets:?}");
-        if version == 10 {
+        let hash1 = file.read_u64()?;
+        let num_unks = file.read_u32()?;
+        let num_nodes = file.read_u32()?;
+
+        let hash2 = file.read_u64()?;
+        let unk_offset = file.read_u64()?;
+        let nodes_offset = file.read_u64()?;
+        let points_offset = file.read_u64()?;
+        let rsz_start1 = file.read_u64()?;
+        let rsz_end1 = file.read_u64()?;
+        let rsz_start2 = file.read_u64()?;
+        let rsz_end2 = file.read_u64()?;
+
+        //println!("{}, {:x}, {}, {:x}", version, hash, num_points2, struct_type_offset);
+        /*if version == 10 { // there was some string stuff in version 10, which was used in OBT
             file.seek(std::io::SeekFrom::Start(struct_type_offset))?;
             let struct_type = file.read_u16str()?;
+        }*/
+        //println!("{}, {}", rsz_start1, rsz_start2);
+        let mut nodes = Vec::with_capacity(num_nodes as usize);
+        if nodes_offset != 0 {
+            file.seek(std::io::SeekFrom::Start(nodes_offset.into()))?;
+            for _i in 0..num_nodes {
+                let x = file.read_u32()?;
+                let y = file.read_u32()?;
+                let offset = file.read_u64()?;
+
+                if offset == 0 {
+                    //file.seek(std::io::SeekFrom::Current(0x10))?;
+                    continue;
+                }
+                let tmp = file.tell()?;
+                file.seek(std::io::SeekFrom::Start(offset.into()))?;
+                let z = file.read_u32()?;
+                let w = file.read_f32()?;
+                file.seek(std::io::SeekFrom::Start(tmp.into()))?;
+                nodes.push(PogNode {
+                    x,
+                    y,
+                    z,
+                    w
+                })
+            }
         }
 
-        file.seek(std::io::SeekFrom::Start(entry_offset.into()))?;
-        let mut points: Vec<PogPoint> = Vec::with_capacity(num_points as usize);
-        let mut point_idxs: Vec<u64> = Vec::with_capacity(num_points as usize);
-        for _i in 0..num_points {
-            let _idx = file.read_u64()?;
-            //let _ = file.read_u64()?;
-            point_idxs.push(_idx);
-        }
-        println!("{point_idxs:?}");
-        if version >= 12 {
-            println!("{:x}", file.tell()?);
-            let points_start = file.read_u64()?;
-            //let _ = file.read_u64()?;
-            //let _ = file.read_u64()?;
-            println!("{points_start:x}");
-            file.seek(std::io::SeekFrom::Start(points_start.into()))?;
+        let points = if points_offset != 0 {
+            file.seek(std::io::SeekFrom::Start(points_offset.into()))?;
+            let num_points = file.read_u64()?;
+            let data_offset = file.read_u64()?;
+            file.seek(std::io::SeekFrom::Start(data_offset.into()))?;
+
+            let mut points = Vec::with_capacity(num_points as usize);
             for _i in 0..num_points {
-                //let a = (file.read_u32()?, file.read_u32()?, file.read_u32()?, file.read_u32()?);
-                let a = file.read_f32vec4()?;
-                let b = file.read_f32vec4()?;
-                //let b = (file.read_u32()?, file.read_u32()?, file.read_u32()?, file.read_u32()?);
-                //let c = (file.read_u32()?, file.read_u32()?, file.read_u32()?, file.read_u32()?);
-                let c = (file.read_i32()?, file.read_i32()?, file.read_i32()?, file.read_i32()?);
-                points.push(PogPoint { a, b, c });
+                let point = PogPoint {
+                    a: file.read_f32vec4()?,
+                    b: file.read_f32vec4()?,
+                    c: (file.read_i32()?, file.read_i32()?, file.read_i32()?, file.read_i32()?),
+                };
+                points.push(point);
             }
-
-        }
-
+            points
+        } else {
+            vec![]
+        };
         let mut rszs = vec![];
-        for (off, cap) in rsz_offsets {
-            if off != 0 {
-                rszs.push(Rsz::new(&mut file, off, cap)?);
-            }
+        if rsz_start1 != 0 && rsz_end1 > rsz_start1 {
+            rszs.push(Rsz::new(&mut file, rsz_start1, rsz_end1)?);
         }
+        if rsz_start2 != 0 && rsz_end2 > rsz_start2 {
+            rszs.push(Rsz::new(&mut file, rsz_start2, rsz_end2)?);
+        }
+
 
         Ok(Pog {
-            magic,
             version,
-            hash,
-            num_points,
-            entry_offset,
+            hash1,
+            hash2,
             points,
+            nodes,
             rszs,
         })
     }

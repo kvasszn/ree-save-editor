@@ -15,11 +15,11 @@ mod scn;
 
 extern crate image;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use dersz::{DeRsz, ENUM_FILE, RSZ_FILE};
 use font::Oft;
 use msg::Msg;
-use pog::{Pog, PogList, PogPoint};
+use pog::{Pog, PogList, PogPoint, PogNode};
 use rsz::Rsz;
 use scn::Scn;
 use serde::Serialize;
@@ -34,6 +34,7 @@ use user::User;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Parser, Debug)]
+#[command(name = "mhtame")]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(short('f'), long)]
@@ -268,11 +269,13 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             #[derive(Serialize)]
             struct Wrapped {
                 points: Vec<PogPoint>,
-                nodes: Vec<DeRsz>,
+                graph: Vec<PogNode>,
+                nodes: Vec<DeRsz>,// confusing
             }
 
             let json_res = serde_json::to_string_pretty(&Wrapped {
                 points: pog.points,
+                graph: pog.nodes,
                 nodes,
             }); 
             return match json_res {
@@ -359,10 +362,11 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
                 continue
             }
         };
-        eprintln!("Dumping File: {file_path:?}");
+        //eprintln!("Dumping File: {file_path:?}");
         match dump_file(root_dir.clone(), file_path.clone(), output_path.clone()) {
             Ok(()) => (),
             Err(e) => {
+                println!("[ERROR] File {:?}", &output_path);
                 eprintln!("[ERROR] Error dumping file {e} \n\t{:?}\n\t{:?}", file_path, output_path);
                 continue
             }
@@ -406,7 +410,10 @@ fn main() -> Result<()> {
                 let (file_path, output_path) = construct_paths(file_name.clone(), args.root_dir.clone(), args.out_dir.clone(), args.preserve)?;
                 dump_file(args.root_dir, file_path, output_path)?;
             },
-            None => println!("Must provide file name"),
+            None => {
+                println!("Please provide a file or list");
+                Args::command().print_help().unwrap()
+            },
         }
     }
     println!("Time taken: {} ms", now.elapsed().unwrap().as_millis());
