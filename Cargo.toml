@@ -32,4 +32,7 @@ nalgebra = "*"
 uuid = "1.11.0"
 libdeflater = {git = "https://github.com/c-ola/libdeflater.git", branch = "master" }
 indexmap = { version = "2.7.0", features = ["serde"] }
+quote = "1.0.40"
+syn = "2.0.100"
+proc-macro2 = "1.0.94"
 #libdeflater = {path = "../libdeflater"}

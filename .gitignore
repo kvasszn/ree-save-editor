@@ -2,3 +2,6 @@
 /outputs/*
 /misc
 /mods
+/gen/sdk/src
+/gen/sdk/target
+/gen/target

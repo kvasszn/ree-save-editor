@@ -3,13 +3,16 @@ use std::{
     collections::{HashMap, HashSet}, i128, io::{Read, Seek, Write}, str::FromStr, sync::OnceLock
 };
 
-use crate::file_ext::*;
+use crate::{file_ext::*, gen, rsz::Rsz};
 
 pub static RSZ_FILE: OnceLock<String> = OnceLock::new();
 pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
 
 use nalgebra_glm::{Mat4x4, Vec2, Vec3, Vec4};
+use proc_macro2::{Literal, TokenStream};
+use quote::{format_ident, quote};
 use serde::{ser::{SerializeSeq, SerializeStruct}, Deserialize, Serialize};
+use syn::{buffer::TokenBuffer, token::Enum};
 use uuid::Uuid;
 use crate::rsz::TypeDescriptor;
 use crate::reerr::{Result, FileParseError::*};
@@ -871,6 +874,18 @@ pub struct RszField {
     r#type: String,
 }
 
+impl RszField {
+    pub fn get_type(&self) -> Option<&RszStruct<RszField>> {
+        match RszDump::name_map().get(&self.original_type) {
+            Some(x) => RszDump::rsz_map().get(x),
+            None => None
+        }
+    }
+    pub fn get_type_hash(&self) -> Option<&u32> {
+        RszDump::name_map().get(&self.original_type)
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct RszStruct<T> {
@@ -885,6 +900,89 @@ impl<T> RszStruct<T> {
     }
 }
 
+pub fn get_generics(s: &str) -> (String, Vec<String>) {
+    if s.contains("[[") {
+        let x: Vec<&str> = s.split('[').collect();
+        return (x[0].to_string(), vec![])
+    }
+    if let Some((name, generics_raw)) = s.split_once("<") {
+        let generics_raw = generics_raw.strip_suffix(">").unwrap();
+        let generics: Vec<String> = generics_raw.split(",").map(|s| s.to_string()).collect();
+        return (name.replace("`2", "").replace("`1", ""), generics)
+    }
+    return (s.to_string(), vec![])
+}
+
+impl RszField {
+    pub fn gen_field(&self, is_last: bool, parent: &RszStruct<RszField>, enum_name: Option<String>) -> (Option<&u32>, TokenStream, String) {
+        let name = if self.original_type == "ace.user_data.ExcelUserData.cData"{
+            parent.name.clone() + ".cData"
+        } else if let Some(enum_name) = enum_name {
+            enum_name
+        } else {
+            self.original_type.clone()
+        };
+        let (name, generics) = get_generics(&name);
+        let parts: Vec<_> = name.split(".").collect();
+        let parent: Vec<_> = parent.name.split(".").collect();
+        let split_index = parts.len().saturating_sub(2);
+
+        let mut inc = &parts[..=split_index];
+        if parent.last().unwrap() == inc.last().unwrap() {
+            inc = &inc[..inc.len()-1]
+        }
+        let field_type = &parts[split_index..];
+
+        let mut inc = inc.join("::").to_lowercase().replace("crate::", "crate_::");
+        if inc == "" {
+            inc = field_type[0].to_lowercase();
+        }
+        let mut field_type = if field_type.len() > 1 {
+            let mut x = field_type[0].to_lowercase() + "::" + field_type[1];
+            if generics.len() > 0 {
+                let ext = generics.join("_").replace("::", "");
+                x = format!("{}_{}", x, ext).replace(".", "_");
+            }
+            x
+        } else {
+            self.r#type.clone()
+        }.replace("crate", "crate_");
+        //println!("{:?}, {:?}, {:?}", parent, inc, field_type);
+
+        if self.array {
+            if field_type.contains("cEntry") {
+                println!("{self:?}, {}, {:?}", name, generics);
+            }
+            field_type = format!("Vec<{}>", field_type);
+        }
+        let name = if self.name == "type" {
+            "r#type"
+        } else {
+            &self.name
+        };
+        let name = format_ident!("{}", name);
+        let dep = self.get_type_hash();
+        if dep.is_none() {
+            panic!("{:?}", self);
+        }
+        if self.native {
+
+        }
+
+        //println!("{}, {}, {}, {}", self.original_type, self.name, inc, field_type);
+        let field_type: syn::Path = match syn::parse_str(&field_type) {
+            Ok(x) => x,
+            Err(_) => return (None, quote!{}, "".to_string())
+        };
+        let tokens = if is_last {
+            quote! { pub #name: #field_type }
+        } else {
+            quote! { pub #name: #field_type, }
+        };
+        (dep, tokens, inc)
+    }
+}
+
 impl RszStruct<RszField> {
     pub fn to_value(&self, r#type: RszType) -> RszValue {
         RszStruct {
@@ -892,6 +990,155 @@ impl RszStruct<RszField> {
             crc: self.crc,
             fields: vec![r#type]
         }
+    }
+    
+    pub fn gen_enum(&self, enum_type: &HashMap<String, String>) -> Vec<TokenStream> {
+        struct EnumEntry<'a> {
+            name: &'a str,
+            val: &'a str,
+        }
+        let enums: Vec<TokenStream> = enum_type.iter().flat_map(|(k, v)| {
+            println!("{k:?}, {v:?}");
+            if let Ok(_v) = k.parse::<i64>() {
+                return None
+            }
+            let name = format_ident!("{k}");
+            let val = Literal::i64_unsuffixed(v.parse::<i64>().unwrap());
+            Some(quote!{
+                #name = #val,
+            })
+        }).collect();
+        enums
+    }
+
+    pub fn gen_struct(&self) -> (HashSet<u32>, TokenStream, HashSet<String>) {
+        let mut deps = HashSet::<u32>::new();
+        let mut includes = HashSet::<String>::new();
+        let tokens = match self.name.as_str() {
+            "via.vec4" => Some(quote!{ pub type vec4 = Vec4; }),
+            "via.vec3" => Some(quote!{ pub type vec3 = Vec3; }),
+            "via.vec2" => Some(quote!{ pub type vec2 = Vec2; }),
+            "via.mat4" => Some(quote!{ pub type mat4 = Mat4; }),
+            _ => None
+        };
+        //println!("\n{}", self.name);
+        let (name, generics) = get_generics(&self.name);
+            /*let mut generics = vec![];
+        match self.name.split_once("<") {
+            Some((_x, gens)) => {
+                let gens = gens.replace(">", "");
+                for generic in gens.split(",") {
+                    generics.push(generic.to_string())
+                }
+            },
+            None => {}
+        }*/
+        let name = if name != "" {
+            name.split(".").last().unwrap().to_string()
+        } else {
+            "".to_string()
+        };
+
+        if let Some(enum_type) = enum_map().get(&self.name) {
+            let name: syn::Path = syn::parse_str(&name).unwrap();
+            let enums = self.gen_enum(enum_type);
+            let tokens = quote!{
+                #[repr(i32)]
+                #[derive(Debug, serde::Deserialize)]
+                pub enum #name {
+                    #(#enums)*
+                }
+            };
+            return (deps, tokens, includes)
+        }
+        let enum_name = self.name.replace("_Serializable", "_Fixed");
+        let enum_type = enum_map().get(&enum_name);
+       // let enum_tokens = if let Some(enum_type) = enum_type {
+            if let Some(dep) = RszDump::name_map().get(&enum_name) {
+                deps.insert(*dep);
+            }
+          /*  let name: syn::Path = syn::parse_str(&name.replace("_Serializable", "_Fixed")).unwrap();
+            let enums = self.gen_enum(enum_type);
+            let tokens = quote!{
+                #[repr(i32)]
+                pub enum #name {
+                    #(#enums)*
+                }
+            };
+            tokens*/
+        //} else {quote!{}};
+
+        let fields: Vec<_> = self.fields.iter().enumerate().map(|(i, field)| {
+            let enum_name = if enum_type.is_some() {
+                Some(enum_name.clone())
+            } else {None};
+            let (dep, tokens, inc) = field.gen_field(i+1 == self.fields.len(), self, enum_name);
+            if let Some(dep) = dep {
+                deps.insert(*dep);
+            }
+            if inc != "" {
+                includes.insert(inc);
+            }
+            tokens
+        }).collect();
+
+
+        if let Some(tokens) = tokens {
+            return (deps, tokens, includes)
+        }
+        let (generics, ext) = if generics.len() > 0 {
+            let gens: Vec<_> = generics.iter().enumerate().map(|(i, g)| {
+                println!("{g:?}");
+                let g = g.replace(".", "::");
+                
+                let parts: Vec<_> = g.split("::").collect();
+                let parent: Vec<_> = self.name.split(".").collect();
+                let split_index = parts.len().saturating_sub(2);
+
+                let mut inc = &parts[..=split_index];
+                if parent.last().unwrap() == inc.last().unwrap() {
+                    inc = &inc[..inc.len()-1]
+                }
+                includes.insert(inc.join("::").to_lowercase());
+                let field_type = &parts[split_index..];
+                let field_type = field_type[0].to_lowercase() + "::" + field_type[1];
+
+                if let Some(hash) = RszDump::name_map().get(&g.replace("::", ".")) {
+                    deps.insert(*hash);
+                }
+                let g: syn::Path = syn::parse_str(&field_type).unwrap();
+                if i + 1 == generics.len() {
+                    quote!{#g}
+                } else {
+                    quote!{#g,}
+                }
+            }).collect();
+            let ext = generics.join("_").replace("::", "");
+            (gens, ext)
+        } else {
+            (vec![], "".to_string())
+        };
+        let tokens = if !generics.is_empty() {
+            let ext = format!("{}_{}", name, ext).replace(".", "_");
+            let name: syn::Path = syn::parse_str(&name).unwrap();
+            println!("{:?}", ext);
+            let name_ext: syn::Path = syn::parse_str(&ext).unwrap();
+            quote!{
+                pub type #name_ext = #name < #(#generics)* >;
+            }
+        } else if name != "" {
+            //println!("{name}");
+            let name: syn::Path = syn::parse_str(&name).unwrap();
+            quote!{
+                #[derive(Debug, serde::Deserialize)]
+                pub struct #name {
+                    #(#fields)*
+                }
+            }
+        } else {
+            quote!{}
+        };
+        (deps, tokens, includes)
     }
 }
 

@@ -1,4 +1,5 @@
 mod align;
+mod gen;
 mod reerr;
 mod bitfield;
 mod byte_reader;
@@ -16,13 +17,15 @@ mod scn;
 extern crate image;
 
 use clap::{CommandFactory, Parser};
-use dersz::{DeRsz, ENUM_FILE, RSZ_FILE};
+use dersz::{DeRsz, RszDump, ENUM_FILE, RSZ_FILE};
 use font::Oft;
+use gen::gen_sdk;
 use msg::Msg;
 use pog::{Pog, PogList, PogPoint, PogNode};
 use rsz::Rsz;
 use scn::Scn;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs::{self, read_to_string,File};
 use std::io::Write;
@@ -136,7 +139,8 @@ fn get_file_ext(file_name: String) -> Result<(FileType, bool)> {
     Ok((file_type, is_json))
 }
 
-fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf) -> Result<()> {
+fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf) -> Result<Option<HashSet<u32>>> {
+    let mut res = None;
     let file_name = match file_path.file_name() {
         Some(file_name) => file_name,
         None => {
@@ -145,7 +149,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
     };
     let (file_type, is_json )= get_file_ext(file_name.to_string_lossy().to_string())?;
     //println!("{:?}, {is_json}", file_type);
-    let res = match file_type {
+    let result: Result<Option<HashSet<u32>>> = match file_type {
         FileType::Msg(_v) => {
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
@@ -156,12 +160,15 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
             msg.save(&mut f);
             println!("Saved file");
-            Ok(())
+            Ok(None)
         },
         FileType::User(_v) => {
             return if !is_json {
                 let file = File::open(&file_path)?;
                 let rsz = User::new(file)?.rsz;
+                let types: HashSet<u32> = rsz.type_descriptors.iter().map(|t| t.hash).collect();
+                let res = Some(types.clone());
+                //gen_sdk(types.clone())?;
                 let nodes = rsz.deserialize()?;
                 let mut output_path = output_path.clone();
                 output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
@@ -173,7 +180,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                         let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
                         f.write_all(json.as_bytes())?;
                         println!("[INFO] Saved File {:?}", &output_path);
-                        Ok(())
+                        Ok(res)
                     },
                     Err(e) => {
                         Err(format!("File: {file_path:?}\nReason: {e}").into())
@@ -186,7 +193,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                 let _ = fs::create_dir_all(output_path.parent().unwrap())?;
                 user.save_from_json(&output_path.to_str().unwrap())?;
                 println!("{output_path:?}");
-                Ok(())
+                Ok(res)
             }
         },
         FileType::Rsz => {
@@ -204,7 +211,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                         let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
                         f.write_all(json.as_bytes())?;
                         println!("[INFO] Saved File {:?}", &output_path);
-                        Ok(())
+                        Ok(res)
                     },
                     Err(e) => {
                         Err(format!("File: {file_path:?}\nReason: {e}").into())
@@ -217,7 +224,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                 let _ = fs::create_dir_all(output_path.parent().unwrap())?;
                 rsz.save_from_json(&output_path.to_str().unwrap())?;
                 println!("{output_path:?}");
-                Ok(())
+                Ok(res)
             }
         },
 
@@ -235,7 +242,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                     let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
                     f.write_all(json.as_bytes())?;
                     println!("[INFO] Saved File {:?}", &output_path);
-                    Ok(())
+                    Ok(res)
                 },
                 Err(e) => {
                     Err(format!("File: {file_path:?}\nReason: {e}").into())
@@ -258,7 +265,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                 rgba.height,
                 image::ExtendedColorType::Rgba8,
             )?;
-            Ok(())
+            Ok(None)
         },
         FileType::Pog => {
             let file = File::open(file_path.clone())?;
@@ -284,7 +291,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                     let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
                     f.write_all(json.as_bytes())?;
                     println!("[INFO] Saved File {:?}", &output_path);
-                    Ok(())
+                    Ok(res)
                 },
                 Err(e) => {
                     Err(format!("File: {file_path:?}\nReason: {e}").into())
@@ -303,7 +310,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                     let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
                     f.write_all(json.as_bytes())?;
                     println!("[INFO] Saved File {:?}", &output_path);
-                    Ok(())
+                    Ok(res)
                 },
                 Err(e) => {
                     Err(format!("File: {file_path:?}\nReason: {e}").into())
@@ -319,11 +326,11 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
             f.write(&oft.data)?;
             println!("[INFO] Saved File {:?}", &output_path);
-            Ok(())
+            Ok(None)
         }
         FileType::Unknown => return Err(format!("Unknown File Type {file_name:?}").into()),
     };
-    res
+    result
 }
 
 #[allow(dead_code)]
@@ -353,6 +360,7 @@ fn find_files_with_extension(base_dir: PathBuf, extension: &str) -> Vec<PathBuf>
 fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Result<()> {
     let list = read_to_string(&list_file).expect("Could not open list file");
     let list: Vec<&str> = list.lines().collect();
+    let mut types: HashSet<u32> = HashSet::new();
     for file in list {
         let paths = construct_paths(file.to_string(), root_dir.clone(), out_dir.clone(), true);
         let (file_path, output_path) = match paths {
@@ -364,7 +372,11 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
         };
         //eprintln!("Dumping File: {file_path:?}");
         match dump_file(root_dir.clone(), file_path.clone(), output_path.clone()) {
-            Ok(()) => (),
+            Ok(res) => {
+                if let Some(res) = res {
+                    types.extend(res);
+                }
+            }
             Err(e) => {
                 println!("[ERROR] File {:?}", &output_path);
                 eprintln!("[ERROR] Error dumping file {e} \n\t{:?}\n\t{:?}", file_path, output_path);
@@ -372,6 +384,7 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
             }
         };
     }
+    gen_sdk(types)?;
     Ok(())
 }
 
