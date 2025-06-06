@@ -3,7 +3,7 @@ use std::{
     collections::{HashMap, HashSet}, i128, io::{Read, Seek, Write}, str::FromStr, sync::OnceLock
 };
 
-use crate::{file_ext::*, gen, rsz::Rsz};
+use crate::{file_ext::*, gen::{self, SdkComponent}, rsz::Rsz};
 
 pub static RSZ_FILE: OnceLock<String> = OnceLock::new();
 pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
@@ -922,6 +922,7 @@ impl RszField {
         } else {
             self.original_type.clone()
         };
+        let include_name = name.to_string();
         let (name, generics) = get_generics(&name);
         let parts: Vec<_> = name.split(".").collect();
         let parent: Vec<_> = parent.name.split(".").collect();
@@ -955,12 +956,12 @@ impl RszField {
             }
             field_type = format!("Vec<{}>", field_type);
         }
-        let name = if self.name == "type" {
+        let new_name = if self.name == "type" {
             "r#type"
         } else {
             &self.name
         };
-        let name = format_ident!("{}", name);
+        let new_name = format_ident!("{}", new_name);
         let dep = self.get_type_hash();
         if dep.is_none() {
             panic!("{:?}", self);
@@ -975,11 +976,11 @@ impl RszField {
             Err(_) => return (None, quote!{}, "".to_string())
         };
         let tokens = if is_last {
-            quote! { pub #name: #field_type }
+            quote! { pub #new_name: #field_type }
         } else {
-            quote! { pub #name: #field_type, }
+            quote! { pub #new_name: #field_type, }
         };
-        (dep, tokens, inc)
+        (dep, tokens, include_name)
     }
 }
 
@@ -1011,9 +1012,12 @@ impl RszStruct<RszField> {
         enums
     }
 
-    pub fn gen_struct(&self) -> (HashSet<u32>, TokenStream, HashSet<String>) {
-        let mut deps = HashSet::<u32>::new();
-        let mut includes = HashSet::<String>::new();
+    pub fn gen_struct(&self) -> Option<SdkComponent> {
+        if self.name == "" {
+            return None
+        }
+        println!("{}", self.name);
+        // clean this shit up probably maybe?? ye nah
         let tokens = match self.name.as_str() {
             "via.vec4" => Some(quote!{ pub type vec4 = Vec4; }),
             "via.vec3" => Some(quote!{ pub type vec3 = Vec3; }),
@@ -1021,26 +1025,27 @@ impl RszStruct<RszField> {
             "via.mat4" => Some(quote!{ pub type mat4 = Mat4; }),
             _ => None
         };
-        //println!("\n{}", self.name);
-        let (name, generics) = get_generics(&self.name);
-            /*let mut generics = vec![];
-        match self.name.split_once("<") {
-            Some((_x, gens)) => {
-                let gens = gens.replace(">", "");
-                for generic in gens.split(",") {
-                    generics.push(generic.to_string())
-                }
-            },
-            None => {}
-        }*/
-        let name = if name != "" {
-            name.split(".").last().unwrap().to_string()
-        } else {
-            "".to_string()
-        };
 
+        // have to replace the name "cRate" -> to cRate_ because it collides with the crate
+        // keyword, maybe add something that filters out keywords, yes probably good idea
+        // probably dont actually replace here, do it when generating things
+        let (struct_name, generics) = get_generics(&self.name);//.replace("cRate", "cRate_"));
+
+        let mut deps = HashSet::<u32>::new(); // the dependancies here are basically the same as
+                                              // includes, just hashes instead of full names
+                                              // might not be needed?
+        let mut includes = HashSet::<String>::new();
+        for generic in &generics {
+            includes.insert(generic.clone());
+        }
+        
+        if let Some(tokens) = tokens {
+            return Some(SdkComponent::new(struct_name, tokens, includes))
+        }
+
+        // if you're secretly an enum, deal with that shit
         if let Some(enum_type) = enum_map().get(&self.name) {
-            let name: syn::Path = syn::parse_str(&name).unwrap();
+            let name: syn::Path = syn::parse_str(&struct_name).unwrap();
             let enums = self.gen_enum(enum_type);
             let tokens = quote!{
                 #[repr(i32)]
@@ -1049,24 +1054,16 @@ impl RszStruct<RszField> {
                     #(#enums)*
                 }
             };
-            return (deps, tokens, includes)
+            return Some(SdkComponent::new(struct_name, tokens, includes));
         }
+
+        // if the enum is _Serializable, make the Fixed one a dependancy
         let enum_name = self.name.replace("_Serializable", "_Fixed");
         let enum_type = enum_map().get(&enum_name);
-       // let enum_tokens = if let Some(enum_type) = enum_type {
-            if let Some(dep) = RszDump::name_map().get(&enum_name) {
-                deps.insert(*dep);
-            }
-          /*  let name: syn::Path = syn::parse_str(&name.replace("_Serializable", "_Fixed")).unwrap();
-            let enums = self.gen_enum(enum_type);
-            let tokens = quote!{
-                #[repr(i32)]
-                pub enum #name {
-                    #(#enums)*
-                }
-            };
-            tokens*/
-        //} else {quote!{}};
+        if let Some(dep) = RszDump::name_map().get(&enum_name) {
+            deps.insert(*dep);
+            includes.insert(enum_name.clone());
+        }
 
         let fields: Vec<_> = self.fields.iter().enumerate().map(|(i, field)| {
             let enum_name = if enum_type.is_some() {
@@ -1077,20 +1074,17 @@ impl RszStruct<RszField> {
                 deps.insert(*dep);
             }
             if inc != "" {
+                //println!("\t{}", inc);
                 includes.insert(inc);
             }
             tokens
         }).collect();
 
-
-        if let Some(tokens) = tokens {
-            return (deps, tokens, includes)
-        }
+        // if there are generics, deal with them
         let (generics, ext) = if generics.len() > 0 {
             let gens: Vec<_> = generics.iter().enumerate().map(|(i, g)| {
                 println!("{g:?}");
                 let g = g.replace(".", "::");
-                
                 let parts: Vec<_> = g.split("::").collect();
                 let parent: Vec<_> = self.name.split(".").collect();
                 let split_index = parts.len().saturating_sub(2);
@@ -1119,16 +1113,17 @@ impl RszStruct<RszField> {
             (vec![], "".to_string())
         };
         let tokens = if !generics.is_empty() {
-            let ext = format!("{}_{}", name, ext).replace(".", "_");
-            let name: syn::Path = syn::parse_str(&name).unwrap();
-            println!("{:?}", ext);
+            let ext = format!("{}_{}", struct_name, ext).replace(".", "_");
+            let name: syn::Path = syn::parse_str(&struct_name).unwrap();
+            //println!("{:?}", ext);
             let name_ext: syn::Path = syn::parse_str(&ext).unwrap();
             quote!{
                 pub type #name_ext = #name < #(#generics)* >;
             }
-        } else if name != "" {
-            //println!("{name}");
-            let name: syn::Path = syn::parse_str(&name).unwrap();
+        } else if struct_name != "" {
+            //println!("{struct_name}");
+            let tmp: Vec<_> = self.name.split(".").collect();
+            let name: syn::Path = syn::parse_str(&tmp.last().unwrap()).unwrap();
             quote!{
                 #[derive(Debug, serde::Deserialize)]
                 pub struct #name {
@@ -1138,7 +1133,7 @@ impl RszStruct<RszField> {
         } else {
             quote!{}
         };
-        (deps, tokens, includes)
+        return Some(SdkComponent::new(struct_name, tokens, includes));
     }
 }
 

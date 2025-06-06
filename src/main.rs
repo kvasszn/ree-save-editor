@@ -19,7 +19,7 @@ extern crate image;
 use clap::{CommandFactory, Parser};
 use dersz::{DeRsz, RszDump, ENUM_FILE, RSZ_FILE};
 use font::Oft;
-use gen::gen_sdk;
+use gen::{Sdk, SdkFile};
 use msg::Msg;
 use pog::{Pog, PogList, PogPoint, PogNode};
 use rsz::Rsz;
@@ -384,7 +384,9 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
             }
         };
     }
-    gen_sdk(types)?;
+    let mut sdk = Sdk::new();
+    sdk.add_types(types)?;
+    sdk.write_files();
     Ok(())
 }
 
