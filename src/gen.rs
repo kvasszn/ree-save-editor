@@ -39,18 +39,30 @@ impl SdkFile {
     pub fn write(&self) {
         let mut path = PathBuf::from(SDK_BASE);
         path.push(&self.path);
+        //println!("path_created={path:?}");
         std::fs::create_dir_all(&path).unwrap();
-        let includes: Vec<_> = self.deps.iter().map(|s| {
-            let s = s.replace(".", "::").to_lowercase();
+
+        let submodules: Vec<_> = self.submodules.iter().map(|s| {
             let path: syn::Path = syn::parse_str(&s).unwrap();
             quote! {
-                use crate::#path;
+                pub mod #path;
             }
         }).collect();
+
         let structs: Vec<_> = self.structs.iter().map(|(k, v)| &v.tokens).collect();
-        let tokens = quote! {
-            #(#includes)*
-            #(#structs)*
+        let tokens = if self.name == "lib" {
+            quote! {
+                #![allow(unused, nonstandard_style)]
+                #(#submodules)*
+                #(#structs)*
+            }
+        } else {
+            quote! {
+                #![allow(unused, nonstandard_style)]
+                use crate::*;
+                #(#submodules)*
+                #(#structs)*
+            }
         };
         path.push(format!("{}.rs", self.name));
         let mut file = File::create(&path).unwrap();
@@ -80,19 +92,20 @@ impl SdkComponent {
             tokens
         }
     }
-    pub fn get_parent(&self) {
-
+    pub fn get_parent(&self) -> &str {
+        let tmp: Vec<_> = self.name.split(".").collect();
+        tmp[tmp.len() - 2]
     }
     pub fn get_path(&self) -> String {
         let tmp: Vec<_> = self.name.split(".").collect();
-        tmp[..tmp.len() - 1].join("/").to_lowercase()
+        tmp[..tmp.len() - 2].join("/").to_lowercase()
     }
     pub fn get_file_name(&self) -> String {
-        let tmp: Vec<_> = self.name.split(".").collect();
-        tmp.last().unwrap().to_lowercase()
+        self.get_parent().to_string().to_lowercase()
     }
     
 }
+
 
 impl Sdk {
     pub fn new() -> Sdk {
@@ -103,7 +116,6 @@ impl Sdk {
     }
     pub fn add_types(&mut self, types: HashSet<u32>) -> Result<()> {
         let mut structs = Vec::new();
-        
         let mut queue: VecDeque<u32> = types.into_iter().collect();
         while let Some(hash) = queue.pop_front() {
             // get the struct we're gonna look at
@@ -124,7 +136,10 @@ impl Sdk {
             //          ^^^ name                                ^^^generics, list, be careful,
             //          there technically can be generics within each part of the thing, handle
             //          that in get generics
-            if let Some(sdk_struct) = rsz_struct.gen_struct() {
+            if let Some((deps, sdk_struct)) = rsz_struct.gen_struct() {
+                for dep in deps {
+                    queue.push_back(dep);
+                }
                 structs.push(sdk_struct);
             }
         }
@@ -138,8 +153,9 @@ impl Sdk {
             let mut path_buf_dir = PathBuf::from(&path_name);
             path_buf_dir.push(&struct_file_name);
             let file_name = path_buf_rs.to_string_lossy().to_string();
+            println!("file: {}, {:?}, {:?}", file_name, path_buf_dir, struct_file_name);
             let sdk_file = match self.files.get_mut(&file_name) {
-         Some(sdk_file) => sdk_file,
+                Some(sdk_file) => sdk_file,
                 None => {
                     self.files.insert(file_name.clone(), SdkFile {
                         name: struct_file_name,
@@ -151,94 +167,211 @@ impl Sdk {
                     self.files.get_mut(&file_name).unwrap()
                 }
             };
+            println!("");
             sdk_file.add(sdk_struct);
         }
-
-        println!("{:#?}", self.files);
-        
-        /*println!("{:#?}", sdk);
-        for (path, (code, includes, _module, mods)) in sdk {
-            let mut path_buf = PathBuf::new();
-            path_buf.push(base);
-            path_buf.push(&path);
-            std::fs::create_dir_all(&path_buf.to_string_lossy().to_lowercase())?;
-            path_buf.set_extension("rs");
-            //println!("{path}");
-            let mods: Vec<_> = mods.iter().map(|f| {
-                let file: Vec<&str> = f.split(".").collect();
-                let mut _mod = file[0].to_lowercase();
-                //println!("{:?}", _mod);
-                let file: syn::Path = syn::parse_str(&_mod).unwrap();
-                quote! {
-                    pub mod #file;
-                }
-            }).collect();
-
-            let includes: Vec<_> = includes.into_iter().map(|s| {
-                //println!("{s}");
-                if s == "" {
-                    return quote!{}
-                }
-                let path: syn::Path = syn::parse_str(&s).unwrap();
-                quote! {
-                    use crate::#path;
-                }
-            }).collect();
-            let includes = quote!{
-                #(#includes)*
-            }.to_string();
-
-            let mods = quote! { #(#mods)* };
-            let mut file = File::create(&path_buf.to_string_lossy().to_lowercase())?;
-            file.write_all(format!("// {path}\n// auto generated using mhtame\n").as_bytes())?;
-            file.write_all("#![allow(non_snake_case, non_camel_case_types, unused_variables, dead_code, unused_imports)]\nuse crate::natives::*;\n".as_bytes())?;
-            file.write_all(mods.to_string().as_bytes())?;
-            file.write_all(includes.as_bytes())?;
-            file.write_all(code.as_bytes())?;
-        }*/
-
-        /*let mut file = File::create("gen/sdk/src/natives.rs")?;
         let type_defs = quote! {
-            use std::marker::PhantomData;
             pub type U8 = u8;
             pub type U16 = u16;
             pub type U32 = u32;
             pub type U64 = u64;
-            pub type I8 = i8;
-            pub type I16 = i16;
-            pub type I32 = i32;
-            pub type I64 = i64;
+            pub type S8 = i8;
+            pub type S16 = i16;
+            pub type S32 = i32;
+            pub type S64 = i64;
+            pub type F8 = u8;
+            pub type F16 = u16;
+            pub type F32 = f32;
+            pub type F64 = f64;
+            pub type Size = u64;
+            pub type Bool = bool;
+            pub type Guid = String;
+            pub type Float4 = [f32;4];
             pub type Vec4 = [f32;4];
             pub type Vec3 = [f32;3];
             pub type Vec2 = [f32;2];
             pub type Mat4 = [[f32;4];4];
             pub type Data = Vec<u8>;
-            pub struct Bitset<T> {
-                _marker: PhantomData<T>,
-                _Value: Vec<u32>,
-                _MaxElement: i32,
-            }
-            pub struct cItem<T, S> {
-                _Option: T,
-                _Value: S,
-            }
-            pub struct cEntry<T, S> {
-                _Key: T,
-                _Value: S,
-            }
-            pub struct cSetting<T, S> {
-                _Items: cItem<T, S>,
-            }
+            pub type Resource = String;
         };
-        let tokens = type_defs.to_string();
-        file.write_all(tokens.to_string().as_bytes())?;*/
-        //std::process::Command::new("rustfmt").arg(&"gen/sdk/src/lib.rs").status()?;
+        let mut lib_tokens = HashMap::new();
+        lib_tokens.insert("lib".to_string(), SdkComponent::new("lib".to_string(), type_defs, HashSet::new()));
+        self.files.insert("lib.rs".to_string(), SdkFile {
+            name: "lib".to_string(),
+            path: "".to_string(),
+            deps: HashSet::new(),
+            submodules: HashSet::new(),
+            structs: lib_tokens,
+        });
+
+        fn new_custom(struct_name: String, code: TokenStream) -> (String, String, String, SdkComponent) {
+            let sdk_struct = SdkComponent::new(struct_name.to_string(), code, HashSet::new());
+            let struct_file_name = sdk_struct.get_file_name();
+            let path_name = sdk_struct.get_path();
+            let mut path_buf_rs = PathBuf::from(&path_name);
+            path_buf_rs.push(struct_file_name.clone() + ".rs");
+            let mut path_buf_dir = PathBuf::from(&path_name);
+            path_buf_dir.push(&struct_file_name);
+            let file_name = path_buf_rs.to_string_lossy().to_string();
+            (file_name, struct_file_name, path_name, sdk_struct)
+        }
+        let customs = [
+            new_custom(
+                "app.user_data.OptionGraphicsData.cSetting".to_string(),
+                quote! {
+                    #[derive(Debug, serde::Deserialize)]
+                    pub struct cSetting<T, S> {
+                        pub _Items: cItem<T, S>,
+                    }
+                }
+            ),
+            new_custom(
+                "app.user_data.OptionDisplayData.cSetting".to_string(),
+                quote! {
+                    #[derive(Debug, serde::Deserialize)]
+                    pub struct cSetting<T, S> {
+                        pub _Items: cItem<T, S>,
+                    }
+                }
+            ),
+            new_custom(
+                "app.user_data.OptionGraphicsData.cItem".to_string(),
+                quote! {
+                    #[derive(Debug, serde::Deserialize)]
+                    pub struct cItem<T, S> {
+                        pub _Option: T,
+                        pub _Value: S,
+                    }
+                }
+            ),
+            new_custom(
+                "app.user_data.OptionDisplayData.cItem".to_string(),
+                quote! {
+                    #[derive(Debug, serde::Deserialize)]
+                    pub struct cItem<T, S> {
+                        pub _Option: T,
+                        pub _Value: S,
+                    }
+                }
+            ),
+            new_custom(
+                "ace.Bitset".to_string(),
+                quote! {
+                    #[derive(Debug, serde::Deserialize)]
+                    pub struct Bitset<T> {
+                        pub _Value: Vec<T>,
+                        pub _MaxElement: i32,
+                    }
+                },
+            ),
+            new_custom(
+                "app.user_data.CharacterEditGenderedThumbnails.cEntry".to_string(),
+                quote! {
+                    #[derive(Debug, serde :: Deserialize)]
+                    pub struct cEntry<T, S> {
+                        _marker: std::marker::PhantomData<S>,
+                        pub _Key: T,
+                        pub _Value: app::user_data::CharacterEditThumbnailTexturePairData,
+                    }
+                }
+            ),
+            new_custom(
+                "app.user_data.CharacterEditGenderedThumbnails.cEntry".to_string(),
+                quote! {
+                    #[derive(Debug, serde :: Deserialize)]
+                    pub struct cEntry<T, S> {
+                        _marker: std::marker::PhantomData<S>,
+                        pub _Key: T,
+                        pub _Value: app::user_data::CharacterEditThumbnailTexturePairData,
+                    }
+                }
+            ),
+            new_custom(
+                "app.user_data.CharacterEditThumbnails.cEntry".to_string(),
+                quote! {
+                    #[derive(Debug, serde :: Deserialize)]
+                    pub struct cEntry<T, S> {
+                        _marker: std::marker::PhantomData<S>,
+                        pub _Key: T,
+                        pub _Value: app::user_data::CharacterEditThumbnailTextureData,
+                    }
+                }
+            ),
+
+        ];
+
+        for (file, struct_name, path, comp) in customs {
+            match self.files.get_mut(&file) {
+                Some(file_store) => {
+                    file_store
+                },
+                None => {
+                    self.files.insert(file.to_string(), SdkFile {
+                        name: struct_name.to_string(),
+                        path: path.to_string(),
+                        deps: HashSet::new(),
+                        submodules: HashSet::new(),
+                        structs: HashMap::new(),
+                    });
+                    self.files.get_mut(&file).unwrap()
+                }
+            }.add(comp);
+        }
+
+        let paths: Vec<_> = self.files.iter().map(|(k, v)| (k.clone(), v.path.clone())).collect();
+
+        // the file must be added to the submodules of its parent, and its parent to its parent
+        // parent, etc
+        for (f, path) in paths {
+            let path_parts: Vec<_> = path.split("/").collect();
+            let base = path_parts[0].to_string();
+            if f != "lib.rs" && base != "" {
+                match self.files.get_mut("lib.rs") {
+                    Some(module_file) => {
+                        module_file.submodules.insert(base);
+                    },
+                    None => { }
+                }
+            }
+
+
+            //println!("\nfile {:?}, parts{:?}", f, path_parts);
+            for i in 0..path_parts.len() {
+                let module_name = path_parts[0..i + 1].join("/").to_string();
+                let module_file_path = module_name.clone() + ".rs";
+                let file_path_parts = f.strip_suffix(".rs").unwrap().split("/").collect::<Vec<_>>();
+                if file_path_parts.len() <= 1 {
+                    continue;
+                }
+                let submod = file_path_parts[i + 1].to_string();
+                match self.files.get_mut(&module_file_path) {
+                    Some(module_file) => {
+                        module_file.submodules.insert(submod.clone());
+                    },
+                    None => {
+                        self.files.insert(module_file_path.clone(), SdkFile {
+                            name: path_parts[i].to_string(),
+                            path: path_parts[0..i].join("/"),
+                            deps: HashSet::new(),
+                            submodules: HashSet::from([submod.clone()]),
+                            structs: HashMap::new(),
+                        });
+                    }
+                }
+
+
+            }
+        }
+
+        for file in &self.files {
+            println!("{}, {:?}", file.1.name, file.1.structs);
+        }
         Ok(())
     }
 
     pub fn write_files(&self) {
         for (path, file) in &self.files {
-            println!("{path}");
+            //println!("{path}");
             file.write();
         }
         std::process::Command::new("rustfmt").arg(&"gen/sdk/src/lib.rs").status().unwrap();
