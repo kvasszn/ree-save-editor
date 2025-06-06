@@ -72,7 +72,7 @@ macro_rules! csvd {
     ($s:ident, $self:ident, $field:ident, Guid) => {
         let x = match msg_map().msgs.get(&$self.$field) {
             None => "",
-            Some(msg) => &msg.content.English.replace("\r\n", " ").chars().flat_map(|c| c.escape_default()).collect::<String>()
+            Some(msg) => &msg.content.English.replace("\r\n", " ").replace("\"", "\"\"")//.chars().flat_map(|c| c.escape_default()).collect::<String>()
         };
         $s.push_str(&format!("\"{}\"", x));
     };
