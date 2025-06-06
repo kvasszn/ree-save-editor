@@ -251,7 +251,7 @@ impl Msg {
         struct EntryInfo<'a> {
             name: &'a str,
             hash: u32,
-            attributes: &'a Vec<MsgAttribute>,
+            //attributes: &'a Vec<MsgAttribute>,
             content: IndexMap<&'a str, String>,
         }
         let name_to_uuid_map: IndexMap<_, _> = self.entries.iter()
@@ -274,7 +274,7 @@ impl Msg {
                 ( uuid, EntryInfo {
                     name: &entry.name,
                     hash: entry.hash,
-                    attributes: &entry.attributes,
+                    //attributes: &entry.attributes,
                     content
                 })
             }).collect();
