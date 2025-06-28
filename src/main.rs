@@ -1,25 +1,28 @@
-mod align;
-mod gen;
-mod reerr;
-mod bitfield;
-mod byte_reader;
-mod compression;
-mod file_ext;
-mod msg;
-mod rsz;
-mod tex;
-mod user;
-mod dersz;
-mod pog;
-mod font;
-mod scn;
+pub mod gen;
+pub mod align;
+pub mod reerr;
+pub mod bitfield;
+pub mod byte_reader;
+pub mod compression;
+pub mod file_ext;
+pub mod msg;
+pub mod rsz;
+pub mod tex;
+pub mod user;
+pub mod dersz;
+pub mod pog;
+pub mod font;
+pub mod scn;
+pub mod mesh;
 
 extern crate image;
+extern crate libdeflater;
 
 use clap::{CommandFactory, Parser};
 use dersz::{DeRsz, RszDump, ENUM_FILE, RSZ_FILE};
 use font::Oft;
 use gen::{Sdk, SdkFile};
+use mesh::Mesh;
 use msg::Msg;
 use pog::{Pog, PogList, PogPoint, PogNode};
 use rsz::Rsz;
@@ -94,6 +97,7 @@ enum FileType {
     Rsz,
     Scn,
     Tex(u32),
+    Mesh,
     Oft,
     Pog,
     PogList,
@@ -128,6 +132,7 @@ fn get_file_ext(file_name: String) -> Result<(FileType, bool)> {
                 "rsz" => FileType::Rsz,
                 "poglst" => FileType::PogList,
                 "oft" => FileType::Oft,
+                "mesh" => FileType::Mesh,
                 _ => FileType::Unknown
             }
         },
@@ -267,6 +272,13 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             )?;
             Ok(None)
         },
+        FileType::Mesh => {
+            let file = File::open(file_path.clone())?;
+            let mesh = Mesh::new(file)?;
+            println!("{:#?}", mesh.vertex_elements);
+            //println!("{:#?}, {}, {}", mesh.vertex_elements.len(), mesh.vertex_buffer.len(), mesh.face_buffer.len());
+            Ok(None)
+        }
         FileType::Pog => {
             let file = File::open(file_path.clone())?;
             let pog = Pog::new(file)?;

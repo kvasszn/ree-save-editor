@@ -1,6 +1,6 @@
 use sdk::app::{self, user_data};
 use serde::de::DeserializeOwned;
-use std::{collections::HashMap, io::Result, sync::OnceLock};
+use std::{collections::HashMap, fs::File, io::{Result, Write}, sync::OnceLock};
 
 #[derive(Debug, serde::Deserialize)]
 struct RszJson<T> {
@@ -84,6 +84,10 @@ macro_rules! csvd {
         let x = &$self.$field;
         $s.push_str(&format!("{:?}", x));
     };
+    ($s:ident, $self:ident, $field:ident, ToCsv) => {
+        let x = &$self.$field;
+        $s.push_str(&format!("{}", x.to_csv()));
+    };
     ($s:ident, $self:ident, $field:ident) => {
         $s.push_str(&format!("{:?}", &$self.$field));
     };
@@ -166,7 +170,10 @@ pub enum IconType {
     Animal,
 }
 
-//define_to_csv!(sdk::app::user_data::EnemyData,[_Values]);
+define_to_csv!(
+    sdk::app::user_data::EnemyData,
+    [_Values => ToCsv]
+);
 define_to_csv!(
     sdk::app::user_data::enemydata::cData,
     [   
@@ -194,16 +201,45 @@ define_to_csv!(
     ]
 );
 
+define_to_csv!(
+    sdk::app::user_data::EnemySpeciesData,
+    [_Values => ToCsv]
+);
+
+define_to_csv!(
+    sdk::app::user_data::enemyspeciesdata::cData,
+    [   
+        _Index,
+        _EmSpecies,
+        _EmSpeciesName => Guid
+    ]
+);
+
+macro_rules! save_to_csv {
+    (
+        $data_path:expr,
+        $file_save_path:expr,
+        $struct_ty:ty
+    ) => {
+        let rsz = RszJson::<$struct_ty>::get_rsz($data_path)?;
+        let data = rsz.to_csv();
+        let mut file = File::create($file_save_path).unwrap();
+        file.write_all(data.as_bytes()).unwrap();
+
+    }
+}
+
 fn main() -> Result<()> {
-    let enemies = RszJson::<user_data::EnemyData>::get_rsz("../../outputs/natives/STM/GameDesign/Common/Enemy/EnemyData.user.3.json")?;
-    let _species = RszJson::<user_data::EnemySpeciesData>::get_rsz("../../outputs/natives/STM/GameDesign/Common/Enemy/EnemySpecies.user.3.json")?;
-    println!("{}", enemies._Values.to_csv());
-    /*let file = File::create("people.csv")?;
-    let mut wtr = Writer::from_writer(file);
+    save_to_csv!(
+        "../../outputs/natives/STM/GameDesign/Common/Enemy/EnemyData.user.3.json",
+        "enemies.csv",
+        sdk::app::user_data::EnemyData
+    );
 
-    wtr.flush()?;*/
-
-    //println!("{:#?}", enemies._Values);
-    //println!("{:#?}", species._Values[0]);
+    save_to_csv!(
+        "../../outputs/natives/STM/GameDesign/Common/Enemy/EnemySpecies.user.3.json",
+        "species.csv",
+        sdk::app::user_data::EnemySpeciesData
+    );
     Ok(())
 }
