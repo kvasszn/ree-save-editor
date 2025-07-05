@@ -60,6 +60,14 @@ pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
                     });
 
                     quote! {
+                        impl DeRszInstance for #name {
+                            fn as_any(&self) -> &dyn Any {
+                                self
+                            }
+                            fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
+                                serde_json::json!(self)
+                            }
+                        }
                         impl<'a> DeRszType<'a> for #name {
                             fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<#name> {
                                 let res = Ok(Self {
@@ -79,10 +87,19 @@ pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
                     });
 
                     quote! {
+                        impl DeRszInstance for #name {
+                            fn as_any(&self) -> &dyn Any {
+                                self
+                            }
+                            fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
+                                serde_json::json!(self)
+                            }
+                        }
+                        #[allow(unused)]
                         impl<'a> DeRszType<'a> for #name {
                             fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<#name> {
                                 let res = Ok(Self(
-                                    #(#field_reads),*
+                                        #(#field_reads),*
                                 ));
                                 #align_code;
                                 res
@@ -93,6 +110,11 @@ pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
                 syn::Fields::Unit => {
                     // Handle unit structs (e.g., struct S;)
                     quote! {
+                        impl DeRszInstance for #name {
+                            fn as_any(&self) -> &dyn Any {
+                                self
+                            }
+                        }
                         impl<'a> DeRszType<'a> for #name {
                             fn from_bytes(_ctx: &'a mut RszDeserializerCtx) -> Result<#name> {
                                 Ok(Self)

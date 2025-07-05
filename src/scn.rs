@@ -1,3 +1,4 @@
+#![allow(unused)]
 use crate::file_ext::*;
 use crate::rsz::*;
 use crate::reerr::{Result, FileParseError::*};

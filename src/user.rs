@@ -126,25 +126,4 @@ impl User {
         buf.extend(rsz_buf);
         Ok(buf)
     }
-
-    pub fn save_from_json(&self, file: &str) -> Result<()> {
-        let data = self.to_buf()?;
-        let mut file = File::create(file)?;
-        file.write_all(&data)?;
-        Ok(())
-    }
-
-    pub fn from_json_file(file: &str) -> Result<User> {
-        let data = std::fs::read_to_string(file)?;
-        let json_data: serde_json::Value = serde_json::from_str(&data).unwrap();
-        let rsz: Rsz = Rsz::from_json(&json_data)?; 
-        Ok(User {
-            resource_names: vec![],
-            children: vec![],
-            rsz
-        })
-    }
 }
-
-
-
