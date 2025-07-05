@@ -4,3 +4,14 @@ members = [
     "sdk",
     "tocsv"
 ]
+
+resolver = '3'
+
+[profile.dev]
+debug = false
+incremental = false
+
+[profile.release]
+codegen-units = 16
+lto = false
+

@@ -72,11 +72,15 @@ macro_rules! csvd {
     ($s:ident, $self:ident, $field:ident, Guid) => {
         let x = match msg_map().msgs.get(&$self.$field) {
             None => "",
-            Some(msg) => &msg.content.English.replace("\r\n", " ").replace("\"", "\"\"")//.chars().flat_map(|c| c.escape_default()).collect::<String>()
+            Some(msg) => &msg.content.get("English").unwrap().replace("\r\n", " ").replace("\"", "\"\"")//.chars().flat_map(|c| c.escape_default()).collect::<String>()
         };
         $s.push_str(&format!("\"{}\"", x));
     };
     ($s:ident, $self:ident, $field:ident, Icon) => {
+        let x = &$self.$field;
+        $s.push_str(&format!("{:?}", x));
+    };
+    ($s:ident, $self:ident, $field:ident, Enum) => {
         let x = &$self.$field;
         $s.push_str(&format!("{:?}", x));
     };
@@ -135,7 +139,7 @@ impl<T: ToCsv> ToCsv for Vec<T> {
 pub struct MsgEntry {
     name: String,
     hash: u32,
-    content: MsgLangs
+    content: HashMap<String, String>
 }
 
 pub type NameMap = HashMap<String, String>;
@@ -229,7 +233,30 @@ macro_rules! save_to_csv {
     }
 }
 
-fn main() -> Result<()> {
+
+define_to_csv!(
+    sdk::app::user_data::ArmorData,
+    [ _Values => ToCsv ]
+);
+
+define_to_csv!(
+    sdk::app::user_data::armordata::cData,
+    [   
+        _Index,
+        _DataValue,
+        _Series => Enum,
+        _PartsType => Enum,
+        _Name => Guid,
+        _Explain => Guid
+        /*_Defense,
+        _Resistance,
+        _SlotLevel,
+        _Skill,
+        _SkillLevel*/
+    ]
+);
+
+fn main() -> anyhow::Result<()> {
     save_to_csv!(
         "../../outputs/natives/STM/GameDesign/Common/Enemy/EnemyData.user.3.json",
         "enemies.csv",
@@ -240,6 +267,11 @@ fn main() -> Result<()> {
         "../../outputs/natives/STM/GameDesign/Common/Enemy/EnemySpecies.user.3.json",
         "species.csv",
         sdk::app::user_data::EnemySpeciesData
+    );
+    save_to_csv!(
+        "../../outputs/natives/STM/GameDesign/Common/Equip/ArmorData.user.3.json",
+        "armor.csv",
+        sdk::app::user_data::ArmorData
     );
     Ok(())
 }

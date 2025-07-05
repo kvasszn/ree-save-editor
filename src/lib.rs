@@ -1,5 +1,5 @@
 pub mod align;
-pub mod gen;
+pub mod gensdk;
 pub mod reerr;
 pub mod bitfield;
 pub mod byte_reader;

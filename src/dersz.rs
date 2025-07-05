@@ -3,7 +3,7 @@ use std::{
     collections::{HashMap, HashSet}, i128, io::{Read, Seek, Write}, str::FromStr, sync::OnceLock
 };
 
-use crate::{file_ext::*, gen::{self, SdkComponent}, rsz::Rsz};
+use crate::{file_ext::*, gensdk::SdkComponent};
 
 pub static RSZ_FILE: OnceLock<String> = OnceLock::new();
 pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
@@ -11,9 +11,8 @@ pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
 
 use nalgebra_glm::{Mat4x4, Vec2, Vec3, Vec4};
 use proc_macro2::{Literal, TokenStream};
-use quote::{format_ident, quote};
-use serde::{ser::{SerializeSeq, SerializeStruct}, Deserialize, Serialize};
-use syn::{buffer::TokenBuffer, token::Enum};
+use quote::{format_ident, quote, TokenStreamExt};
+use serde::{ser::{SerializeMap, SerializeSeq, SerializeStruct}, Deserialize, Serialize};
 use uuid::Uuid;
 use crate::rsz::TypeDescriptor;
 use crate::reerr::{Result, FileParseError::*};
@@ -78,6 +77,7 @@ pub enum RszType {
     Data(Vec<u8>, Option<String>, Option<u32>, Option<f32>),
 
     Nullable(Box<Option<RszType>>, String, String, String, String),
+    Bitset (u32, Vec<String>, String),
 }
 
 impl RszType {
@@ -543,12 +543,43 @@ impl RszType {
                 } else {
                     field.original_type.clone()
                 };
+
                 let x;
                 if let Some(mapped_hash) = RszDump::name_map().get(&og_type) {
                     if let Some(r#struct) = RszDump::rsz_map().get(&mapped_hash) {
-                        //println!("{:?}", r#struct);
-                        let v = RszDump::parse_struct_from_json(data, *mapped_hash, objects)?;
-                        objects.push(v);
+                        println!("object {:?}", r#struct);
+                        if let Some(enum_type) = r#struct.name.strip_prefix("ace.Bitset`1<") {
+                            let mut enum_type = enum_type.strip_suffix(">").unwrap().to_string();
+                            let is_bit = if enum_map().get(&(enum_type.clone() + "Bit")).is_some() {
+                                enum_type = enum_type + "Bit";
+                                true
+                            } else { false };
+                            let is_nullable = if let Some(x) = get_enum_val(&enum_type, "INVALID") {
+                                (x == -1) as u32
+                            } else { 0 };
+                            let max_element = data.get("_MaxElement").unwrap().as_u64().unwrap() as u32;
+                            let values: Vec<String> = serde_json::from_value(data.get("_Value").unwrap().clone())?; 
+                            let values = values.iter().filter_map(|x| { get_enum_val(&enum_type, x) }).collect::<Vec<_>>();
+                            println!("{:?}", values);
+                            let mut ints = vec![0; max_element as usize / 32 + 1];
+                            for value in values {
+                                let bit = if is_bit {
+                                    (value as u32).trailing_zeros()
+                                } else {
+                                    value as u32 + is_nullable
+                                };
+                                let idx = bit / 32;
+                                ints[idx as usize] |= 1 << bit;
+                            }
+                            println!("{:?}", ints);
+                            let ints = ints.iter().map(|x| RszType::UInt32(*x)).collect();
+                            let storage = r#struct.to_value(vec![RszType::Array(ints), RszType::UInt32(max_element)]);
+                            objects.push(storage);
+                        } else {
+                            let v = RszDump::parse_struct_from_json(data, *mapped_hash, objects)?;
+                            objects.push(v);
+                        }
+
                         x = RszType::Object(r#struct.clone(), objects.len() as u32); // make this zero an actual
                                                                                      // value, and read some other
                                                                                      // important info
@@ -703,9 +734,13 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
                                 true
                             } else { false };
 
+                            let is_nullable = if let Some(x) = get_enum_val(&r#type, "INVALID") {
+                                (x == -1) as u32
+                            } else { 0 };
                             let values = &struct_derefed.fields[0];
                             if let Int32(max) = &struct_derefed.fields[1] {
                                 if let Array(values) = values {
+                                    let mut state = serializer.serialize_map(Some(2))?;
                                     let values = values.iter().enumerate().filter_map(|(i, x)| {
                                         if let UInt32(val) = x {
                                             return Some((0..32).filter_map(|j| {
@@ -715,16 +750,16 @@ impl<'a> Serialize for RszTypeWithContext<'a> {
                                             }).collect::<Vec<_>>());
                                         } else {None}
                                     }).flatten().collect::<Vec<_>>();
-                                    let mut state = serializer.serialize_seq(Some(values.len()))?;
-
+                                    let mut enum_val_arr = Vec::new();
                                     for val in &values {
-                                        let val = if is_bit {2u32.pow(*val)} else { *val };
+                                        let val = if is_bit {2u32.pow(*val)} else { *val - is_nullable };
                                         match get_enum_name(&r#type, &(val).to_string()) {
-                                            Some(enum_name) => state.serialize_element(&enum_name)?,
-                                            None => state.serialize_element(&val.to_string())?,
+                                            Some(enum_name) => enum_val_arr.push(enum_name),
+                                            None => enum_val_arr.push(val.to_string()),
                                         }
                                     }
-                                    //  state.serialize_element(format!("{max}").as_str())?;
+                                    state.serialize_entry("_MaxElement", &max)?;
+                                    state.serialize_entry("_Value", &enum_val_arr)?;
                                     return state.end();
                                 }
                             }
@@ -914,6 +949,7 @@ pub fn convert_type_to_prim(r#type: &str) -> Option<&str>{
 }
 
 pub fn get_generics(s: &str) -> (String, Vec<String>) {
+    let s = s.replace("cRate", "cRate_");
     if s.contains("[[") {
         let x: Vec<&str> = s.split('[').collect();
         return (x[0].to_string(), vec![])
@@ -933,7 +969,6 @@ pub fn get_generics(s: &str) -> (String, Vec<String>) {
 
 impl RszField {
     pub fn gen_field(&self, is_last: bool, parent: &RszStruct<RszField>, enum_name: Option<String>, generic_symbol: Option<String>) -> (HashSet<u32>, TokenStream, String) {
-        println!("enum_name={:?}", enum_name);
         let use_original_type_types = vec!["Object", "Struct", "GameObjectRef", "UserData"];
         let full_field_type = if self.original_type == "ace.user_data.ExcelUserData.cData"{
             parent.name.clone() + ".cData"
@@ -986,10 +1021,10 @@ impl RszField {
             "r#type"
         } else {
             &self.name
-        };
+        }.replace("crate", "r#crate");
         let new_name = format_ident!("{}", new_name);
 
-        println!("{}, {}, {}", self.original_type, self.name,field_type);
+        //println!("{}, {}, {}", self.original_type, self.name,field_type);
         if let Some(generic_symbol) = generic_symbol {
             field_type = generic_symbol;
         }
@@ -997,11 +1032,14 @@ impl RszField {
             Ok(x) => x,
             Err(_) => return (HashSet::new(), quote!{}, "".to_string())
         };
-        let tokens = if is_last {
-            quote! { pub #new_name: #field_type }
+        let mut tokens = if self.r#type == "Object" || self.r#type == "UserData" {
+            quote! { pub #new_name: Box < #field_type >}
         } else {
-            quote! { pub #new_name: #field_type, }
+            quote! { pub #new_name: #field_type}
         };
+        if !is_last {
+            tokens.append_all(quote!{,});
+        }
 
         let mut deps = HashSet::new();
         if let Some(dep) = dep {
@@ -1018,11 +1056,11 @@ impl RszField {
 }
 
 impl RszStruct<RszField> {
-    pub fn to_value(&self, r#type: RszType) -> RszValue {
+    pub fn to_value(&self, r#type: Vec<RszType>) -> RszValue {
         RszStruct {
             name: self.name.clone(),
             crc: self.crc,
-            fields: vec![r#type]
+            fields: r#type
         }
     }
 
@@ -1031,16 +1069,23 @@ impl RszStruct<RszField> {
             name: &'a str,
             val: &'a str,
         }
+        let mut found: HashSet<i64> = HashSet::new();
         let enums: Vec<TokenStream> = enum_type.iter().flat_map(|(k, v)| {
-            println!("{k:?}, {v:?}");
             if let Ok(_v) = k.parse::<i64>() {
                 return None
             }
             let name = format_ident!("{k}");
-            let val = Literal::i64_unsuffixed(v.parse::<i64>().unwrap());
-            Some(quote!{
-                #name = #val,
-            })
+            let v = v.parse::<i64>().unwrap();
+            let val = Literal::i64_unsuffixed(v);
+            if found.contains(&v) {
+                let val = Literal::i64_unsuffixed(v + 123213);
+                let name = format_ident!("{k}_DUPLICATEENUM");
+                found.insert(v);
+                Some(quote!{ #name = #val, })
+            } else {
+                found.insert(v);
+                Some(quote!{ #name = #val, })
+            }
         }).collect();
         enums
     }
@@ -1049,7 +1094,7 @@ impl RszStruct<RszField> {
         if self.name == "" {
             return None
         }
-        println!("{}", self.name);
+        println!("\nstruct: {}", self.name);
         // clean this shit up probably maybe?? ye nah
         let tokens = match self.name.as_str() {
             "via.vec4" => Some(quote!{ pub type vec4 = Vec4; }),
@@ -1062,7 +1107,8 @@ impl RszStruct<RszField> {
         // have to replace the name "cRate" -> to cRate_ because it collides with the crate
         // keyword, maybe add something that filters out keywords, yes probably good idea
         // probably dont actually replace here, do it when generating things
-        let (struct_name, generics) = get_generics(&self.name);//.replace("cRate", "cRate_"));
+        let (struct_name, generics) = get_generics(&self.name);
+        let struct_name = struct_name;
 
         let mut deps = HashSet::<u32>::new(); // the dependancies here are basically the same as
                                               // includes, just hashes instead of full names
@@ -1078,6 +1124,7 @@ impl RszStruct<RszField> {
 
         // if you're secretly an enum, deal with that shit
         if let Some(enum_type) = enum_map().get(&self.name) {
+            println!("enum_name={}", self.name);
             let name: syn::Path = syn::parse_str(&struct_name.split(".").last().unwrap()).unwrap();
             let enums = self.gen_enum(enum_type);
             let tokens = quote!{
@@ -1091,12 +1138,24 @@ impl RszStruct<RszField> {
         }
 
         // if the enum is _Serializable, make the Fixed one a dependancy
+        // THIUS SHIT SODWONOST MAKE ANY SENSE
         let enum_name = self.name.replace("_Serializable", "_Fixed");
         let enum_type = enum_map().get(&enum_name);
         if let Some(dep) = RszDump::name_map().get(&enum_name) {
             deps.insert(*dep);
             includes.insert(enum_name.clone());
         }
+        if enum_type.is_some() {
+            println!("enum_name={}", self.name);
+            let name: syn::Path = syn::parse_str(&struct_name.split(".").last().unwrap()).unwrap();
+            let field_type: Vec<_> = enum_name.split(".").collect();
+            let namespace = field_type[..field_type.len() - 1].join("::").to_lowercase();
+            let just_the_type = &field_type[field_type.len() - 1];
+            let enum_name: syn::Path = syn::parse_str(&format!("{namespace}::{just_the_type}")).unwrap();
+            let tokens = quote!{ #[derive(Debug, serde::Deserialize)] pub struct #name (#enum_name);};
+            return Some((deps, SdkComponent::new(struct_name, tokens, includes)))
+        }
+
         let mut generic_counter = 0;
         let generic_symbols = ["T", "S", "T1", "S2", "T2", "T3", "T4", "T5"];
         let mut used_gens = vec![];
@@ -1159,7 +1218,7 @@ impl RszStruct<RszField> {
             (vec![], "".to_string())
         };
         let tokens = if !generics.is_empty() {
-            let name = struct_name.split(".").last().unwrap();
+            let name = struct_name.split(".").last().unwrap().replace("cRate", "cRate_");
             let name: syn::Path = syn::parse_str(&name).unwrap();
 
             quote!{
@@ -1172,7 +1231,7 @@ impl RszStruct<RszField> {
         } else if struct_name != "" {
             //println!("{struct_name}");
             let tmp: Vec<_> = self.name.split(".").collect();
-            let name: syn::Path = syn::parse_str(&tmp.last().unwrap()).unwrap();
+            let name: syn::Path = syn::parse_str(&tmp.last().unwrap().replace("cRate", "cRate_")).unwrap();
             quote!{
                 #[derive(Debug, serde::Deserialize)]
                 pub struct #name {
@@ -1331,13 +1390,13 @@ impl RszDump {
             Some(x) => x,
             None => return Err(Box::new(InvalidRszTypeHash(type_hash)))
         };
-        //println!("{:?}", struct_type);
+        println!("struct: {:?}", struct_type);
         let mut field_values: Vec<RszType> = Vec::new();
         for field in &struct_type.fields {
             let field_data = json_data.get(&field.name);
-            //println!("{}", field.name);
+            println!("{}", field.name);
             match field_data {
-                None => return Err(format!("Could not find field in json {:?}", field).into()),
+                None => return Err(format!("Could not find field in json {:?} from struct {:?}, {:?}", field, struct_type.name, json_data).into()),
                 Some(value) => {
                     if field.array {
                         let mut arr_vals = vec![];

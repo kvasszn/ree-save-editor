@@ -1,4 +1,4 @@
-pub mod gen;
+pub mod gensdk;
 pub mod align;
 pub mod reerr;
 pub mod bitfield;
@@ -19,9 +19,10 @@ extern crate image;
 extern crate libdeflater;
 
 use clap::{CommandFactory, Parser};
-use dersz::{DeRsz, RszDump, ENUM_FILE, RSZ_FILE};
+use dersz::{DeRsz, ENUM_FILE, RSZ_FILE};
+use file_ext::{ReadExt, SeekExt};
 use font::Oft;
-use gen::{Sdk, SdkFile};
+use gensdk::Sdk;
 use mesh::Mesh;
 use msg::Msg;
 use pog::{Pog, PogList, PogPoint, PogNode};
@@ -31,7 +32,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs::{self, read_to_string,File};
-use std::io::Write;
+use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tex::Tex;
@@ -54,6 +55,12 @@ struct Args {
 
     #[arg(short('p'), long, default_value_t = true)]
     preserve: bool,
+
+    #[arg(short('d'), long("dump-rsz"), default_value_t = false)]
+    try_dump_rsz: bool,
+    
+    #[arg(short('s'), long("dump-sdk"), default_value_t = false)]
+    dump_sdk: bool,
     
     #[arg(short('o'), long, default_value_t = String::from("outputs"))]
     out_dir: String,
@@ -101,6 +108,9 @@ enum FileType {
     Oft,
     Pog,
     PogList,
+    Mdf2,
+    Sdftex,
+    Annoying,
     Unknown
 }
 
@@ -133,6 +143,9 @@ fn get_file_ext(file_name: String) -> Result<(FileType, bool)> {
                 "poglst" => FileType::PogList,
                 "oft" => FileType::Oft,
                 "mesh" => FileType::Mesh,
+                //"mdf2" => FileType::Mdf2,
+                //"sdftex" => FileType::Sdftex,
+                "rbs" | "sdftex" | "mcol" | "mdf2" | "mmtr" | "ocioc" | "tmlbld" | "fol" | "rmesh" | "chain2" | "jcns" | "gbpf" | "fbxskel" | "sfur" | "gtl" | "ziva" | "ucurve" | "jntexprgraph" | "vmap" | "zivacomb" | "gpbf" | "clsp" | "stmesh" | "mot" | "mpci" | "mcpi" | "chf" | "hf" | "efx" | "vsdf" | "uvar" | "rtex" | "lprb" | "gpuc" | "gui" | "prb" => FileType::Annoying,
                 _ => FileType::Unknown
             }
         },
@@ -144,7 +157,7 @@ fn get_file_ext(file_name: String) -> Result<(FileType, bool)> {
     Ok((file_type, is_json))
 }
 
-fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf) -> Result<Option<HashSet<u32>>> {
+fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf, dump_all_rsz: bool) -> Result<Option<HashSet<u32>>> {
     let mut res = None;
     let file_name = match file_path.file_name() {
         Some(file_name) => file_name,
@@ -152,7 +165,68 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             return Err(format!("Path does not contain file").into());
         }
     };
+
     let (file_type, is_json )= get_file_ext(file_name.to_string_lossy().to_string())?;
+    match file_type {
+        FileType::Mesh | FileType::Oft | FileType::Msg(_) | FileType::Tex(_) | FileType::Annoying => return Ok(None),
+        _ => ()
+    }
+    if dump_all_rsz {
+        println!("dump all rsz file {file_path:?}");
+        let mut rszs: Vec<Rsz> = Vec::new();
+        let mut file = File::open(file_path.clone())?;
+        let target = ['R', 'S', 'Z', '\0'];
+        let mut target_idx = 0;
+        let len = file.seek(std::io::SeekFrom::End(0))?;
+        file.seek(std::io::SeekFrom::Start(0))?;
+        loop {
+            let byte = file.read_u8().expect("FUCK");
+            //println!("{idx}:{byte} {target_idx}");
+            if byte == target[target_idx] as u8 {
+                target_idx += 1;
+                if target_idx == 4 {
+                    println!("found_pattern");
+                    let start = file.tell()? - 4;
+                    match Rsz::new(&mut file, start, 0) {
+                        Ok(rsz) => {
+                            rszs.push(rsz)
+                        },
+                        Err(e) => {
+                            eprintln!("Error trying to parse all rsz in file {file_path:?}");
+                        },
+                    }
+                    target_idx = 0;
+                }
+            } else {
+                target_idx = 0;
+            }
+            if file.tell()? >= len {
+                break
+            }
+        }
+        if rszs.len() > 0 {
+            //println!("{rszs:#?}\n");
+            let mut output_path = output_path.clone();
+            output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
+            let nodes = rszs.iter().map(|rsz| rsz.deserialize()).collect::<Result<Vec<_>>>()?;
+            let json_res = serde_json::to_string_pretty(&nodes); 
+            return match json_res {
+                Ok(json) => {
+                    let _ = fs::create_dir_all(output_path.parent().unwrap())?;
+                    let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
+                    f.write_all(json.as_bytes())?;
+                    println!("[INFO] Saved File {:?}", &output_path);
+                    Ok(res)
+                },
+                Err(e) => {
+                    //eprintln!("File: {file_path:?}\nReason: {e}");
+                    Err(format!("File: {file_path:?}\nReason: {e}").into())
+                }
+            }
+        }
+        return Ok(res)
+
+    }
     //println!("{:?}, {is_json}", file_type);
     let result: Result<Option<HashSet<u32>>> = match file_type {
         FileType::Msg(_v) => {
@@ -173,11 +247,9 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
                 let rsz = User::new(file)?.rsz;
                 let types: HashSet<u32> = rsz.type_descriptors.iter().map(|t| t.hash).collect();
                 let res = Some(types.clone());
-                //gen_sdk(types.clone())?;
                 let nodes = rsz.deserialize()?;
                 let mut output_path = output_path.clone();
                 output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-                //output_path.push(file_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
                 let json_res = serde_json::to_string_pretty(&nodes); 
                 match json_res {
                     Ok(json) => {
@@ -340,7 +412,9 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf)
             println!("[INFO] Saved File {:?}", &output_path);
             Ok(None)
         }
+
         FileType::Unknown => return Err(format!("Unknown File Type {file_name:?}").into()),
+        _ => return Err(format!("Annoying File Type {file_name:?}").into()),
     };
     result
 }
@@ -369,7 +443,7 @@ fn find_files_with_extension(base_dir: PathBuf, extension: &str) -> Vec<PathBuf>
     results
 }
 
-fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Result<()> {
+fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String, dump_all_rsz: bool, dump_sdk: bool) -> Result<()> {
     let list = read_to_string(&list_file).expect("Could not open list file");
     let list: Vec<&str> = list.lines().collect();
     let mut types: HashSet<u32> = HashSet::new();
@@ -383,7 +457,7 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
             }
         };
         //eprintln!("Dumping File: {file_path:?}");
-        match dump_file(root_dir.clone(), file_path.clone(), output_path.clone()) {
+        match dump_file(root_dir.clone(), file_path.clone(), output_path.clone(), dump_all_rsz) {
             Ok(res) => {
                 if let Some(res) = res {
                     types.extend(res);
@@ -396,9 +470,11 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String) -> Res
             }
         };
     }
-    let mut sdk = Sdk::new();
-    sdk.add_types(types)?;
-    sdk.write_files();
+    if dump_sdk {
+        let mut sdk = Sdk::new();
+        sdk.add_types(types)?;
+        sdk.write_files();
+    }
     Ok(())
 }
 
@@ -426,16 +502,15 @@ fn main() -> Result<()> {
     ENUM_FILE.set(enum_file)?;
 
     let now = SystemTime::now();
-    //println!("{:#?}", args);
-
+    //panic!("{:?}", args);
     match args.list {
         Some(list) => {
-            dump_all(args.root_dir, args.out_dir, list)?;
+            dump_all(args.root_dir, args.out_dir, list, args.try_dump_rsz, args.dump_sdk)?;
         }, 
         None => match args.file_name {
             Some(file_name) => {
                 let (file_path, output_path) = construct_paths(file_name.clone(), args.root_dir.clone(), args.out_dir.clone(), args.preserve)?;
-                dump_file(args.root_dir, file_path, output_path)?;
+                dump_file(args.root_dir, file_path, output_path, args.try_dump_rsz)?;
             },
             None => {
                 println!("Please provide a file or list");

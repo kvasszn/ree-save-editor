@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use byteorder::LittleEndian;
 use byteorder::WriteBytesExt;
 
@@ -11,8 +12,6 @@ use std::fmt::Debug;
 use std::fs::File;
 use std::io::Write;
 use std::io::{Cursor, Read, Seek, SeekFrom};
-use std::path::Path;
-use std::path::PathBuf;
 use crate::reerr::*;
 
 #[derive(Debug, Clone)]
@@ -84,7 +83,9 @@ impl Rsz {
             return Err(format!("The first type descriptor should be 0").into())
         }
 
-        file.seek_assert_align_up(base + extern_offset, 16)?;
+        //file.seek_assert_align_up(base + extern_offset, 16)?;
+        file.seek(SeekFrom::Start(base + extern_offset))?;
+        file.seek_align_up(16)?;
 
         let extern_slot_info = (0..extern_count)
             .map(|_| {
@@ -115,7 +116,9 @@ impl Rsz {
             .collect::<Result<HashMap<u32, Extern>>>()?;
         //println!("{extern_slots:?}");
         //file.seek(SeekFrom::Start(base + data_offset))?;
-        file.seek_assert_align_up(base + data_offset, 16)?;
+        //file.seek_assert_align_up(base + data_offset, 16)?;
+        file.seek(SeekFrom::Start(base + data_offset))?;
+        file.seek_align_up(16)?;
         let mut data: Vec<u8> = vec![];
         if cap != 0 {
             let len = (cap) as usize - (base + data_offset) as usize;
@@ -161,7 +164,7 @@ impl Rsz {
                     Some(x) => x,
                     None => return Err(Box::new(FileParseError::InvalidRszTypeHash(hash)))
                 };
-                let x = struct_type.to_value(x);
+                let x = struct_type.to_value(vec![x]);
                 structs.push(x);
                 extern_idxs.insert(i as u32);
                 continue;
@@ -188,7 +191,7 @@ impl Rsz {
         let mut leftover = vec![];
         cursor.read_to_end(&mut leftover)?;
         if !leftover.is_empty() {
-            return Err(format!("Left over data {leftover:?}").into());
+            //return Err(format!("Left over data {leftover:?}").into());
             //eprintln!("Left over data {leftover:?}");
         }
 
@@ -319,4 +322,163 @@ impl Rsz {
         Ok(buf)
     }
 }
+
+
+/*
+ * Deserializer/Serializer
+ */
+
+pub trait ReadSeek: Read + Seek {}
+pub struct RszDeserializerCtx {
+    data: Box<dyn ReadSeek>
+}
+
+pub trait DeRszType<'a> where Self: Sized {
+    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self>;
+}
+
+impl<'a, T> DeRszType<'a> for Vec<T>
+where
+    T: for<'b> DeRszType<'b>, 
+{
+    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
+        let len = u32::from_bytes(ctx)? as usize;
+        let mut items = Vec::with_capacity(len);
+        for _ in 0..len {
+            let item = T::from_bytes(ctx)?;
+            items.push(item);
+        }
+        Ok(items)
+    }
+}
+
+impl<'a, T, const N: usize> DeRszType<'a> for [T; N]
+where
+    T: for<'b> DeRszType<'b> + Debug,
+{
+    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
+        let mut vec = Vec::with_capacity(N);
+        for _ in 0..N {
+            vec.push(T::from_bytes(ctx)?);
+        }
+        
+        Ok(vec.try_into().unwrap())
+    }
+}
+
+
+macro_rules! derive_dersztype{
+    ($rsz_type:ty) => {
+        impl<'a> DeRszType<'a> for $rsz_type {
+            fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<$rsz_type> {
+                let mut buf = [0; size_of::<$rsz_type>()];
+                ctx.data.read_exact(&mut buf)?;
+                Ok(<$rsz_type>::from_le_bytes(buf))
+            }
+        }
+    };
+    ($rsz_type:ty, $func:ident) => {
+        impl<'a> DeRszType<'a> for $rsz_type {
+            fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<$rsz_type> {
+                ctx.data.$func()
+            }
+        }
+    };
+    ($rsz_type:ty, $func:expr) => {
+        impl<'a> DeRszType<'a> for $rsz_type {
+            fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<$rsz_type> {
+                $func(ctx)
+            }
+        }
+    };
+
+}
+
+
+derive_dersztype!(u8);
+derive_dersztype!(u16);
+derive_dersztype!(u32);
+derive_dersztype!(u64);
+derive_dersztype!(i8);
+derive_dersztype!(i16);
+derive_dersztype!(i32);
+derive_dersztype!(i64);
+
+pub type F8 = u8; // scuffed
+pub type F16 = u16; // scuffed
+derive_dersztype!(f32);
+derive_dersztype!(f64);
+
+derive_dersztype!(bool, |ctx: &'a mut RszDeserializerCtx| -> Result<bool> {
+    let v = ctx.data.read_u8()?;
+    if v > 1 {
+        return Err(Box::new(FileParseError::InvalidBool(v)))
+    }
+    Ok(v != 0)
+});
+
+derive_dersztype!(uuid::Uuid, |ctx: &'a mut RszDeserializerCtx| -> Result<Self> {
+    let mut buf = [0; 16];
+    for i in 0..16 {
+        buf[i] = ctx.data.read_u8()?;
+    }
+    Ok(uuid::Uuid::from_bytes_le(buf))
+});
+
+derive_dersztype!(String, |ctx: &'a mut RszDeserializerCtx| -> Result<Self> {
+    let mut s = vec![];
+    let n = ctx.data.read_u32()?;
+    for _i in 0..n {
+        let c = ctx.data.read_u16()?;
+        s.push(c);
+    }
+    Ok(String::from_utf16(&s)?)
+});
+
+
+use rsz_macros::DeRszType;
+
+#[derive(DeRszType)]
+pub struct UInt2(u32, u32);
+#[derive(DeRszType)]
+pub struct UInt3(u32, u32, u32);
+#[derive(DeRszType)]
+pub struct UInt4(u32, u32, u32, u32);
+
+#[derive(DeRszType)]
+pub struct Int2(i32, i32);
+#[derive(DeRszType)]
+pub struct Int3(i32, i32, i32);
+#[derive(DeRszType)]
+pub struct Int4(i32, i32, i32, i32);
+
+#[derive(DeRszType)]
+pub struct Color(u8, u8, u8, u8);
+
+#[derive(DeRszType)]
+#[rsz(align = 16)]
+pub struct Vec2(f32, f32);
+
+#[derive(DeRszType)]
+#[rsz(align = 16)]
+pub struct Vec3(f32, f32, f32);
+#[derive(DeRszType)]
+pub struct Vec4(f32, f32, f32, f32);
+
+#[derive(DeRszType)]
+pub struct Quaternion(f32, f32, f32, f32);
+#[derive(DeRszType)]
+pub struct Sphere(f32, f32, f32, f32);
+#[derive(DeRszType)]
+pub struct Position(f32, f32, f32);
+
+#[derive(DeRszType)]
+pub struct Float2(f32, f32);
+#[derive(DeRszType)]
+pub struct Float3(f32, f32, f32);
+#[derive(DeRszType)]
+pub struct Float4(f32, f32, f32, f32);
+
+#[derive(DeRszType)]
+pub struct Mat4x4([f32; 16]);
 

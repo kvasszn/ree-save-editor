@@ -1,0 +1,11 @@
+# rust-analyzer config
+# Save as .rust-analyzer.toml or rust-project.json if needed
+[workspace]
+# Optional: restrict to only some crates
+members = ["sdk"]
+
+[check]
+# Disable build script & proc macro expansion
+buildScripts = false
+procMacros = false
+allTargets = false

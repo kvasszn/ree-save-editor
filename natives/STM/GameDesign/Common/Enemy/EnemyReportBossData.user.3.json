@@ -1,0 +1,818 @@
+[
+  {
+    "offset": 48,
+    "type": "app.user_data.EnemyReportBossData",
+    "rsz": {
+      "_Values": [
+        {
+          "_Index": 0,
+          "_EmID": "EM0001_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101",
+              "ST102",
+              "ST103"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "WIND_PRESSURE_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER",
+              "DEADLY_POISON"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ELEC",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 1,
+          "_EmID": "EM0002_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST102",
+              "ST103",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "WIND_PRESSURE_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER",
+              "DEADLY_POISON"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ELEC",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 2,
+          "_EmID": "EM0002_50_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "WIND_PRESSURE_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER",
+              "DEADLY_POISON"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ELEC",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 3,
+          "_EmID": "EM0005_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST103",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "TREMORS_MINIOR",
+              "TREMORS_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER",
+              "DEADLY_POISON",
+              "WEBBED"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER",
+              "ICE",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 4,
+          "_EmID": "EM0008_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST102",
+              "ST104"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "WIND_PRESSURE_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER",
+              "ICE",
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 5,
+          "_EmID": "EM0009_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101",
+              "ST103",
+              "ST104",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "WIND_PRESSURE_MAJOR",
+              "DEADLY_POISON",
+              "PARALYSIS"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ICE"
+            ]
+          }
+        },
+        {
+          "_Index": 6,
+          "_EmID": "EM0021_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST102",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "TREMORS_MAJOR",
+              "DEADLY_POISON",
+              "SLEEP",
+              "DEFENSE_DOWN",
+              "LACERATION"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ICE"
+            ]
+          }
+        },
+        {
+          "_Index": 7,
+          "_EmID": "EM0022_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST104"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "ATTRIBUTE_DAMAGE_DRAGON",
+              "WAVE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 8,
+          "_EmID": "EM0046_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST102"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "ATTRIBUTE_DAMAGE_ICE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ICE",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 9,
+          "_EmID": "EM0070_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST103",
+              "ST104",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "DEADLY_POISON",
+              "WEBBED",
+              "BLAST"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 10,
+          "_EmID": "EM0071_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST104",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "TREMORS_MINIOR",
+              "FRIEZE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ELEC",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 11,
+          "_EmID": "EM0077_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "VIRUS"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ICE",
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 12,
+          "_EmID": "EM0100_51_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "WIND_PRESSURE_MAJOR",
+              "ATTRIBUTE_DAMAGE_ICE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER",
+              "ICE",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 13,
+          "_EmID": "EM0113_51_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "POISON",
+              "VIRUS"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER"
+            ]
+          }
+        },
+        {
+          "_Index": 14,
+          "_EmID": "EM0150_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101",
+              "ST102",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "TREMORS_MAJOR"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 15,
+          "_EmID": "EM0150_50_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "TREMORS_MAJOR",
+              "RESISTANCE_DOWN"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ICE",
+              "ELEC",
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 16,
+          "_EmID": "EM0151_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ATTRIBUTE_DAMAGE_SUNDER"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 17,
+          "_EmID": "EM0152_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": []
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ICE",
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 18,
+          "_EmID": "EM0153_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ATTRIBUTE_DAMAGE_WATER"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER"
+            ]
+          }
+        },
+        {
+          "_Index": 19,
+          "_EmID": "EM0154_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST102",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "SLEEP"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE"
+            ]
+          }
+        },
+        {
+          "_Index": 20,
+          "_EmID": "EM0155_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST103"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "DEADLY_POISON"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER"
+            ]
+          }
+        },
+        {
+          "_Index": 21,
+          "_EmID": "EM0156_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "ATTRIBUTE_DAMAGE_ICE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER",
+              "ICE"
+            ]
+          }
+        },
+        {
+          "_Index": 22,
+          "_EmID": "EM0157_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST102"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "ATTRIBUTE_DAMAGE_SUNDER"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 23,
+          "_EmID": "EM0158_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST103"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER"
+            ]
+          }
+        },
+        {
+          "_Index": 24,
+          "_EmID": "EM0159_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST103",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "TREMORS_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER",
+              "DEFENSE_DOWN"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "WATER",
+              "ICE"
+            ]
+          }
+        },
+        {
+          "_Index": 25,
+          "_EmID": "EM0160_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST101",
+              "ST102",
+              "ST103",
+              "ST104",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "WIND_PRESSURE_MAJOR",
+              "POISON"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 26,
+          "_EmID": "EM0160_50_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "WIND_PRESSURE_MAJOR",
+              "POISON"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 27,
+          "_EmID": "EM0161_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST104",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "WAVE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE",
+              "ELEC"
+            ]
+          }
+        },
+        {
+          "_Index": 28,
+          "_EmID": "EM0162_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST104"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "TREMORS_MINIOR",
+              "ATTRIBUTE_DAMAGE_DRAGON",
+              "WAVE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "FIRE"
+            ]
+          }
+        },
+        {
+          "_Index": 29,
+          "_EmID": "EM0163_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": []
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ICE"
+            ]
+          }
+        },
+        {
+          "_Index": 30,
+          "_EmID": "EM0164_50_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "TREMORS_MINIOR",
+              "ATTRIBUTE_DAMAGE_FIRE",
+              "ATTRIBUTE_DAMAGE_WATER",
+              "ATTRIBUTE_DAMAGE_ICE"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "DRAGON"
+            ]
+          }
+        },
+        {
+          "_Index": 31,
+          "_EmID": "EM0082_00_0",
+          "_StageBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ST102",
+              "ST105"
+            ]
+          },
+          "_EnemySPAttackBit": {
+            "_MaxElement": "34",
+            "_Values": [
+              "ROAR_MAJOR",
+              "ATTRIBUTE_DAMAGE_WATER",
+              "ATTRIBUTE_DAMAGE_SUNDER",
+              "BUBBLEBLIGHT_MAJOR",
+              "HEAVY_OIL"
+            ]
+          },
+          "_RecoAttributeBit": {
+            "_MaxElement": "6",
+            "_Values": [
+              "ICE",
+              "ELEC",
+              "DRAGON"
+            ]
+          }
+        }
+      ]
+    }
+  }
+]
