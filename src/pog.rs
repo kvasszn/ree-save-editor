@@ -47,11 +47,11 @@ impl Pog {
         let version = file.read_u32()?;
 
         let hash1 = file.read_u64()?;
-        let num_unks = file.read_u32()?;
+        let _num_unks = file.read_u32()?;
         let num_nodes = file.read_u32()?;
 
         let hash2 = file.read_u64()?;
-        let unk_offset = file.read_u64()?;
+        let _unk_offset = file.read_u64()?;
         let nodes_offset = file.read_u64()?;
         let points_offset = file.read_u64()?;
         let rsz_start1 = file.read_u64()?;

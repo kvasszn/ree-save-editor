@@ -1,6 +1,9 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::rsz::dump::RszField;
+use crate::rsz::rszserde::DeRszInstance;
+
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Debug)]
@@ -29,3 +32,24 @@ impl fmt::Display for FileParseError {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum RszError<'a> {
+    UnsetDeserializer(&'a str),
+    InvalidRszTypeHash(u32),
+    InvalidRszObjectIndex(u32, u32),
+    MissingFieldDescription(String),
+}
+impl<'a> Error for RszError<'a> {}
+
+impl<'a> fmt::Display for RszError<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidRszTypeHash(v) => write!(f, "Invalid type hash {:08X} not found in rsz", *v),
+            Self::UnsetDeserializer(v) => write!(f, "Deserializer not set for {}", *v),
+            Self::InvalidRszObjectIndex(i, h) => write!(f, "Invalid Object Index {} for hash {}", *i, *h),
+            Self::MissingFieldDescription(source) => write!(f, "Missing field description when reading data at {}", source),
+        }
+    }
+}
+

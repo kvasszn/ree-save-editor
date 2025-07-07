@@ -19,20 +19,20 @@ extern crate image;
 extern crate libdeflater;
 
 use clap::{CommandFactory, Parser};
-use dersz::{ENUM_FILE, RSZ_FILE};
-use file_ext::{ReadExt, SeekExt};
+use rsz::dump::{ENUM_FILE, RSZ_FILE};
 use font::Oft;
 use gensdk::Sdk;
 use mesh::Mesh;
 use msg::Msg;
 use pog::{Pog, PogList, PogPoint, PogNode};
-use rsz::{DeRsz, Rsz};
+use rsz::rszserde::{DeRsz, DeRszRegistry};
+use rsz::Rsz;
 use scn::Scn;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs::{self, read_to_string,File};
-use std::io::{Seek, Write};
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tex::Tex;
@@ -108,8 +108,6 @@ enum FileType {
     Oft,
     Pog,
     PogList,
-    Mdf2,
-    Sdftex,
     Annoying,
     Unknown
 }
@@ -158,7 +156,7 @@ fn get_file_ext(file_name: String) -> Result<(FileType, bool)> {
 }
 
 fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf, dump_all_rsz: bool) -> Result<Option<HashSet<u32>>> {
-    let mut res = None;
+    let res = None;
     let file_name = match file_path.file_name() {
         Some(file_name) => file_name,
         None => {
@@ -241,16 +239,15 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf,
             Ok(None)
         },
         FileType::User(_v) => {
-            //return if !is_json {
+            return if !is_json {
                 let file = File::open(&file_path)?;
-                let rsz = User::new(file)?.rsz;
-                let types: HashSet<u32> = rsz.type_descriptors.iter().map(|t| t.hash).collect();
+                let user = User::new(file)?;
+                let types: HashSet<u32> = user.rsz.type_descriptors.iter().map(|t| t.hash).collect();
                 let res = Some(types.clone());
-                let dersz = rsz.deserialize()?;
                 let mut output_path = output_path.clone();
                 output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-                let json_res = serde_json::to_string_pretty(&dersz);
-                /*match json_res {
+                let json_res = serde_json::to_string_pretty(&user);
+                match json_res {
                     Ok(json) => {
                         let _ = fs::create_dir_all(output_path.parent().unwrap())?;
                         let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
@@ -261,22 +258,22 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf,
                     Err(e) => {
                         Err(format!("File: {file_path:?}\nReason: {e}").into())
                     }
-                }*/
-                Ok(res)
-            /*} else {
+                }
+            } else {
                 let mut output_path = output_path.clone();
                 output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".custom");
                 let user = User::from_json_file(&file_path.to_str().unwrap())?;
                 let _ = fs::create_dir_all(output_path.parent().unwrap())?;
-                user.save_from_json(&output_path.to_str().unwrap())?;
-                println!("{output_path:?}");
+                let mut output = File::create(&output_path)?;
+                output.write_all(&user.to_buf()?)?;
+                println!("saved {output_path:?}");
                 Ok(res)
-            }*/
+            }
         },
         FileType::Scn => {
             let file = File::open(file_path.clone())?;
             let rsz = Box::new(Scn::new(file)?.rsz);
-            let  nodes = rsz.deserialize()?;
+            let  nodes = rsz.deserialize_to_dersz()?;
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
 
@@ -325,7 +322,10 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf,
             let pog = Pog::new(file)?;
             let mut output_path = output_path.clone();
             output_path.set_file_name(output_path.file_name().unwrap().to_str().unwrap().to_string() + ".json");
-            let nodes = pog.rszs.iter().map(|rsz| rsz.deserialize()).collect::<Result<Vec<_>>>()?;
+            let mut nodes = Vec::new();
+            for rsz in pog.rszs {
+                nodes.push(rsz.deserialize_to_dersz()?);
+            }
             #[derive(Serialize)]
             struct Wrapped {
                 points: Vec<PogPoint>,
@@ -336,7 +336,7 @@ fn dump_file(root_dir: Option<String>, file_path: PathBuf, output_path: PathBuf,
             let json_res = serde_json::to_string_pretty(&Wrapped {
                 points: pog.points,
                 graph: pog.nodes,
-                nodes,
+                nodes: nodes
             }); 
             return match json_res {
                 Ok(json) => {
@@ -425,7 +425,7 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String, dump_a
                 continue
             }
         };
-        //eprintln!("Dumping File: {file_path:?}");
+        println!("Dumping File: {file_path:?}");
         match dump_file(root_dir.clone(), file_path.clone(), output_path.clone(), dump_all_rsz) {
             Ok(res) => {
                 if let Some(res) = res {
@@ -450,6 +450,7 @@ fn dump_all(root_dir: Option<String>, out_dir: String, list_file: String, dump_a
 
 
 fn main() -> Result<()> {
+    env_logger::init();
     let args = Args::parse();
     // Ugly but will change later
     let rsz_file = std::env::var("RSZ_FILE").unwrap_or_else( 

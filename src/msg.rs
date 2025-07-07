@@ -2,11 +2,10 @@ use core::str;
 use std::{collections::HashMap, io::{Error, ErrorKind, Result, Write}, sync::OnceLock};
 
 use indexmap::IndexMap;
-use serde::{ser::SerializeSeq, Serialize};
-use serde_json::json;
+use serde::Serialize;
 use uuid::Uuid;
 
-use crate::{byte_reader::BytesFile, dersz::get_enum_name};
+use crate::{byte_reader::BytesFile};
 
 const KEY: [u8; 16] = [207, 206, 251, 248, 236, 10, 51, 102, 147, 169, 29, 147, 80, 57, 95, 9];
 

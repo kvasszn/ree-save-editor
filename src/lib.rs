@@ -1,3 +1,5 @@
+use std::io::Result;
+
 pub mod align;
 pub mod gensdk;
 pub mod reerr;
@@ -14,4 +16,8 @@ pub mod pog;
 pub mod font;
 pub mod scn;
 pub mod mesh;
+
+pub trait Save {
+    fn save(&self, path: &std::path::Path) -> Result<()>;
+}
 

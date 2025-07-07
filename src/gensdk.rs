@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::dersz::RszDump;
+use crate::rsz::dump::RszDump;
 use crate::reerr::Result;
 
 const SDK_BASE: &str = "gen/sdk/src/";
@@ -48,7 +48,7 @@ impl SdkFile {
             }
         }).collect();
 
-        let structs: Vec<_> = self.structs.iter().map(|(k, v)| &v.tokens).collect();
+        let structs: Vec<_> = self.structs.iter().map(|(_, v)| &v.tokens).collect();
         let tokens = if self.name == "lib" {
             quote! {
                 #![allow(unused, nonstandard_style)]
@@ -449,14 +449,11 @@ impl Sdk {
             }
         }
 
-        for file in &self.files {
-            //println!("{}, {:?}", file.1.name, file.1.structs);
-        }
         Ok(())
     }
 
     pub fn write_files(&self) {
-        for (path, file) in &self.files {
+        for (_path, file) in &self.files {
             //println!("{path}");
             file.write();
         }

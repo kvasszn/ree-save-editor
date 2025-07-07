@@ -1,25 +1,24 @@
-#![allow(dead_code)]
-use rsz_macros::DeRszType;
+pub mod rszserde;
+pub mod object;
+pub mod dump;
 use byteorder::LittleEndian;
 use byteorder::WriteBytesExt;
-use indexmap::IndexMap;
-use serde::de;
-use serde::Serialize;
-use serde_json::Value;
-use syn::token::Struct;
-
-use crate::dersz::*;
+use dump::RszDump;
+use rszserde::DeRsz;
+use rszserde::DeRszInstance;
+use rszserde::DeRszType;
+use rszserde::RszDeserializerCtx;
+use rszserde::RszSerializerCtx;
+use rszserde::Struct;
 
 use crate::file_ext::*;
-use crate::reerr;
-use std::any::Any;
+
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::fmt::Debug;
-use std::fs::File;
+use std::io::Cursor;
 use std::io::Write;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use crate::reerr::*;
 
 #[derive(Debug, Clone)]
@@ -34,6 +33,8 @@ pub struct TypeDescriptor {
     pub crc: u32,
 }
 
+// This is just the Rsz Header parsed, with the raw data of the rsz in bytes
+// Can be turned into an intermediate format with DeRsz
 #[derive(Debug)]
 pub struct Rsz {
     version: u32,
@@ -160,27 +161,18 @@ impl Rsz {
         })
     }
 
-
-    pub fn deserialize<'a>(&'a self) -> Result<DeRsz>
+    // Deserializes the Rsz data into a DeRsz, consuming the Rsz
+    pub fn deserialize_to_dersz(&self) -> Result<DeRsz>
     {
-        let mut cursor = Cursor::new(&self.data);
-        let boxed: Box<dyn ReadSeek + 'a> = Box::new(cursor.clone());
-        let mut ctx = RszDeserializerCtx {  
-            data: boxed,
-            objects: Vec::new(),
-            cur_hash: 0,
-            type_descriptors: self.type_descriptors.clone(),
-            roots: self.roots.clone(),
-            extern_slots: self.extern_slots.clone()
-        };
+        let mut ctx = RszDeserializerCtx::from(self);
         let x = DeRsz::from_bytes(&mut ctx)?;
 
-        let mut leftover = vec![];
-        cursor.read_to_end(&mut leftover)?;
+        /*let mut leftover = vec![];
+        ctx.boxed.read_to_end(&mut leftover)?;
         if !leftover.is_empty() {
             //return Err(format!("Left over data {leftover:?}").into());
             //eprintln!("Left over data {leftover:?}");
-        }
+        }*/
 
         Ok(x)
     }
@@ -234,446 +226,29 @@ impl Rsz {
     }
 }
 
-
-/*
- * Deserializer/Serializer
- */
-
-pub trait ReadSeek: Read + Seek {}
-impl<'a, T: Read + Seek> ReadSeek for T {}
-pub struct RszDeserializerCtx<'a> {
-    data: Box<dyn ReadSeek + 'a>,
-    objects: Vec<u32>,
-    type_descriptors: Vec<TypeDescriptor>,
-    roots: Vec<u32>,
-    cur_hash: u32,
-    extern_slots: HashMap<u32, Extern>
-}
-
-
-pub type RszFieldsValue = (u32, Vec<Box<dyn DeRszInstance>>);
-
-pub struct RszJsonSerializerCtx<'a> {
-    root: Option<u32>,
-    field: Option<&'a RszField>,
-    objects: &'a Vec<RszFieldsValue>,
-}
-
-pub trait DeRszType<'a> {
-    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> where Self: Sized;
-}
-
-pub trait DeRszInstance: Debug {
-    fn as_any(&self) -> &dyn Any;
-    fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value;
-}
-
-/*
- * Default Implementations
- */
-
-impl DeRszInstance for Vec<Box<dyn DeRszInstance>> {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
-        serde_json::Value::Array(self.iter().map(|item| {
-            let new_ctx = RszJsonSerializerCtx {
-                root: None,
-                field: ctx.field,
-                objects: ctx.objects,
+impl From<DeRsz> for Result<Rsz> {
+    fn from(dersz: DeRsz) -> Self {
+        let type_descriptors = dersz.structs.iter().map(|(hash, _)| {
+            let crc = RszDump::get_struct(*hash).unwrap().crc;
+            TypeDescriptor{hash: *hash, crc}
+        }).collect();
+        let mut buffer = Vec::new();
+        {
+            let mut cursor = Cursor::new(&mut buffer);
+            let mut ctx = RszSerializerCtx {
+                data: &mut cursor,
+                base_addr: 0
             };
-            item.to_json(&new_ctx)
-        }).collect())
-    }
-}
 
-impl<'a, T> DeRszType<'a> for Vec<T>
-where
-    T: for<'b> DeRszType<'b>, 
-{
-    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
-        let len = u32::from_bytes(ctx)? as usize;
-        let mut items = Vec::with_capacity(len);
-        for _ in 0..len {
-            let item = T::from_bytes(ctx)?;
-            items.push(item);
-        }
-        Ok(items)
-    }
-
-}
-
-impl<T: 'static + DeRszInstance + Debug, const N: usize> DeRszInstance for [T; N] {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
-        let values = self.iter().map(|x| {
-            x.to_json(ctx)
-        }).collect::<Vec<serde_json::Value>>();
-        Value::Array(values)
-    }
-}
-
-impl<'a, T, const N: usize> DeRszType<'a> for [T; N]
-where
-    T: for<'b> DeRszType<'b> + Debug,
-{
-    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
-        let mut vec = Vec::with_capacity(N);
-        for _ in 0..N {
-            vec.push(T::from_bytes(ctx)?);
-        }
-        Ok(vec.try_into().unwrap())
-    }
-
-}
-
-#[derive(Debug, Serialize)]
-pub struct Object {
-    hash: u32,
-    idx: u32,
-}
-
-impl DeRszInstance for Object {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
-        let (hash, field_values) = &ctx.objects[ctx.root.unwrap_or(self.idx) as usize];
-        let struct_desc = match RszDump::rsz_map().get(&hash) {
-            Some(struct_desc) => struct_desc,
-            None => return serde_json::Value::Null
-        };
-        let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
-            let obj = &field_values[i];
-            let new_ctx = RszJsonSerializerCtx {
-                root: None,
-                field: Some(&field),
-                objects: ctx.objects
-            };
-            (field.name.clone(), obj.to_json(&new_ctx))
-        }).collect::<IndexMap<String, serde_json::Value>>();
-        serde_json::to_value(values).unwrap()
-
-    }
-}
-
-impl<'a> DeRszType<'a> for Object {
-    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
-        Ok(Self {
-            hash: ctx.cur_hash,
-            idx: ctx.data.read_u32()?
-        })
-    }
-}
-
-
-/*
- *
- *
- */
-
-type DeserializerFn = fn(&mut RszDeserializerCtx) -> Result<Box<dyn DeRszInstance>>;
-
-struct DeRszRegistry {
-    deserializers: HashMap<&'static str, DeserializerFn>,
-}
-
-impl DeRszRegistry {
-    fn new() -> Self {
-        Self {
-            deserializers: HashMap::new(),
-        }
-    }
-
-    fn register<T>(&mut self, type_id: &'static str)
-    where
-        T: for<'a> DeRszType<'a> + DeRszInstance + 'static
-    {
-        self.deserializers.insert(type_id, |ctx| {
-            Ok(Box::new(T::from_bytes(ctx)?))
-        });
-    }
-}
-
-pub struct DeRsz {
-    pub offset: usize,
-    pub roots: Vec<u32>,
-    pub structs: Vec<RszFieldsValue>,
-    pub extern_idxs: HashSet<u32>,
-}
-
-impl Serialize for DeRsz {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-        #[derive(Serialize)]
-        struct Wrapped {
-            offset: usize,
-            rsz: Vec<serde_json::Value>
-        }
-        let mut wrapped = Wrapped{offset: self.offset, rsz: Vec::new()};
-        for root in &self.roots {
-            let ctx = RszJsonSerializerCtx {root: Some(*root), field: None, objects: &self.structs};
-            let data = ctx.objects[*root as usize].1.to_json(&ctx);
-            wrapped.rsz.push(data);
-        }
-        println!("{}", serde_json::to_string_pretty(&wrapped).unwrap());
-        wrapped.serialize(serializer)
-    }
-}
-
-
-impl<'a> DeRszType<'a> for DeRsz {
-    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
-        let mut structs: Vec<RszFieldsValue> = Vec::new();
-        let mut extern_idxs: Vec<u32> = Vec::new();
-
-        let mut deserializers = DeRszRegistry::new();
-        deserializers.register::<u8>("U8");
-        deserializers.register::<u16>("U16");
-        deserializers.register::<u32>("U32");
-        deserializers.register::<u64>("U64");
-        deserializers.register::<i8>("S8");
-        deserializers.register::<i16>("S16");
-        deserializers.register::<i32>("S32");
-        deserializers.register::<i64>("S64");
-        deserializers.register::<u8>("F8");
-        deserializers.register::<u16>("F16");
-        deserializers.register::<f32>("F32");
-        deserializers.register::<f64>("F64");
-        deserializers.register::<String>("String");
-        deserializers.register::<String>("Resource");
-        deserializers.register::<bool>("Bool");
-        deserializers.register::<UInt2>("Uint2");
-        deserializers.register::<UInt3>("Uint3");
-        deserializers.register::<UInt4>("Uint4");
-        deserializers.register::<Float2>("Float2");
-        deserializers.register::<Float3>("Float3");
-        deserializers.register::<Float4>("Float4");
-        deserializers.register::<Vec2>("Vec2");
-        deserializers.register::<Vec3>("Vec3");
-        deserializers.register::<Vec4>("Vec4");
-        deserializers.register::<Quaternion>("Quaternion");
-        deserializers.register::<Sphere>("Sphere");
-        deserializers.register::<Position>("Position");
-        deserializers.register::<Color>("Color");
-        deserializers.register::<Mat4x4>("Mat4");
-        deserializers.register::<Guid>("Guid");
-        deserializers.register::<Object>("Object");
-        deserializers.register::<Object>("UserData");
-        //deserializers.register::<Range>("Range");
-        //deserializers.register::<RangeI>("RangeI");
-        for (i, &TypeDescriptor { hash, crc }) in ctx.type_descriptors.clone().iter().enumerate() {
-            if let Some(slot_extern) = ctx.extern_slots.get(&u32::try_from(i)?) {
-                continue;
-            } else {
-                println!("{hash}");
-                let struct_type = match RszDump::rsz_map().get(&hash) {
-                    Some(x) => x,
-                    None => return Err(Box::new(reerr::FileParseError::InvalidRszTypeHash(hash)))
-                };
-                let mut field_values: RszFieldsValue = (hash, Vec::new());
-                for field in &struct_type.fields {
-                    ctx.cur_hash = *field.get_type_hash().unwrap();
-                    if field.array {
-                        ctx.data.seek_align_up(4)?;
-                        let len = ctx.data.read_u32()?;
-                        ctx.data.seek_align_up(field.align.into())?;
-                        let dersz_fn = deserializers.deserializers.get(field.r#type.as_str()).unwrap();
-                        let mut vals = Vec::new();
-                        for _ in 0..len {
-                            let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
-                            vals.push(x);
-                        }
-                        field_values.1.push(Box::new(vals));
-
-                    } else {
-                        ctx.data.seek_align_up(field.align.into())?;
-                        let dersz_fn = deserializers.deserializers.get(field.r#type.as_str()).expect(&format!("Deserializer for {} is not set", field.r#type));
-                        let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
-                        field_values.1.push(x);
-                    }
-                }
-                println!("{:?}", field_values);
-                structs.push(field_values);
+            for (hash, val) in dersz.structs {
+                if hash == 0 { continue; }
+                let s = &val[0]; // dumb stupid
+                ctx.base_addr = dersz.offset;// + rszserde::get_writer_length(ctx.data)? as usize;
+                s.to_bytes(&mut ctx)?;
             }
         }
+        Ok(Rsz{ version: 0x10, offset: dersz.offset, roots: dersz.roots, extern_slots: HashMap::new(), type_descriptors, data: buffer })
 
-        Ok(Self { offset: 0, roots: ctx.roots.clone(), structs, extern_idxs: HashSet::new() })
     }
+
 }
-
-
-/*
- * types
- */
-
-#[derive(Debug, Serialize, DeRszType)]
-pub struct UInt2(u32, u32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct UInt3(u32, u32, u32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct UInt4(u32, u32, u32, u32);
-
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Int2(i32, i32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Int3(i32, i32, i32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Int4(i32, i32, i32, i32);
-
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Color(u8, u8, u8, u8);
-
-#[derive(Debug, Serialize, DeRszType)]
-#[rsz(align = 16)]
-pub struct Vec2(f32, f32);
-
-#[derive(Debug, Serialize, DeRszType)]
-#[rsz(align = 16)]
-pub struct Vec3(f32, f32, f32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Vec4(f32, f32, f32, f32);
-
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Quaternion(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Sphere(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Position(f32, f32, f32);
-
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Float2(f32, f32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Float3(f32, f32, f32);
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Float4(f32, f32, f32, f32);
-
-#[derive(Debug, Serialize, DeRszType)]
-pub struct Mat4x4([f32; 16]);
-
-#[derive(Debug, DeRszType)]
-pub struct Guid([u8; 16]);
-
-impl Serialize for Guid {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-            serializer.serialize_str(&uuid::Uuid::from_bytes(self.0).to_string())
-    }
-}
-
-macro_rules! impl_dersz_instance {
-    ( $t:ty ) => {
-        #[allow(unused)]
-        impl DeRszInstance for $t {
-            fn as_any(&self) -> &dyn Any {
-                self
-            }
-            fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
-                serde_json::json!(self)
-            }
-        }
-    };
-}
-
-
-macro_rules! derive_dersztype_full{
-    ($rsz_type:ty) => {
-        impl_dersz_instance!( $rsz_type );
-        impl<'a> DeRszType<'a> for $rsz_type {
-            fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<$rsz_type> {
-                let mut buf = [0; size_of::<$rsz_type>()];
-                ctx.data.read_exact(&mut buf)?;
-                Ok(<$rsz_type>::from_le_bytes(buf))
-            }
-        }
-    };
-    ($rsz_type:ty, $func:expr) => {
-        impl_dersz_instance!( $rsz_type );
-        impl<'a> DeRszType<'a> for $rsz_type {
-            fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<$rsz_type> {
-                $func(ctx)
-            }
-        }
-    };
-}
-
-pub fn capitalize(s: &str) -> String {
-    let c: String = s.chars().map(|c| c.to_uppercase().to_string()).collect::<String>();
-    c
-}
-macro_rules! derive_dersztype_enum{
-    ($rsz_type:ty) => {
-        #[allow(unused)]
-        impl DeRszInstance for $rsz_type {
-            fn as_any(&self) -> &dyn Any {
-                self
-            }
-            fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
-                match ctx.field {
-                    Some(field) => {
-                        let tmp = field.original_type.replace("[]", "");
-                        let str_enum_name = |name: &str, val: $rsz_type| { 
-                            match get_enum_name(name, &val.to_string()) {
-                                //None => format!("{} // Could not find enum value in map {}", name, val.to_string()),
-                                None => format!("NULL_BIT_ENUM_OR_COULD_NOT_FIND[{}]", val.to_string()),
-                                Some(value) => value
-                            }
-                        };
-                        if enum_map().get(&tmp).is_some() || tmp.contains("Serializable") {
-                            return serde_json::json!(str_enum_name(&tmp, *self))
-                        } 
-                        serde_json::json!(self)
-                    }
-                    None => serde_json::json!(self)
-                }
-            }
-        }
-        impl<'a> DeRszType<'a> for $rsz_type {
-            fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<$rsz_type> {
-                let mut buf = [0; size_of::<$rsz_type>()];
-                ctx.data.read_exact(&mut buf)?;
-                Ok(<$rsz_type>::from_le_bytes(buf))
-            }
-        }
-    };
-}
-
-derive_dersztype_enum!(i32);
-derive_dersztype_enum!(u32);
-
-derive_dersztype_full!(u8);
-derive_dersztype_full!(u16);
-derive_dersztype_full!(u64);
-derive_dersztype_full!(i8);
-derive_dersztype_full!(i16);
-derive_dersztype_full!(i64);
-
-pub type F8 = u8; // scuffed
-pub type F16 = u16; // scuffed
-derive_dersztype_full!(f32);
-derive_dersztype_full!(f64);
-
-derive_dersztype_full!(bool, |ctx: &'a mut RszDeserializerCtx| -> Result<bool> {
-    let v = ctx.data.read_u8()?;
-    if v > 1 {
-        return Err(Box::new(FileParseError::InvalidBool(v)))
-    }
-    Ok(v != 0)
-});
-
-derive_dersztype_full!(String, |ctx: &'a mut RszDeserializerCtx| -> Result<Self> {
-    let mut s = vec![];
-    let n = ctx.data.read_u32()?;
-    for _i in 0..n {
-        let c = ctx.data.read_u16()?;
-        s.push(c);
-    }
-    Ok(String::from_utf16(&s)?)
-});

@@ -1,16 +1,19 @@
 use byteorder::LittleEndian;
 use byteorder::WriteBytesExt;
+use serde::ser::SerializeStruct;
 use serde::Deserialize;
+use serde::Serialize;
 
 use crate::file_ext::*;
+use crate::rsz::rszserde::DeRsz;
+use crate::rsz::rszserde::DeRszRegistry;
 use crate::rsz::*;
 use crate::reerr::{Result, FileParseError::*};
-use std::fs::File;
 use std::io::Write;
 use std::io::{Read, Seek};
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserChild {
     pub hash: u32,
     pub name: String,
@@ -126,4 +129,35 @@ impl User {
         buf.extend(rsz_buf);
         Ok(buf)
     }
+    pub fn from_json_file(file: &str) -> Result<User> {
+        let data = std::fs::read_to_string(file)?;
+        let json_data: serde_json::Value = serde_json::from_str(&data).unwrap();
+        let rsz_json = json_data.get("rsz").unwrap();
+        let mut registry = DeRszRegistry::new();
+        registry.init();
+        let dersz: DeRsz = DeRsz::from_json(rsz_json, registry.into())?; 
+        let rsz = Result::<Rsz>::from(dersz)?;
+        Ok(User {
+            resource_names: vec![],
+            children: vec![],
+            rsz
+        })
+    }
 }
+
+impl Serialize for User {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+            let mut state = serializer.serialize_struct("user", 3)?;
+            state.serialize_field("resource_names", &self.resource_names)?;
+            state.serialize_field("children", &self.children)?;
+            let dersz = match self.rsz.deserialize_to_dersz() {
+                Ok(dersz) => dersz,
+                Err(e) => return Err(serde::ser::Error::custom(format!("MyType serialization failed, {:?}", e).to_string()))
+            };
+            state.serialize_field("rsz", &dersz)?;
+            state.end()
+    }
+}
+

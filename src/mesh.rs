@@ -1,8 +1,6 @@
 use crate::file_ext::*;
-use crate::rsz::*;
 use crate::reerr::{Result, FileParseError::*};
 use std::io::{Read, Seek};
-use serde::Serialize;
 
 pub type Vertex = [f32; 3];
 
@@ -107,6 +105,7 @@ impl VertexLayout {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub struct Mesh {
     version: u32,
@@ -118,6 +117,7 @@ pub struct Mesh {
     pub names: Vec<String>,
 }
 
+#[allow(unused_variables)]
 impl Mesh {
     pub fn new<F: Read + Seek>(mut file: F) -> Result<Self> {
         let magic = file.read_magic()?;
