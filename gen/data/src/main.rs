@@ -1,25 +1,16 @@
 use sdk::app::{self, user_data};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize};
 use std::{collections::HashMap, fs::File, io::{Result, Write}, sync::OnceLock};
-
-#[derive(Debug, serde::Deserialize)]
-struct RszJson<T> {
-    offset: u64,
-    r#type: String,
-    rsz: T
-}
+use mhtame::user::User;
 
 
-impl<T> RszJson<T>
-where
-    T: DeserializeOwned, // allows deserializing owned data (not references)
-{
-    pub fn get_rsz(path: &str) -> Result<T> {
-        let file_content = std::fs::read_to_string(path)?;
-        let file: Vec<RszJson<T>> = serde_json::from_str(&file_content)?;
-        let rsz = file.into_iter().next().unwrap().rsz;
-        Ok(rsz)
-    }
+pub fn get_user_rsz<T: DeserializeOwned>(path: &str) -> Result<T> {
+    let file_content = std::fs::read_to_string(path)?;
+    let file: serde_json::Value = serde_json::from_str(&file_content)?;
+    let rsz = file.get("rsz").unwrap();
+    let rsz = rsz.get("rsz").unwrap().get(0).unwrap();
+    let rsz: T = serde_json::from_value(rsz.clone())?;
+    Ok(rsz)
 }
 
 #[derive(serde::Deserialize)]
@@ -225,7 +216,7 @@ macro_rules! save_to_csv {
         $file_save_path:expr,
         $struct_ty:ty
     ) => {
-        let rsz = RszJson::<$struct_ty>::get_rsz($data_path)?;
+        let rsz = get_user_rsz::<$struct_ty>($data_path)?;
         let data = rsz.to_csv();
         let mut file = File::create($file_save_path).unwrap();
         file.write_all(data.as_bytes()).unwrap();
@@ -263,7 +254,7 @@ fn main() -> anyhow::Result<()> {
         sdk::app::user_data::EnemyData
     );
 
-    save_to_csv!(
+    /*save_to_csv!(
         "../../outputs/natives/STM/GameDesign/Common/Enemy/EnemySpecies.user.3.json",
         "species.csv",
         sdk::app::user_data::EnemySpeciesData
@@ -272,6 +263,6 @@ fn main() -> anyhow::Result<()> {
         "../../outputs/natives/STM/GameDesign/Common/Equip/ArmorData.user.3.json",
         "armor.csv",
         sdk::app::user_data::ArmorData
-    );
+    );*/
     Ok(())
 }

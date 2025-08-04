@@ -8,10 +8,11 @@ use std::{any::Any, collections::{HashMap, HashSet}, fmt::Debug, io::{Cursor, Re
 use indexmap::IndexMap;
 use rsz_macros::{DeRszFrom, DeRszInstance};
 use serde::{Deserialize, Serialize};
+use syn::token::Enum;
 
 use crate::reerr::{self, Result, RszError};
 use crate::file_ext::*;
-use super::{dump::{enum_map, get_enum_name, get_enum_val, RszDump, RszField}, Extern, Rsz, TypeDescriptor};
+use super::{dump::{enum_map, get_enum_name, get_enum_val, RszDump, RszField, RszStruct}, Extern, Rsz, TypeDescriptor};
 
 pub trait ReadSeek: Read + Seek {}
 impl<'a, T: Read + Seek> ReadSeek for T {}
@@ -110,6 +111,7 @@ pub struct RszJsonSerializerCtx<'a> {
     root: Option<u32>,
     field: Option<&'a RszField>,
     objects: &'a Vec<RszFieldsValue>,
+    parent: Option<&'a RszStruct<RszField>>
 }
 
 pub trait DeRszType<'a> {
@@ -147,6 +149,7 @@ impl DeRszInstance for Vec<Box<dyn DeRszInstance>> {
                 root: None,
                 field: ctx.field,
                 objects: ctx.objects,
+                parent: ctx.parent,
             };
             item.to_json(&new_ctx)
         }).collect())
@@ -279,12 +282,103 @@ impl DeRszInstance for Object {
                 return extern_obj.to_json(ctx)
             }
         }
+        
+        // Serializable Enum
+        if struct_desc.name.contains("Serializable") {
+            let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
+                let obj = &field_values[i];
+                if i == 0 {
+                    if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
+                        if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
+                            return (field.name.clone(), serde_json::json!(enum_str_val))
+                        }
+                    }
+                }
+                let new_ctx = RszJsonSerializerCtx {
+                    root: None,
+                    field: Some(&field),
+                    objects: ctx.objects,
+                    parent: Some(struct_desc)
+                };
+                (field.name.clone(), obj.to_json(&new_ctx))
+            }).collect::<IndexMap<String, serde_json::Value>>();
+            return serde_json::to_value(values).unwrap()
+        }
+
+        // Enumerable Param
+        if let Some(types) = ctx.parent.and_then(|parent| parent.name.strip_prefix("app.cEnumerableParam`2<")) {
+            let types = types.strip_suffix(">").unwrap().split(",").collect::<Vec<&str>>();
+            let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
+                let obj = &field_values[i];
+                println!("{obj:?}");
+                if field.name.contains("EnumValue") {
+                    if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
+                        if let Some(enum_str_val) = enummable.get_enum_name(&types[0]) {
+                            return (field.name.clone(), serde_json::json!(enum_str_val))
+                        }
+                    }
+                    if let Some(enummable) = obj.as_any().downcast_ref::<u32>() {
+                        if let Some(enum_str_val) = enummable.get_enum_name(&types[0]) {
+                            return (field.name.clone(), serde_json::json!(enum_str_val))
+                        }
+                    }
+                }
+                let new_ctx = RszJsonSerializerCtx {
+                    root: None,
+                    field: Some(&field),
+                    objects: ctx.objects,
+                    parent: Some(struct_desc)
+                };
+                (field.name.clone(), obj.to_json(&new_ctx))
+            }).collect::<IndexMap<String, serde_json::Value>>();
+            return serde_json::to_value(values).unwrap()
+        }
+
+        if let Some(types) = struct_desc.name.strip_prefix("ace.Bitset`1<") {
+            let mut r#type = types.strip_suffix(">").unwrap().to_string();
+            let is_bit = if enum_map().get(&(r#type.clone() + "Bit")).is_some() {
+                r#type = r#type + "Bit";
+                true
+            } else { false };
+
+            let is_nullable = enum_map().get(&r#type).unwrap().get("INVALID").is_some() as u32;
+
+            if let Some(max) = field_values[1].as_any().downcast_ref::<i32>() {
+                if let Some(values) = field_values[0].as_any().downcast_ref::<Vec<Box<dyn DeRszInstance>>>() {
+                    let values = values.iter().enumerate().filter_map(|(i, x)| {
+                        if let Some(val) = x.as_any().downcast_ref::<u32>() {
+                            return Some((0..32).filter_map(|j| {
+                                if *val & (1 << j) != 0 && (i*32 + j < *max as usize){ 
+                                    Some((i * 32 + j) as u32)
+                                } else { None }
+                            }).collect::<Vec<_>>());
+                        } else {None}
+                    }).flatten().collect::<Vec<_>>();
+                    
+                    let values: Vec<String> = values.iter().map(|val| {
+                        let val = if is_bit {2u32.pow(*val)} else { *val - is_nullable};
+                        match get_enum_name(&r#type, &val.to_string()) {
+                            Some(enum_name) => enum_name,
+                            None => val.to_string(),
+                        }
+                    }).collect();
+                    return serde_json::json!({
+                        &struct_desc.fields[0].name: values,
+                        &struct_desc.fields[1].name: max,
+                    })
+                    //  state.serialize_element(format!("{max}").as_str())?;
+                }
+            }
+
+        }
+
         let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
             let obj = &field_values[i];
             let new_ctx = RszJsonSerializerCtx {
                 root: None,
                 field: Some(&field),
-                objects: ctx.objects
+                objects: ctx.objects,
+                parent: Some(struct_desc)
             };
             (field.name.clone(), obj.to_json(&new_ctx))
         }).collect::<IndexMap<String, serde_json::Value>>();
@@ -310,7 +404,7 @@ impl<'a> DeRszType<'a> for Object {
 impl RszFromJson for Object {
     fn from_json(data: &serde_json::Value, ctx: &mut RszJsonDeserializerCtx) -> Result<Self> where Self: Sized {
         let parent_struct = RszDump::get_struct(ctx.hash)?;
-        println!("{}: {:?}", parent_struct.name, data);
+        // println!("{}: {:?}", parent_struct.name, data);
         let field_name = &ctx.field.unwrap().original_type;
         let hash = if field_name == "ace.user_data.ExcelUserData.cData" {
             let og_type = parent_struct.name.clone() + ".cData";
@@ -329,7 +423,7 @@ impl RszFromJson for Object {
         //println!("object struct: {:#?}", r#struct);
         let obj = Object{hash: ctx.hash, idx: ctx.objects.len() as u32};
         ctx.objects.push((hash, vec![r#struct]));
-        println!("got obj {:#?}", obj);
+        // println!("got obj {:#?}", obj);
         return Ok(obj);
     }
 }
@@ -468,11 +562,11 @@ impl Serialize for DeRsz {
             }
             let mut wrapped = Wrapped{offset: self.offset, roots: Vec::new(), rsz: Vec::new()};
             for root in &self.roots {
-                let ctx = RszJsonSerializerCtx {root: Some(*root), field: None, objects: &self.structs};
+                let ctx = RszJsonSerializerCtx {root: Some(*root), field: None, objects: &self.structs, parent: None};
                 let hash = self.structs[*root as usize].0;
                 let name = &RszDump::get_struct(hash).unwrap().name;
                 wrapped.roots.push(name);
-                let obj = Object {hash: 0, idx: *root as u32};
+                let obj = Object {hash: self.structs[*root as usize].0, idx: *root as u32};
                 //let data = ctx.objects[*root as usize].1.to_json(&ctx);
                 let data = obj.to_json(&ctx);
                 wrapped.rsz.push(data);
@@ -485,7 +579,7 @@ impl<'a> DeRszType<'a> for DeRsz {
     fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
         let mut structs: Vec<RszFieldsValue> = Vec::new();
         let mut extern_idxs: Vec<u32> = Vec::new();
-        println!("{:?}", ctx.type_descriptors);
+        // println!("{:?}", ctx.type_descriptors);
         for (i, &TypeDescriptor { hash, crc: _crc }) in ctx.type_descriptors.clone().iter().enumerate() {
             if let Some(_slot_extern) = ctx.extern_slots.get(&u32::try_from(i)?) {
                 extern_idxs.push(i as u32);
@@ -549,12 +643,12 @@ impl DeRsz {
         let root_data = data.get("roots").unwrap();
         let roots_types: Vec<String> = serde_json::from_value(root_data.clone())?;
         let rszs_data = data.get("rsz").unwrap().as_array().expect("rszs should be in an array");
-        
+
         let mut roots = Vec::new();
         let mut objects: Vec<RszFieldsValue> = Vec::new();
         objects.push((0, vec![]));
         for (rsz_data, root_type) in rszs_data.iter().zip(roots_types) {
-            println!("{root_type}");
+            // println!("{root_type}");
             let hash = *RszDump::name_map().get(&root_type).unwrap();
             let mut ctx = RszJsonDeserializerCtx {
                 hash,
@@ -566,7 +660,7 @@ impl DeRsz {
             ctx.objects.push((val.hash, val.values));
             roots.push(ctx.objects.len() as u32 - 1);
         }
-        println!("{:#?}", objects);
+        // println!("{:#?}", objects);
         Ok(Self {
             offset,
             roots,
@@ -671,36 +765,47 @@ macro_rules! derive_dersz_full{
     };
 }
 
-
 pub fn capitalize(s: &str) -> String {
     let c: String = s.chars().map(|c| c.to_uppercase().to_string()).collect::<String>();
     c
 }
+
+trait Enummable {
+    fn get_enum_name(&self, enum_type: &str) -> Option<String>;
+}
+
 macro_rules! derive_dersz_type_enum{
     ($rsz_type:ty) => {
+        impl Enummable for $rsz_type {
+            fn get_enum_name(&self, r#type: &str) -> Option<String> {
+                let tmp = r#type.replace("[]", "");
+                if enum_map().get(&tmp).is_some() || tmp.contains("Serializable") {
+                    return Some(
+                        match get_enum_name(&tmp, &self.to_string()) {
+                            //None => format!("{} // Could not find enum value in map {}", name, val.to_string()),
+                            None => format!("NULL_BIT_ENUM_OR_COULD_NOT_FIND[{}]", &self.to_string()),
+                            Some(value) => value
+                        })
+                } 
+                None
+            }
+        }
+
         #[allow(unused)]
         impl DeRszInstance for $rsz_type {
             fn as_any(&self) -> &dyn Any {
                 self
             }
             fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
-                match ctx.field {
-                    Some(field) => {
-                        let tmp = field.original_type.replace("[]", "");
-                        let str_enum_name = |name: &str, val: $rsz_type| { 
-                            match get_enum_name(name, &val.to_string()) {
-                                //None => format!("{} // Could not find enum value in map {}", name, val.to_string()),
-                                None => format!("NULL_BIT_ENUM_OR_COULD_NOT_FIND[{}]", val.to_string()),
-                                Some(value) => value
-                            }
-                        };
-                        if enum_map().get(&tmp).is_some() || tmp.contains("Serializable") {
-                            return serde_json::json!(str_enum_name(&tmp, *self))
-                        } 
+                return ctx.field.map_or(serde_json::json!(self), |field| {
+                    let tmp = field.original_type.replace("[]", "");
+                    let enum_str_val = self.get_enum_name(&tmp);
+                    if let Some(enum_str_val) = enum_str_val {
+                        serde_json::json!(enum_str_val)
+                    } else {
                         serde_json::json!(self)
                     }
-                    None => serde_json::json!(self)
-                }
+                });
             }
             fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
                 Ok(ctx.data.write_all(&self.to_le_bytes())?)
@@ -795,8 +900,8 @@ impl Serialize for StringU16 {
 
 impl<'de> Deserialize<'de> for StringU16 {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de> {
             let s = String::deserialize(deserializer)?;
             let s: Vec<u16> = s.encode_utf16().collect();
             Ok(StringU16(s))
@@ -967,7 +1072,8 @@ impl DeRszInstance for Struct {
             let new_ctx = RszJsonSerializerCtx {
                 root: None,
                 field: Some(&field),
-                objects: ctx.objects
+                objects: ctx.objects,
+                parent: Some(struct_desc)
             };
             (field.name.clone(), obj.to_json(&new_ctx))
         }).collect::<IndexMap<String, serde_json::Value>>();
@@ -986,12 +1092,10 @@ impl DeRszInstance for Struct {
             let len = get_writer_length(ctx.data)? as usize;
 
             if field.array && (len + ctx.base_addr) % 4 as usize != 0 {
-                println!("normal offset\n");
                 let buf = vec![0; 4 - (len + ctx.base_addr) % 4];
                 ctx.data.write_all(&buf)?;
             }
             if (len + ctx.base_addr) % align != 0 {
-                println!("normal offset\n");
                 let buf = vec![0; align - (len + ctx.base_addr) % align];
                 ctx.data.write_all(&buf)?;
             } 
@@ -1046,8 +1150,8 @@ impl RszFromJson for Struct {
     fn from_json(data: &serde_json::Value, ctx: &mut RszJsonDeserializerCtx) -> Result<Self> where Self: Sized {
         let r#struct = RszDump::get_struct(ctx.hash)?;
         let mut field_values: Vec<Box<dyn DeRszInstance>> = Vec::new();
-        println!("");
-        println!("\nJson Deser Struct: {:?}", r#struct);
+        //println!("");
+        // println!("\nJson Deser Struct: {:?}", r#struct);
         for field in r#struct.fields.iter() {
             let mut ctx = RszJsonDeserializerCtx {
                 hash: ctx.hash,
@@ -1055,9 +1159,9 @@ impl RszFromJson for Struct {
                 registry: ctx.registry.clone(),
                 field: Some(&field),
             };
-            println!("\n\tJson Deserializing: {field:?}");
+            //  println!("\n\tJson Deserializing: {field:?}");
             let field_data = data.get(&field.name).expect(format!("Could not find field in json data {:?}", field.name).as_str());
-            println!("\n\tJson field: {field_data:?}");
+            // println!("\n\tJson field: {field_data:?}");
             //log::debug!("\n\tData: {field_data:?}");
             if field.array {
                 let mut vals = Vec::new();
@@ -1075,7 +1179,7 @@ impl RszFromJson for Struct {
             }
 
         }
-        println!("{:#?}", field_values);
+        // println!("{:#?}", field_values);
         Ok(Struct {hash: ctx.hash, values: field_values})
     }
 }
@@ -1102,11 +1206,11 @@ impl Serialize for Guid {
 
 impl<'de> Deserialize<'de> for Guid {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de> {
             let s = String::deserialize(deserializer)?;
             let uuid = uuid::Uuid::from_str(&s).unwrap();
             Ok(Guid(uuid.into_bytes()))
-        
+
     }
 }

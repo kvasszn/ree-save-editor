@@ -154,7 +154,7 @@ impl Serialize for User {
             state.serialize_field("children", &self.children)?;
             let dersz = match self.rsz.deserialize_to_dersz() {
                 Ok(dersz) => dersz,
-                Err(e) => return Err(serde::ser::Error::custom(format!("MyType serialization failed, {:?}", e).to_string()))
+                Err(e) => return Err(serde::ser::Error::custom(format!("User serialization failed, {:?}", e).to_string()))
             };
             state.serialize_field("rsz", &dersz)?;
             state.end()

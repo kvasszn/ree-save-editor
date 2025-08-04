@@ -97,6 +97,9 @@ impl RszDump {
     pub fn rsz_map() -> &'static RszMap<RszMapType> {
         static HASHMAP: OnceLock<RszMap<RszMapType>> = OnceLock::new();
         HASHMAP.get_or_init(|| {
+            RSZ_FILE.get_or_init(|| {
+                "rszmhwilds.json".to_string()
+            });
             let file = std::fs::read_to_string(RSZ_FILE.get().unwrap()).unwrap();
             let m: RszMapType = serde_json::from_str(&file).unwrap();
             RszMap(m)
@@ -115,15 +118,6 @@ impl RszDump {
             RszMap(m)
         })
     }
-}
-
-pub fn enum_val_map() -> &'static EnumMap {
-    static HASHMAP: OnceLock<EnumMap> = OnceLock::new();
-    HASHMAP.get_or_init(|| {
-        let json_data = std::fs::read_to_string("enumtoval.json").unwrap();
-        let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();
-        hashmap
-    })
 }
 
 pub fn get_enum_val(name: &str, enum_str_name: &str) -> Option<i128> {
@@ -170,6 +164,9 @@ type EnumMap = HashMap<String, HashMap<String, String>>;
 pub fn enum_map() -> &'static EnumMap {
     static HASHMAP: OnceLock<EnumMap> = OnceLock::new();
     HASHMAP.get_or_init(|| {
+        ENUM_FILE.get_or_init(|| {
+            "enums.json".to_string()
+        });
         let json_data = std::fs::read_to_string(ENUM_FILE.get().unwrap()).unwrap();
         let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();
         hashmap
