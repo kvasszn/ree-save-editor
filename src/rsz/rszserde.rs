@@ -3,7 +3,7 @@
  * Deserializer/Serializer
  */
 
-use std::{any::Any, collections::{HashMap, HashSet}, fmt::Debug, io::{Cursor, Read, Seek, SeekFrom, Write}, rc::Rc, str::FromStr};
+use std::{any::Any, collections::{HashMap, HashSet}, fmt::{Debug, Display}, io::{Cursor, Read, Seek, SeekFrom, Write}, rc::Rc, str::FromStr};
 
 use indexmap::IndexMap;
 use rsz_macros::{DeRszFrom, DeRszInstance};
@@ -17,13 +17,13 @@ use super::{dump::{enum_map, get_enum_name, get_enum_val, RszDump, RszField, Rsz
 pub trait ReadSeek: Read + Seek {}
 impl<'a, T: Read + Seek> ReadSeek for T {}
 pub struct RszDeserializerCtx<'a> {
-    data: Box<dyn ReadSeek + 'a>,
+    pub data: Box<dyn ReadSeek + 'a>,
     type_descriptors: &'a Vec<TypeDescriptor>,
     roots: &'a Vec<u32>,
     cur_hash: Vec<u32>,
     extern_slots: &'a HashMap<u32, Extern>,
     field: Vec<&'a RszField>,
-    registry: Rc<DeRszRegistry>
+    pub registry: Rc<DeRszRegistry>
 }
 
 impl<'a> RszDeserializerCtx<'a> {
@@ -31,6 +31,65 @@ impl<'a> RszDeserializerCtx<'a> {
         if let Some(hash) = self.cur_hash.last() {
             return Ok(*hash)
         } else { return Err(RszError::InvalidRszTypeHash(0).into()) };
+    }
+    pub fn new<T: Read + Seek + 'a>(data: T, type_descriptors: &'a Vec<TypeDescriptor>, extern_slots: &'a HashMap<u32, Extern>, roots: &'a Vec<u32>) -> Self {
+        let mut registry = DeRszRegistry::new();
+        //registry.register::<Nullable>("Nullable");
+        registry.register::<u8>("U8");
+        registry.register::<u16>("U16");
+        registry.register::<u32>("U32");
+        registry.register::<u64>("U64");
+        registry.register::<i8>("S8");
+        registry.register::<i16>("S16");
+        registry.register::<i32>("S32");
+        registry.register::<i64>("S64");
+        registry.register::<u8>("F8");
+        registry.register::<u16>("F16");
+        registry.register::<f32>("F32");
+        registry.register::<f64>("F64");
+        registry.register::<String>("RuntimeType");
+        registry.register::<StringU16>("String");
+        registry.register::<StringU16>("Resource");
+        registry.register::<bool>("Bool");
+        registry.register::<UInt2>("Uint2");
+        registry.register::<UInt3>("Uint3");
+        registry.register::<UInt4>("Uint4");
+        registry.register::<Int2>("Int2");
+        registry.register::<Int3>("Int3");
+        registry.register::<Int4>("Int4");
+        registry.register::<Float2>("Float2");
+        registry.register::<Float3>("Float3");
+        registry.register::<Float4>("Float4");
+        registry.register::<Vec2>("Vec2");
+        registry.register::<Vec3>("Vec3");
+        registry.register::<Vec4>("Vec4");
+        registry.register::<Quaternion>("Quaternion");
+        registry.register::<Sphere>("Sphere");
+        registry.register::<Position>("Position");
+        registry.register::<Color>("Color");
+        registry.register::<Mat4x4>("Mat4");
+        registry.register::<Guid>("Guid");
+        registry.register::<Object>("Object");
+        registry.register::<Object>("UserData");
+        registry.register::<OBB>("OBB");
+        registry.register::<AABB>("AABB");
+        registry.register::<Data>("Data");
+        registry.register::<Range>("Range");
+        registry.register::<RangeI>("RangeI");
+        registry.register::<Rect>("Rect");
+        registry.register::<Struct>("Struct");
+        registry.register::<Guid>("GameObjectRef");
+        registry.register::<KeyFrame>("KeyFrame");
+        registry.register::<u64>("Size");
+        Self {
+            data: Box::new(data),
+            cur_hash: Vec::new(),
+            type_descriptors: &type_descriptors, 
+            roots: &roots,
+            extern_slots: &extern_slots,
+            field: Vec::new(),
+            registry: Rc::new(registry)
+        }
     }
 }
 
@@ -187,12 +246,17 @@ where
     T: for<'b> DeRszType<'b>, 
 {
     fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
+        //println!("0x{:x}", ctx.data.tell()?);
         let len = u32::from_bytes(ctx)? as usize;
+        //println!("0x{:x}", ctx.data.tell()?);
+        //println!("len: {len:x}");
         let mut items = Vec::with_capacity(len);
-        for _ in 0..len {
+        for _i in 0..len {
+            //println!("{_i}: 0x{:x}", ctx.data.tell()?);
             let item = T::from_bytes(ctx)?;
             items.push(item);
         }
+        //println!("0x{:x}", ctx.data.tell()?);
         Ok(items)
     }
 }
@@ -282,13 +346,33 @@ impl DeRszInstance for Object {
                 return extern_obj.to_json(ctx)
             }
         }
-        
+
+        if struct_desc.name == "via.AnimationCurve3D" {
+            return field_values[0].to_json(ctx)
+        }
         // Serializable Enum
-        if struct_desc.name.contains("Serializable") {
+        if struct_desc.name.ends_with("_Serializable") {
             let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
                 let obj = &field_values[i];
                 if i == 0 {
+                    /*if struct_desc.name.ends_with("Bit_Serializable") {
+                      if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
+                      if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
+                      return (field.name.clone(), serde_json::json!(enum_str_val))
+                      }
+                      }
+                      }*/
                     if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
+                        if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
+                            return (field.name.clone(), serde_json::json!(enum_str_val))
+                        }
+                    }
+                    if let Some(enummable) = obj.as_any().downcast_ref::<u32>() {
+                        if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
+                            return (field.name.clone(), serde_json::json!(enum_str_val))
+                        }
+                    }
+                    if let Some(enummable) = obj.as_any().downcast_ref::<u64>() {
                         if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
                             return (field.name.clone(), serde_json::json!(enum_str_val))
                         }
@@ -310,7 +394,6 @@ impl DeRszInstance for Object {
             let types = types.strip_suffix(">").unwrap().split(",").collect::<Vec<&str>>();
             let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
                 let obj = &field_values[i];
-                println!("{obj:?}");
                 if field.name.contains("EnumValue") {
                     if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
                         if let Some(enum_str_val) = enummable.get_enum_name(&types[0]) {
@@ -354,7 +437,7 @@ impl DeRszInstance for Object {
                             }).collect::<Vec<_>>());
                         } else {None}
                     }).flatten().collect::<Vec<_>>();
-                    
+
                     let values: Vec<String> = values.iter().map(|val| {
                         let val = if is_bit {2u32.pow(*val)} else { *val - is_nullable};
                         match get_enum_name(&r#type, &val.to_string()) {
@@ -529,14 +612,14 @@ impl DeRszRegistry {
             Ok(Box::new(T::from_json(data, ctx)?))
         });
     }
-    fn get(&self, name: &'static str) -> Result<&DeserializerFn> {
+    pub fn get(&self, name: &'static str) -> Result<&DeserializerFn> {
         let des = self.deserializers.get(name);
-        let desfn = des.ok_or(RszError::UnsetDeserializer(name));
+        let desfn = des.ok_or(RszError::UnsetDeserializer(name, ));
         Ok(desfn?)
     }
-    fn get_se(&self, name: &'static str) -> Result<&JsonDeserializerFn> {
+    pub fn get_se(&self, name: &'static str) -> Result<&JsonDeserializerFn> {
         let se = self.serializers.get(name);
-        let sefn = se.ok_or(RszError::UnsetDeserializer(name));
+        let sefn = se.ok_or(RszError::UnsetSerializer(name));
         Ok(sefn?)
     }
 }
@@ -579,7 +662,6 @@ impl<'a> DeRszType<'a> for DeRsz {
     fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> {
         let mut structs: Vec<RszFieldsValue> = Vec::new();
         let mut extern_idxs: Vec<u32> = Vec::new();
-        // println!("{:?}", ctx.type_descriptors);
         for (i, &TypeDescriptor { hash, crc: _crc }) in ctx.type_descriptors.clone().iter().enumerate() {
             if let Some(_slot_extern) = ctx.extern_slots.get(&u32::try_from(i)?) {
                 extern_idxs.push(i as u32);
@@ -596,7 +678,15 @@ impl<'a> DeRszType<'a> for DeRsz {
                 }?;
                 #[cfg(debug_assertions)]
                 log::debug!("\nDeserializing: {struct_type:?}");
+
                 let mut field_values: RszFieldsValue = (hash, Vec::new());
+                if struct_type.name == "via.AnimationCurve3D" {
+                    let x: Box<dyn DeRszInstance> = Box::new(AnimationCurve3D::from_bytes(ctx)?);
+                    //println!("{:?}", x);
+                    field_values.1.push(x);
+                    structs.push(field_values);
+                    continue;
+                }
                 for field in &struct_type.fields {
                     //println!("{field:?}");
                     if let Some(field_hash) = field.get_type_hash() {
@@ -606,26 +696,46 @@ impl<'a> DeRszType<'a> for DeRsz {
                     }
                     ctx.field.push(&field);
                     #[cfg(debug_assertions)]
-                    log::debug!("\nDeserializing field: {field:?}");
+                    log::debug!("Deserializing field: {field:?}");
+                    /*let pos = ctx.data.tell()?;
+                      let end = ctx.data.seek(SeekFrom::End(0))?;
+                      let len_left = end - pos;
+                      ctx.data.seek(SeekFrom::Start(pos))?;
+                      println!("{:x}, len {}", ctx.data.tell()?, len_left);*/
+                    //println!("0x{:x}", ctx.data.tell()?);
                     if field.array {
                         ctx.data.seek_align_up(4)?;
-                        let len = ctx.data.read_u32()?;
-                        ctx.data.seek_align_up(field.align.into())?;
+                        //println!("0x{:x}", ctx.data.tell()?);
+                        let len = ctx.data.read_u32().unwrap_or_else(|e| {eprintln!("{e:?}, replacing arr len with zero"); 0});
+                        #[cfg(debug_assertions)]
+                        log::debug!("arr {len}");
+                        if len > 0 {
+                            ctx.data.seek_align_up(field.align.into())?;
+                        }
                         let mut vals = Vec::new();
-                        for _ in 0..len {
+                        for _i in 0..len {
+                            ctx.data.seek_align_up(field.align.into())?;
+                            let pos = ctx.data.tell()?;
+                            //println!("idx: {_i}, pos: {}, data {:?}", ctx.data.tell()?, ctx.data.read_u8_n(32)?);
+                            ctx.data.seek(SeekFrom::Start(pos))?;
+
                             let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                             let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                             vals.push(x);
                         }
                         field_values.1.push(Box::new(vals));
-
                     } else {
                         ctx.data.seek_align_up(field.align.into())?;
+                        let pos = ctx.data.tell()?;
+                        //println!("pos: {}, data {:?}", ctx.data.tell()?, ctx.data.read_u8_n(32)?);
+                        ctx.data.seek(SeekFrom::Start(pos))?;
                         let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                         let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                         field_values.1.push(x);
                     }
-                    //println!("{field_values:?}");
+
+                    #[cfg(debug_assertions)]
+                    log::debug!("{:?}", field_values.1.last());
                 }
                 structs.push(field_values);
             }
@@ -704,7 +814,7 @@ pub struct Quaternion(f32, f32, f32, f32);
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance)]
 pub struct Sphere(f32, f32, f32, f32);
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance)]
-pub struct Position(f32, f32, f32);
+pub struct Position(f64, f64, f64);
 
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance)]
 pub struct Float2(f32, f32);
@@ -715,6 +825,24 @@ pub struct Float4(f32, f32, f32, f32);
 
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance)]
 pub struct Mat4x4([f32; 16]);
+
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance)]
+pub struct AnimationCurve3D {
+    pub xkeys: Vec<AnimationCurve3DKey>,
+    pub ykeys: Vec<AnimationCurve3DKey>,
+    pub zkeys: Vec<AnimationCurve3DKey>,
+    pub min_value: f32,
+    pub max_value: f32,
+    pub min_time: f32,
+    pub max_time: f32,
+    pub loop_count: u32,
+    pub loop_wrap_no: u32,
+}
+
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance)]
+pub struct AnimationCurve3DKey {
+    pub unk1: [u8; 22],
+}
 
 
 
@@ -842,10 +970,11 @@ macro_rules! derive_dersz_type_enum{
 
 derive_dersz_type_enum!(i32);
 derive_dersz_type_enum!(u32);
+derive_dersz_type_enum!(u64);
 
 derive_dersz_full!(u8);
 derive_dersz_full!(u16);
-derive_dersz_full!(u64);
+//derive_dersz_full!(u64);
 derive_dersz_full!(i8);
 derive_dersz_full!(i16);
 derive_dersz_full!(i64);
@@ -877,14 +1006,29 @@ impl<'a> DeRszType<'a> for bool {
     }
 }
 
-#[derive(Debug, DeRszInstance)]
-pub struct StringU16(Vec<u16>);
+#[derive(DeRszInstance)]
+pub struct StringU16(pub Vec<u16>);
+
+impl Display for StringU16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = String::from_utf16_lossy(&self.0);
+        writeln!(f, "StringU16({})", s.as_str())
+    }
+}
+
+impl Debug for StringU16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = String::from_utf16_lossy(&self.0);
+        writeln!(f, "StringU16({})", s.as_str())
+    }
+}
 
 derive_dersz_from_json!(StringU16);
 
 impl<'a> DeRszType<'a> for StringU16 {
     fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> where Self: Sized {
         let s = Vec::<u16>::from_bytes(ctx)?;
+        //println!("{s:?}");
         Ok(StringU16(s))
     }
 }
@@ -1048,7 +1192,7 @@ struct RangeI{
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance)]
 struct KeyFrame{
     time: f32,
-    val: Vec3,
+    val: [f32; 3],
 }
 
 #[derive(Debug)]
@@ -1127,14 +1271,14 @@ impl<'a> DeRszType<'a> for Struct {
                 let mut vals = Vec::new();
                 //println!("LEN {len}");
                 for _ in 0..len {
-                    let dersz_fn = ctx.registry.get(field.name.as_str())?;
+                    let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                     let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                     vals.push(x);
                 }
                 values.push(Box::new(vals))
             } else {
                 ctx.data.seek_align_up(field.align.into())?;
-                let dersz_fn = ctx.registry.get(field.name.as_str())?;
+                let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                 let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                 values.push(x);
             }
@@ -1160,6 +1304,7 @@ impl RszFromJson for Struct {
                 field: Some(&field),
             };
             //  println!("\n\tJson Deserializing: {field:?}");
+            println!("{:?}", data);
             let field_data = data.get(&field.name).expect(format!("Could not find field in json data {:?}", field.name).as_str());
             // println!("\n\tJson field: {field_data:?}");
             //log::debug!("\n\tData: {field_data:?}");
@@ -1200,7 +1345,7 @@ impl Serialize for Guid {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
-            serializer.serialize_str(&uuid::Uuid::from_bytes(self.0).to_string())
+            serializer.serialize_str(&uuid::Uuid::from_bytes_le(self.0).to_string())
     }
 }
 

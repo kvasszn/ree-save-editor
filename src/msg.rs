@@ -1,5 +1,5 @@
 use core::str;
-use std::{collections::HashMap, io::{Error, ErrorKind, Result, Write}, sync::OnceLock};
+use std::{collections::HashMap, io::{Error, ErrorKind, Result, Write}, path::PathBuf, sync::OnceLock};
 
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -176,7 +176,7 @@ impl Msg {
                         1 => Ok(MsgAttribute::Float(f64::from_bits(attr))),
                         2 => {
                             let x = data.read_utf16((attr -data_offset) as usize)?;
-                            Ok(MsgAttribute::String(x))
+                 Ok(MsgAttribute::String(x))
                         },
                         -1 => Ok(MsgAttribute::Unknown(attr)),
                         _ => Err(Error::new(ErrorKind::Other, "Unknown attribute type")),
@@ -245,7 +245,8 @@ impl Msg {
             hashmap
         })
     }
-    pub fn save(&self, writer: &mut dyn Write) {
+
+    pub fn dump(&self, output_path: PathBuf) {
         #[derive(Debug, Serialize)]
         struct EntryInfo<'a> {
             name: &'a str,
@@ -284,13 +285,20 @@ impl Msg {
             attributes: &'a Vec<MsgAttributeHeader>,
             name_to_uuid: IndexMap<&'a String, String>,
         }
-        serde_json::to_writer_pretty(writer, 
+        let json_data = serde_json::to_string_pretty(
             &Data {
                 msgs,
                 attributes: &self.attribute_headers,
                 name_to_uuid: name_to_uuid_map,
             }
         ).unwrap();
-        //serde_json::to_writer_pretty(writer, &json_map).unwrap();
+
+        let _ = std::fs::create_dir_all(output_path.parent().unwrap());
+        let ext = output_path.extension().unwrap().to_string_lossy();
+        let ext = ext.to_string() + ".json";
+        let mut output_path = output_path.clone();
+        output_path.set_extension(ext);
+        let mut f = std::fs::File::create(output_path).expect("Error Creating File");
+        f.write_all(json_data.as_bytes()).unwrap();
     }
 }

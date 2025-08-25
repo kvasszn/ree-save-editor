@@ -25,3 +25,4 @@ proc-macro2 = "1.0.94"
 log = "0.4.27"
 env_logger = "0.11.8"
 libdeflater = {git = "https://github.com/c-ola/libdeflater.git", branch = "master" }
+num_enum = "0.7.4"

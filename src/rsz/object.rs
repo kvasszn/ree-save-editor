@@ -199,7 +199,7 @@ impl RszStruct<RszField> {
             let enums = self.gen_enum(enum_type);
             let tokens = quote!{
                 #[repr(i32)]
-                #[derive(Debug, serde::Deserialize)]
+                #[derive(Hash, Eq, PartialEq, Debug, serde::Deserialize, Copy, Clone)]
                 pub enum #name {
                     #(#enums)*
                 }
@@ -222,7 +222,12 @@ impl RszStruct<RszField> {
             let namespace = field_type[..field_type.len() - 1].join("::").to_lowercase();
             let just_the_type = &field_type[field_type.len() - 1];
             let enum_name: syn::Path = syn::parse_str(&format!("{namespace}::{just_the_type}")).unwrap();
-            let tokens = quote!{ #[derive(Debug, serde::Deserialize)] pub struct #name (#enum_name);};
+            let tokens = quote!{
+                #[derive(Debug, serde::Deserialize)] 
+                pub struct #name {
+                    pub _Value: #enum_name
+                }
+            };
             return Some((deps, SdkComponent::new(struct_name, tokens, includes)))
         }
 

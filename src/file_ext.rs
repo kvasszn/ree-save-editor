@@ -215,10 +215,7 @@ impl<T: Seek + Read + ?Sized> SeekExt for T {
         let aligned = align_up(pos, align);
         if aligned != pos {
             let mut buf = vec![0; (aligned - pos).try_into()?];
-            self.read_exact(&mut buf)?;
-            if buf.into_iter().any(|x| x != 0) {
-                return Err(Box::new(FileParseError::BadAlign(pos, align)))
-            }
+            self.read_exact(&mut buf).map_err(|_f| Box::new(FileParseError::BadAlign(pos, align)))?;
         }
 
         Ok(aligned)

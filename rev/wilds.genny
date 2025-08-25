@@ -1,0 +1,649 @@
+type u32_t 4 [[u32]]
+type u64_t 8 [[u64]]
+type u8_t 1 [[u8]]
+type uint32_t 4 [[u32]]
+type uint64_t 8 [[u64]]
+type uint8_t 1 [[u8]]
+type int64_t 8 [[i64]]
+type int32_t 4 [[i32]]
+type int16_t 2 [[i16]]
+type int8_t 1 [[i8]]
+type str_t 1
+type wstr_t 2
+type str_ptr_t 8 [[utf8*]]
+type wstr_ptr_t 8 [[utf16*]]
+type ptr_t 8 [[u64*]]
+type func_ptr_t 8 [[u64*]]
+type u128_t 16 [[u128*]]
+type bool 1 [[bool]]
+type void 0
+
+namespace via {
+    enum SaveServiceSegmentType {
+        Default_0 = 0,
+        Default_1 = 1,
+        Default_2 = 2,
+        Default_3 = 3,
+        Default_4 = 4,
+        Default_5 = 5,
+        Default_6 = 6,
+        Default_7 = 7,
+        Default_8 = 8,
+        Default_9 = 9,
+        Temp_0 = 10,
+        Telemetry_0 = 11,
+        Telemetry_1 = 12,
+        Telemetry_2 = 13,
+        Telemetry_3 = 14,
+        Telemetry_4 = 15,
+        Telemetry_5 = 16,
+        Telemetry_6 = 17,
+        Telemetry_7 = 18,
+        Telemetry_8 = 19,
+        Telemetry_9 = 20,
+        CacheStorage_0 = 21,
+        CacheStorage_1 = 22,
+        CacheStorage_2 = 23,
+        CacheStorage_3 = 24,
+        CacheStorage_4 = 25,
+        CacheStorage_5 = 26,
+        CacheStorage_6 = 27,
+        CacheStorage_7 = 28,
+        CacheStorage_8 = 29,
+        CacheStorage_9 = 30,
+        ImportMemory_0 = 31,
+        OldFormat_0 = 32,
+        Max = 33,
+        Default_Head = 0,
+        Default_Tail = 9,
+        Temp_Head = 10,
+        Temp_Tail = 10,
+        Telemetry_Head = 11,
+        Telemetry_Tail = 20,
+        CacheStorage_Head = 21,
+        CacheStorage_Tail = 30,
+        ImportMemory_Head = 31,
+        ImportMemory_Tail = 31,
+    };
+    enum EncryptionPlatform : int32_t {
+        None = 0x0,
+        AutoUse = 0x1,
+        All = 0x2,
+    }
+
+    enum SaveDataEncryptionType {
+        None = 0,
+        AutoStrong = 1,
+        XOR = 2,
+        BlowFish = 3,
+        Citrus = 4,
+        Lime = 5,
+        RdsModule = 4,
+    }
+    enum SaveServiceMode {
+        SaveServiceMode_Default = 131072,
+        SaveServiceMode_1_Byte = 1,
+        SaveServiceMode_512_Sector = 512,
+        SaveServiceMode_1_KiloByte = 1024,
+        SaveServiceMode_4K_Sector = 4096,
+        SaveServiceMode_64_KiloByte = 65536,
+        SaveServiceMode_128_KiloByte = 131072,
+        SaveServiceMode_256_KiloByte = 262144,
+        SaveServiceMode_512_KiloByte = 524288,
+        SaveServiceMode_1_MegaByte = 1048576,
+        SaveServiceMode_HighSpeed = 2147483647,
+    };
+    enum SaveState {
+        None = 0,
+        IDLE = 1,
+        SaveDialogStart = 2,
+        LoadDialogStart = 3,
+        RemoveDialogStart = 4,
+        SaveDialogRun = 5,
+        LoadDialogRun = 6,
+        RemoveDialogRun = 7,
+        DialogIDLE = 8,
+        SaveStart = 9,
+        LoadStart = 10,
+        RemoveStart = 11,
+        RemoveAllSlotStart = 12,
+        CheckExistingStart = 13,
+        ExportToMemoryStart = 14,
+        ImportFromMemoryStart = 15,
+        ReleaseImportMemoryStart = 16,
+        LoadMetadataFromMemoryStart = 17,
+        UploadCloudStart = 18,
+        DownloadCloudStart = 19,
+        CopyCloudUploadedFileInfoStart = 20,
+        ResolveCloudFileStart = 21,
+        SaveRun = 22,
+        LoadRun = 23,
+        RemoveRun = 24,
+        RemoveAllSlotRun = 25,
+        CheckExistingRun = 26,
+        ExportToMemoryRun = 27,
+        ImportFromMemoryRun = 28,
+        ReleaseImportMemoryRun = 29,
+        LoadMetadataFromMemoryRun = 30,
+        UploadCloudRun = 31,
+        DownloadCloudRun = 32,
+        CopyCloudUploadedFileInfoRun = 33,
+        ResolveCloudFileRun = 34,
+        GetTelemetryGroupsStart = 35,
+        GetTelemetrySaveDataInfosStart = 36,
+        UploadTelemetryStart = 37,
+        DownloadTelemetryStart = 38,
+        GetTelemetryGroupsRun = 39,
+        GetTelemetrySaveDataInfosRun = 40,
+        UploadTelemetryRun = 41,
+        DownloadTelemetryRun = 42,
+        ErrorDialog = 43,
+        RECloudSaveDownloadStart = 44,
+        RECloudSaveDownloadRun = 45,
+        RECloudSaveUploadStart = 46,
+        RECloudSaveUploadRun = 47,
+        Max = 48,
+    };
+    enum SaveTransferring {
+        Default = 0,
+        Setting_1 = 1,
+        Setting_2 = 2,
+        Setting_3 = 3,
+        Setting_4 = 4,
+        Setting_5 = 5,
+        Setting_6 = 6,
+        Setting_7 = 7,
+        Setting_8 = 8,
+        Setting_9 = 9,
+        Setting_10 = 10,
+        Setting_11 = 11,
+        Setting_12 = 12,
+        Setting_13 = 13,
+        Setting_14 = 14,
+        Setting_15 = 15,
+        Setting_16 = 16,
+        Setting_17 = 17,
+        Setting_18 = 18,
+        Setting_19 = 19,
+        Setting_20 = 20,
+        Setting_21 = 21,
+        Setting_22 = 22,
+        Setting_23 = 23,
+        Setting_24 = 24,
+        Setting_25 = 25,
+        Setting_26 = 26,
+        Setting_27 = 27,
+        Setting_28 = 28,
+        Setting_29 = 29,
+        Setting_30 = 30,
+        Setting_31 = 31,
+        Setting_32 = 32,
+        Setting_33 = 33,
+        Setting_34 = 34,
+        Setting_35 = 35,
+        Setting_36 = 36,
+        Setting_37 = 37,
+        Setting_38 = 38,
+        Setting_39 = 39,
+        Setting_40 = 40,
+        Setting_41 = 41,
+        Setting_42 = 42,
+        Setting_43 = 43,
+        Setting_44 = 44,
+        Setting_45 = 45,
+        Setting_46 = 46,
+        Setting_47 = 47,
+        Setting_48 = 48,
+        Setting_49 = 49,
+        Setting_50 = 50,
+        Setting_51 = 51,
+        Setting_52 = 52,
+        Setting_53 = 53,
+        Setting_54 = 54,
+        Setting_55 = 55,
+        Setting_56 = 56,
+        Setting_57 = 57,
+        Setting_58 = 58,
+        Setting_59 = 59,
+        Setting_60 = 60,
+        Setting_61 = 61,
+        Setting_62 = 62,
+        Setting_63 = 63,
+        Setting_64 = 64,
+        Setting_65 = 65,
+        Setting_66 = 66,
+        Setting_67 = 67,
+        Setting_68 = 68,
+        Setting_69 = 69,
+        Setting_70 = 70,
+        Setting_71 = 71,
+        Setting_72 = 72,
+        Setting_73 = 73,
+        Setting_74 = 74,
+        Setting_75 = 75,
+        Setting_76 = 76,
+        Setting_77 = 77,
+        Setting_78 = 78,
+        Setting_79 = 79,
+        Setting_80 = 80,
+        Setting_81 = 81,
+        Setting_82 = 82,
+        Setting_83 = 83,
+        Setting_84 = 84,
+        Setting_85 = 85,
+        Setting_86 = 86,
+        Setting_87 = 87,
+        Setting_88 = 88,
+        Setting_89 = 89,
+        Setting_90 = 90,
+        Setting_91 = 91,
+        Setting_92 = 92,
+        Setting_93 = 93,
+        Setting_94 = 94,
+        Setting_95 = 95,
+        Setting_96 = 96,
+        Setting_97 = 97,
+        Setting_98 = 98,
+        Setting_99 = 99,
+        CrossGen_Setting_1 = 100,
+        CrossGen_Setting_2 = 101,
+        CrossGen_Setting_3 = 102,
+        CrossGen_Setting_4 = 103,
+        CrossGen_Setting_5 = 104,
+        CrossGen_Setting_6 = 105,
+        CrossGen_Setting_7 = 106,
+        CrossGen_Setting_8 = 107,
+        CrossGen_Setting_9 = 108,
+        TransferringMax = 109,
+    };
+    enum SaveResult {
+        Null = 0,
+        Doing = 1,
+        Success = 2,
+        Cancel = 3,
+        Update_SaveFileDetail = 4,
+        Failed_StartNumber = 10,
+        Failed_DataNull = 11,
+        Failed_DataCrash = 12,
+        Failed_DataSizeZero = 13,
+        Failed_MetaDataCrash = 14,
+        Failed_MountError = 15,
+        Failed_UnMountError = 16,
+        Failed_CommitError = 17,
+        Failed_NullSaveDataError = 18,
+        Failed_FileOpenError = 19,
+        Failed_FileWriteError = 20,
+        Failed_FileReadError = 21,
+        Failed_FileRemoveError = 22,
+        Failed_FileCloseError = 23,
+        Failed_TempUpError = 24,
+        Failed_SlotLimitOver = 25,
+        Failed_IndexInvalid = 26,
+        Failed_SaveDataSizeMaxOver = 27,
+        Failed_SaveDataSizeMinOver = 28,
+        Failed_OutOfDiskFreeSpace = 29,
+        Failed_SegmentTempOpenDialog = 30,
+        Failed_TransferringWriteAccess = 31,
+        Failed_NoWin64 = 32,
+        Failed_OutOfMemory = 33,
+        Failed_InvalidSaveData = 34,
+        Failed_Steam_StartNumber = 50,
+        Failed_Steam_SaveError = 51,
+        Failed_Steam_LoadError = 52,
+        Failed_Steam_RemoveError = 53,
+        Failed_Steam_NotFireCallback = 54,
+        Failed_Steam_OutOfDiskFreeSpace = 55,
+        Failed_NoSteam = 56,
+        Failed_WeGame_StartNumber = 60,
+        Failed_WeGame_SaveError = 61,
+        Failed_WeGame_LoadError = 62,
+        Failed_WeGame_RemoveError = 63,
+        Failed_NoWeGame = 64,
+        Failed_SceError_StartNumber = 100,
+        Failed_SceInitializeError = 101,
+        Failed_SceFinalizeError = 102,
+        Failed_SceMountError = 103,
+        Failed_SceUnMountError = 104,
+        Failed_SceMountInfoError = 105,
+        Failed_SceNeedFreeSpace = 106,
+        Failed_SceNullSaveDataError = 107,
+        Failed_SceBrokenSaveDataError = 108,
+        Failed_SceDirectorySearchError = 109,
+        Failed_SceNullMountModeError = 110,
+        Failed_SceFileOpenError = 111,
+        Failed_SceFileWriteError = 112,
+        Failed_SceFileReadError = 113,
+        Failed_SceFileRemoveError = 114,
+        Failed_SceFileCloseError = 115,
+        Failed_ScePublicDialogOpenError = 116,
+        Failed_SceListDialogOpenError = 117,
+        Failed_SceSystemDialogOpenError = 118,
+        Failed_SceProgressDialogOpenError = 119,
+        Failed_SceErrorDialogOpenError = 120,
+        Failed_SceNeedFreeSpaceDialogOpenError = 121,
+        Failed_SceDataCrashDialogOpenError = 122,
+        Failed_SceOtherErrorDialogOpenError = 123,
+        Failed_SceYesNoDialogOpenError = 124,
+        Failed_SceDialogResultError = 125,
+        Failed_SceDetailSetAllError = 126,
+        Failed_SceDetailSetTitleError = 127,
+        Failed_SceDetailSetSubTitleError = 128,
+        Failed_SceDetailSetDetailError = 129,
+        Failed_SceDetailSetUserParamError = 130,
+        Failed_SceIconNotFound = 131,
+        Failed_SceIconSetError = 132,
+        Failed_SceTransferringTitleIDNull = 133,
+        Failed_SceTransferringFingerprintNull = 134,
+        Failed_SceInvalidUser = 135,
+        Failed_SceNoPs4 = 136,
+        Failed_XB1_StartNumber = 150,
+        Failed_XB1_InvalidUserIndex = 151,
+        Failed_XB1_SyncStorageForUserError = 152,
+        Failed_XB1_NoAccess = 153,
+        Failed_XB1_UpdateTooBig = 154,
+        Failed_XB1_QuotaExceeded = 155,
+        Failed_XB1_OutOfLocalStorage = 156,
+        Failed_XB1_UpdateToStorageError = 157,
+        Failed_XB1_SaveDeleteKeyError = 158,
+        Failed_XB1_LoadFormStorageError = 159,
+        Failed_XB1_RemoveContainerError = 160,
+        Failed_XB1_GetContainerInfoError = 161,
+        Failed_XB1_TransferringSCIDNull = 162,
+        Failed_NoXB1 = 199,
+        Failed_GameCore_StartNumber = 150,
+        Failed_GameCore_InvalidUserIndex = 151,
+        Failed_GameCore_NoAccess = 153,
+        Failed_GameCore_UpdateTooBig = 154,
+        Failed_GameCore_QuotaExceeded = 155,
+        Failed_GameCore_OutOfLocalStorage = 156,
+        Failed_GameCore_TransferringSCIDNull = 162,
+        Failed_GameCore_UserNotRegisteredInService = 163,
+        Failed_GameCore_HandleExpired = 164,
+        Failed_NoGameCore = 199,
+        Failed_NSW_StartNumber = 200,
+        Failed_NSW_InvalidUser = 201,
+        Failed_NSW_VirtualUser = 202,
+        Failed_NSW_GuestUser = 203,
+        Failed_NSW_NeedFreeSpace = 204,
+        Failed_NSW_OpenApplet = 205,
+        Failed_NSW_QuotaExceeded = 206,
+        Failed_NoNSW = 207,
+        Failed_STADIA_StartNumber = 250,
+        Failed_STADIA_InvalidUser = 251,
+        Failed_STADIA_PlayerSaveTooMany = 252,
+        Failed_NoSTADIA = 253,
+        Failed_Mac_StartNumber = 300,
+        Failed_Mac_iCloudStorageInitialSync = 301,
+        Failed_Mac_iCloudStorageQuotaViolation = 302,
+        Failed_Mac_OutOfCloudDiskFreeSpace = 303,
+        Failed_Mac_Offline = 304,
+        Failed_Mac_UploadCloudFailed = 305,
+        Failed_Mac_UploadCloudConflict = 306,
+        Failed_Mac_DownloadCloudFailed = 307,
+        Failed_Mac_DownloadRejected = 308,
+        Failed_Mac_CopyCloudUploadedFileInfoFailed = 309,
+        Failed_NoMac = 310,
+        Failed_iOS_StartNumber = 350,
+        Failed_iOS_iCloudStorageInitialSync = 351,
+        Failed_iOS_iCloudStorageQuotaViolation = 352,
+        Failed_iOS_OutOfCloudDiskFreeSpace = 353,
+        Failed_iOS_Offline = 354,
+        Failed_iOS_UploadCloudFailed = 355,
+        Failed_iOS_UploadCloudConflict = 356,
+        Failed_iOS_DownloadCloudFailed = 357,
+        Failed_iOS_DownloadRejected = 358,
+        Failed_iOS_CopyCloudUploadedFileInfoFailed = 359,
+        Failed_NoiOS = 360,
+        Failed_Android_StartNumber = 400,
+        Failed_Android_Cloud_NotSignedIn = 401,
+        Failed_Android_Cloud_UploadError = 402,
+        Failed_Android_Cloud_DownloadError = 403,
+        Failed_Android_Cloud_ConflictError = 404,
+        Failed_Android_Cloud_ResolveConflictError = 405,
+        Failed_Android_Cloud_UploadSizeLimitOver = 406,
+        Failed_Android_Cloud_CopyUploadedFileInfoError = 407,
+        Failed_NoAndroid = 408,
+        Failed_Telemetry_StartNumber = 900,
+        Failed_Telemetry_DataSize_Limit = 901,
+        Failed_Telemetry_InvalidTelemetry = 902,
+        Failed_Telemetry_CreateCollectionName = 903,
+        Failed_Telemetry_CreateUniqueName = 904,
+        Failed_Telemetry_SlotLimit = 905,
+        Failed_Telemetry_NotReady = 906,
+        Failed_Telemetry_TelemetryModule = 907,
+        Failed_Other_StartNumber = 1000,
+        Failed_Simulation_Error = 1001,
+        Failed_SaveDataVersion_Old = 1002,
+        Failed_ToDo = 1003,
+        Failed_SaveServiceNull = 1004,
+        Failed_InvalidSaveTransferring = 1005,
+        Failed_ImportMemoryBroken = 1006,
+        Failed_ImportMemoryNotSupported = 1007,
+        Failed_Serialize = 1008,
+        Failed_Unknown = 1009,
+    };
+    enum SaveParcentCompleteStatus {
+        Start = 0,
+        Serialize = 1,
+        SizeCheck = 25,
+        WriteFile = 50,
+        TempUp = 75,
+        End = 100,
+        Upload_Start = 0,
+        Upload_GatherFile_Start = 1,
+        Upload_GatherFile_End = 5,
+        Upload_Packing_Start = 10,
+        Upload_Packing_End = 20,
+        Upload_Upload_Start = 25,
+        Upload_Uploading_Begin = 30,
+        Upload_Uploading_End = 90,
+        Upload_Upload_End = 95,
+        Upload_End = 100,
+        Download_Start = 0,
+        Download_Download_Start = 5,
+        Download_Downloading_Begin = 10,
+        Download_Downloading_End = 70,
+        Download_Download_End = 75,
+        Download_DecompressAndOutputFile_Start = 80,
+        Download_DecompressAndOutputFile_End = 85,
+        Download_CopySaveDataDirectory_Start = 90,
+        Download_CopySaveDataDirectory_End = 95,
+        Download_End = 100,
+        CopyFileInfo_Start = 0,
+        CopyFileInfo_SetFileInfo = 80,
+        CopyFileInfo_End = 100,
+    };
+}
+
+struct ByteArray 0x20 {
+    int32_t Count @ 0x1c
+    u8_t Elements[1] @ 0x1c
+}
+
+
+struct Bullshit 0x100 {}
+
+struct DateTime {
+    u64_t Ticks
+}
+
+struct CRITICAL_SECTION {}
+
+type WORD 2 [[u16]]
+type DWORD 4 [[u32]]
+type BYTE 1 [[u8]]
+type QWORD 8 [[u64]]
+
+struct RTL_CRITICAL_SECTION_DEBUG {
+    WORD   Type;
+    WORD   CreatorBackTraceIndex;
+    ptr_t *CriticalSection;
+    ptr_t ProcessLocksList; //LIST_ENTRY
+    DWORD  EntryCount;
+    DWORD  ContentionCount;
+    DWORD  Flags;
+    WORD   CreatorBackTraceIndexHigh;
+    WORD   SpareWORD;
+};
+
+struct CRITICAL_SECTION 0x28 {
+    RTL_CRITICAL_SECTION_DEBUG* DebugInfo;
+    int32_t LockCount;
+    int32_t RecursionCount;
+    void* OwningThread;       // Thread ID (actually a HANDLE/THREAD pointer)
+    void* LockSemaphore;      // Event/semaphore used for blocking
+    uint32_t* SpinCount;       // Spin count (on multiprocessor systems)
+};
+// flag is as follows
+// 0x1 => encrypted with blowfish
+// 0x4 => unencrypted
+struct SaveMetaData {
+    uint32_t version
+    uint32_t flag 
+    uint32_t blowfish_param
+}
+
+
+namespace via {
+    struct ExportToMemoryParam 0x2f {
+        void** vtable
+        Bullshit* TargetSlotTbl @0x10
+        Bullshit* MemoryArray
+        Bullshit* Metadata
+        uint64_t BufferReserveSize
+    }
+    struct string 0x20 {
+        uint32_t len @0x10
+        wstr_t[256] _firstChar [[utf16*]]
+    };
+    struct SaveData {
+        int64_t* freespacesize @ 0x48
+    }
+
+    struct SaveSlotSystemData {
+        int64_t* freespacesize @ 0x48
+    }
+
+    struct SaveDialogOption 0x28 {
+    }
+    struct SaveFileDetail 0x50 {
+        Bullshit* vtable
+        int32_t Slot
+        string* Title @0x18
+        string* SubTitle @0x20
+        string* Detail @0x28
+        DateTime TimeStamp
+        int64_t UseSize @0x40
+        int64_t FreeSize @0x48
+    }
+    struct SaveFileDetailTbl 0x40 {
+        SaveFileDetail* SaveFiles
+    }
+
+    struct SaveServiceVTable 8 {
+        func_ptr_t _functions[7]
+    }
+
+    struct SaveServiceCoreVTable 8 {
+        func_ptr_t _functions[75] // goes from to 0x14d979a20 0x14d979c70
+    }
+
+
+    struct SaveServiceCore 0x998 { // 0x10af6070
+        SaveServiceCoreVTable* vtable
+        bool loaded_maybe
+        bool is_show_error_dialog @ 0x9
+        bool detail_tbl_enabled
+        bool SaveFileDetailUpdateRequest
+        SaveServiceSegmentType save_service_segment @ 0xc
+        SaveServiceMode service_mode @ 0x14
+        wstr_ptr_t SaveMountPath @ 0x18
+        int64_t save_data_size @ 0x38
+        wstr_t slot_str[12] @ 0x40 [[utf16*]]
+        wstr_t data_str[12] @ 0x60 [[utf16*]]
+        wstr_t bin_str[12] @ 0x80 [[utf16*]]
+        SaveFileDetail* SystemSaveFileDetail @ 0xe0
+        SaveFileDetail** SaveFiledDetailTbl @ 0xe8
+        int32_t NumSlots
+
+        int32_t ShowSaveDataSeek @0x140
+        SaveParcentCompleteStatus SavePercentComplete @0x144
+
+        bool serialize_ignore_data_member @ 0x2b0
+        bool ser_volatile_data_member
+
+        SaveDialogOption* save_dialog_option @ 0x528
+        SaveState status @ 0x534
+        SaveResult LastSaveResult @ 0x53c
+        int32_t last_unk_status @ 0x540
+        int32_t LastErrorCode @ 0x544
+        SaveResult LastUpdateSaveFileDetailResult @ 0x548
+        int32_t BufferReserveSize @ 0x554
+
+        SaveTransferring transferring @0x8c0
+        SaveDataEncryptionType SaveEncryptionType  @0x8f8
+        EncryptionPlatform SaveEncryptionPlatform  @0x8fc
+        ByteArray* EncrypytionKeyBlowfish  @0x900
+        u32_t EncryptionKeyXS  @0x908
+        ptr_t* cloud_file_info @ 0x938
+        ptr_t* timeout_unk3 @0x940 // timeout_unk1 is false, use timeout_unk2 for this, otherwise use timeout_un3, i think this is steam related
+        bool timeout_unk1 @0x988
+        ptr_t* timeout_unk2 @0x990
+
+    }
+    struct SaveService 0x2b8 { // 0x10af6b90
+        SaveServiceVTable* vtable
+        SaveServiceCore* _core
+        SaveState SaveState @ 0x10
+        int32_t SavefileDetailUpdateRequest
+        Bullshit* bs @ 0x18
+        u32_t unk @ 0x20
+        u32_t unk2
+        Bullshit* bs @ 0x28
+        int32_t save_segment_slots[33] @0x80
+        int32_t save_segment_slots2[33] // idk if this length is right
+        int32_t UseSlotLast @ 0x104
+        int32_t DoSlotLast @ 0x188
+        int32_t DefaultSlotLast @ 0x20c
+        uint32_t unk_hash_thing @ 0x2a8 // this is the lsb of the last thing passed to the virtualized decryption function
+        u8_t flag1 @ 0x2ac // detailupdaterequest == (flag1 | (state && flag2)), i think this means updated
+        u8_t flag2 @ 0x2ad
+        bool LockGarbageCollection @ 0x2af
+        bool SerializeIgnoreDataMember
+    }
+    struct SaveServiceBase 0x940 {
+    }
+    
+    struct SomeRandomBullshit 0x200 { // this is probably ManagedVTable related
+        void** vtable
+        u8_t something[0x80] @ 0x70
+        u8_t something2[0x80]
+
+    }
+
+    struct SomeRandomBullshit2 0x110 { // this is probably ManagedVTable related
+        void** vtable
+    }
+
+    struct CompressionBlock 0x1f0 {
+        uint64_t flags
+        u8_t* compressed_buffer
+        uint64_t compressedSize
+        u8_t* decompressedBuffer
+        uint64_t decompressedSize @ 0x20
+        uint64_t pointed_to_by_punk1 @0x40
+        ptr_t punk1 @0x1d0 
+        int32_t unk6 @ 0x1e8 // if flag & 0x80 == 0, zero2 should be true, and unk6 should not be -1 
+        bool zero2 @ 0x1ec
+        
+    }
+
+    struct CompressionService 0x4290 {
+        void** vtable
+        CRITICAL_SECTION crit_sec @ 0x8
+        CompressionBlock blocks[0x20] @ 0x30
+    }
+
+
+
+}

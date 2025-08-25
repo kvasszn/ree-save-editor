@@ -1,0 +1,12 @@
+{% let name = self::get_msg(&self.item._RawName).unwrap_or(&self.item._RawName) %}
+{% let expl = self::get_msg(&self.item._RawExplain).unwrap_or(&self.item._RawExplain) %}
+<tr id="{{ self::enum_to_html_str(name) }}">
+    <td class="skill" class="skill-icon">
+        <img src="/resources/skills/skill-0000.png" class="skill-icon">
+    </td>
+    <td>
+        <details> 
+            <summary><strong>{{ name }}:</strong> {{ expl }} </summary> 
+        </details>
+    </td>
+</tr>

@@ -1,0 +1,96 @@
+body { font-family: sans-serif; padding: 2rem; }
+table { border-collapse: collapse; width: 300px; }
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: sans-serif;
+    border-spacing: 0;
+}
+table th, table td {
+    border: 1px solid #ccc;
+    align-items: center;
+    padding: 4px;
+}
+
+table.skills th {
+    background: #f5f5f5;
+}
+table.skills {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: sans-serif;
+    border-spacing: 0;
+}
+table.skills th, table.skills td {
+    border: 1px solid #ccc;
+    align-items: center;
+    padding: 4px;
+}
+
+table.skills th {
+    background: #f5f5f5;
+}
+
+.skill-icon {
+    display: inline-block;
+    width: 48px;
+    height: 48px;
+    vertical-align: middle;
+    object-fit: cover;
+}
+
+details summary {
+    cursor: pointer;
+    font-weight: bold;
+    display: inline; /* make the toggle inline */
+}
+details {
+    display: inline-block;   /* keep the whole thing inline */
+}
+.skill-levels {
+    border-collapse: collapse;
+    margin-top: 0.5em;
+    width: 100%;
+}
+.skill-levels th, .skill-levels td {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+    text-align: left;
+}
+.skill-levels th {
+    background: #f2f2f2;
+}
+
+.skills td.skill-name {
+    text-align: center;
+    align-items: center;
+    white-space: nowrap;
+}
+
+
+table.mhitems th {
+    background: #f5f5f5;
+}
+table.mhitems {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: sans-serif;
+    border-spacing: 0;
+}
+table.mhitems th, table.mhitems td {
+    border: 1px solid #ccc;
+    align-items: center;
+    padding: 4px;
+}
+
+table.mhitems th {
+    background: #f5f5f5;
+}
+
+
+.mhitems td.mhitem {
+    text-align: center;
+    align-items: center;
+    white-space: nowrap;
+}

@@ -116,11 +116,17 @@ impl Sdk {
     pub fn add_types(&mut self, types: HashSet<u32>) -> Result<()> {
         let mut structs = Vec::new();
         let mut queue: VecDeque<u32> = types.into_iter().collect();
+        if let Some(charthings) = RszDump::name_map().get(&"app.user_data.CharacterEditThumbnailTextureData".to_string()) {
+            queue.push_back(*charthings);
+        }
+        if let Some(charthings) = RszDump::name_map().get(&"app.user_data.CharacterEditThumbnailTexturePairData".to_string()) {
+            queue.push_back(*charthings);
+        }
         while let Some(hash) = queue.pop_front() {
             // get the struct we're gonna look at
             let rsz_struct = match RszDump::rsz_map().get(&hash) {
                 Some(x) => x,
-                None => return Err("Invalid hash".into())
+                None => {eprintln!("Invalid hash {hash:x}"); continue},
             };
 
             // if it's something we've seen already or null, skip

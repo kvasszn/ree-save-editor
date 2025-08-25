@@ -1,0 +1,120 @@
+//------------------------------------------------
+//--- 010 Editor v16.0.1 Binary Template
+//
+//      File: 
+//   Authors: 
+//   Version: 
+//   Purpose: 
+//  Category: 
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+
+LittleEndian();
+
+FSeek(0x205D0);
+FSeek(0x20);
+
+void AlignUp(int align){
+    local int pos = FTell();
+    local int aligned = (pos + (align - 1)) & ~(align - 1);
+    FSeek(aligned);
+}
+
+struct Object;
+
+struct Value;
+string ReadValue( Value &value ) {
+    string s;
+    local int i = 0;   
+    for (i = value.size - 1; i >= 0; i-- ) {
+        s += Str("%02x", value.data[i]);
+    }
+    return s;
+} 
+ 
+typedef struct {
+    uint32 size;
+    AlignUp(size);
+    uint8 data[size];
+} Value <read=ReadValue>;
+
+
+struct StringU16 {
+    uint32 len;
+    if (len > 0)
+        wchar_t value[len];
+    AlignUp(4);
+};
+
+struct Array {
+    uint32 arr_member_type;
+    uint32 arr_member_size;
+    uint32 len;
+    uint32 array_type;
+    local int i = 0;
+
+    if (array_type == 0) {
+        if (arr_member_type == 0x0f) {
+            if (len > 0)
+                StringU16 values[len] <optimize=false>;
+                AlignUp(4);
+        } else {
+            struct Values {
+                for (i = 0; i < len; i++) {
+                    struct {
+                        AlignUp(arr_member_size);
+                        uint8 data[arr_member_size];
+                    } value;
+                }
+                AlignUp(4);
+            } values;
+            //Value values[len] <optimize=false>;
+        }
+    } else {
+        Object objects[len] <optimize=false>;
+    }
+};
+
+struct Field {
+    uint32 unk;
+    int32 field_type;
+
+    if (field_type == 0x11) {
+        Object fields;
+    } else if (field_type == -1) {
+        Array array;
+    } else {
+        if (field_type == 0x0f) {
+            StringU16 value;
+            AlignUp(4);
+        } else {
+            Value value;
+        }
+    }
+    AlignUp(4);
+};
+
+struct Object {
+    uint32 num_fields;
+    uint32 hash;
+    local int i = 0;
+    
+    for (i = 0; i < num_fields; i++) {
+        Field field;
+    }
+};
+
+struct Entry {
+    uint32 unk;
+    uint32 num_fields;
+    uint32 hash;
+    local int i = 0;
+    for (i = 0; i < num_fields; i++) {
+        Field field;
+    }
+};
+
+Entry save_file;
+Entry save_detail;

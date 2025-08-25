@@ -1,0 +1,25 @@
+{% let name = self::get_msg(&self.common._skillName).unwrap() %}
+{% let expl = self::get_msg(&self.common._skillExplain).unwrap() %}
+<tr id="{{ self::enum_to_html_str(name) }}">
+    <td class="skill-name">
+        <img src="{{ self.get_icon_path() }}" class="skill-icon">
+    </td>
+    <td>
+        <details> 
+
+            {% match self.common._skillCategory %}
+                {% when hunterdef::SkillCategory_Fixed::SERIES | hunterdef::SkillCategory_Fixed::GROUP %}
+                    <summary><strong>{{ name }}</strong></summary> 
+                {% when _ %}
+                    <summary><strong>{{ name }}:</strong> {{ expl }} </summary> 
+            {% endmatch %}
+            <table class="skill-levels">
+                <tbody>
+                    {% for lvl in levels %}
+                        {% include "skilllevel.html" %}
+                    {% endfor %}
+                </tbody>
+            </table> 
+        </details> 
+    </td>
+</tr>
