@@ -177,7 +177,7 @@ pub trait DeRszType<'a> {
     fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> where Self: Sized;
 }
 
-pub trait DeRszInstance: Debug  {
+pub trait DeRszInstance: Debug {
     fn as_any(&self) -> &dyn Any;
     fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value;
     fn to_bytes(&self, _ctx: &mut RszSerializerCtx) -> Result<()>;
@@ -321,8 +321,8 @@ impl<T: RszFromJson + Debug, const N: usize> RszFromJson for [T; N] {
 
 #[derive(Debug)]
 pub struct Object {
-    hash: u32,
-    idx: u32,
+    pub hash: u32,
+    pub idx: u32,
 }
 
 impl DeRszInstance for Object {
@@ -456,6 +456,7 @@ impl DeRszInstance for Object {
         }
 
         let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
+            //println!("{i},{}, {}, {:#?}", struct_desc.name, hash, field_values[i]);
             let obj = &field_values[i];
             let new_ctx = RszJsonSerializerCtx {
                 root: None,
@@ -688,7 +689,6 @@ impl<'a> DeRszType<'a> for DeRsz {
                     continue;
                 }
                 for field in &struct_type.fields {
-                    //println!("{field:?}");
                     if let Some(field_hash) = field.get_type_hash() {
                         ctx.cur_hash.push(*field_hash);
                     } else {
@@ -733,7 +733,6 @@ impl<'a> DeRszType<'a> for DeRsz {
                         let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                         field_values.1.push(x);
                     }
-
                     #[cfg(debug_assertions)]
                     log::debug!("{:?}", field_values.1.last());
                 }
@@ -1211,6 +1210,7 @@ impl DeRszInstance for Struct {
             Some(struct_desc) => struct_desc,
             None => return serde_json::Value::Null
         };
+
         let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
             let obj = &self.values[i];
             let new_ctx = RszJsonSerializerCtx {
@@ -1263,24 +1263,28 @@ impl<'a> DeRszType<'a> for Struct {
         let struct_desc = RszDump::get_struct(hash)?;
         let mut values: Vec<Box<dyn DeRszInstance>> = Vec::new();
         for (_i, field) in struct_desc.fields.iter().enumerate() {
-            //println!("struct field: {field:?}");
-            if field.array {
-                ctx.data.seek_align_up(4)?;
-                let len = ctx.data.read_u32()?;
-                ctx.data.seek_align_up(field.align.into())?;
-                let mut vals = Vec::new();
-                //println!("LEN {len}");
-                for _ in 0..len {
+            if let Some(hash) = field.get_type_hash() {
+                ctx.cur_hash.push(*hash);
+                if field.array {
+                    ctx.data.seek_align_up(4)?;
+                    let len = ctx.data.read_u32()?;
+                    ctx.data.seek_align_up(field.align.into())?;
+                    let mut vals = Vec::new();
+                    for _ in 0..len {
+                        let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
+                        let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
+                        vals.push(x);
+                    }
+                    values.push(Box::new(vals))
+                } else {
+                    ctx.data.seek_align_up(field.align.into())?;
                     let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                     let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
-                    vals.push(x);
+                    values.push(x);
                 }
-                values.push(Box::new(vals))
+                ctx.cur_hash.pop();
             } else {
-                ctx.data.seek_align_up(field.align.into())?;
-                let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
-                let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
-                values.push(x);
+                return Err(format!("InvalidRszTypeName {}", field.name).into())
             }
         }
         Ok(Self {
@@ -1304,7 +1308,7 @@ impl RszFromJson for Struct {
                 field: Some(&field),
             };
             //  println!("\n\tJson Deserializing: {field:?}");
-            println!("{:?}", data);
+            //println!("{:?}", data);
             let field_data = data.get(&field.name).expect(format!("Could not find field in json data {:?}", field.name).as_str());
             // println!("\n\tJson field: {field_data:?}");
             //log::debug!("\n\tData: {field_data:?}");

@@ -9,13 +9,13 @@ pub mod msg;
 pub mod rsz;
 pub mod tex;
 pub mod user;
-pub mod dersz;
 pub mod pog;
 pub mod font;
 pub mod scn;
 pub mod mesh;
 pub mod file;
 pub mod save;
+pub mod crypt;
 
 extern crate image;
 extern crate libdeflater;
@@ -23,11 +23,11 @@ extern crate libdeflater;
 use clap::Parser;
 use file::FileReader;
 use rsz::dump::{ENUM_FILE, RSZ_FILE};
+use rsz::rszserde::DeRsz;
 use save::SaveFile;
 
 use std::error::Error;
-use std::fs::{read_to_string, File};
-use std::io::{Cursor, Read};
+use std::fs::{read_to_string};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -129,18 +129,12 @@ fn main() -> Result<()> {
 
     let mut file_reader = FileReader::new(args.out_dir.into(), args.root_dir.map(|x| PathBuf::from(x)), args.dump_sdk, args.try_dump_rsz, true);
     file_reader.dump_files(list)?;
-    if let Some(save_file) = args.save_file {
-        let mut file = File::open(save_file)?;
-        let mut buffer: Vec<u8> = Vec::with_capacity(0x400000);
-        let bytes_read = file.read_to_end(&mut buffer)?;
-        println!("{bytes_read}");
-        //let data = &buffer[0x205d0..];
-        let mut reader = Cursor::new(buffer);
-        //reader.set_position(0x205d0);
-        reader.set_position(0x20);
-        let save = SaveFile::from_reader_v2(&mut reader)?;
-        println!("{save:#?}");
-    }
+    /*if let Some(save_file) = args.save_file {
+        //Mandarin::sanity_check(&save_file);
+        let save = SaveFile::from_file(&save_file)?;
+        let dersz = DeRsz::from(save);
+        //println!("{}", serde_json::to_string_pretty(&dersz)?);
+    }*/
     println!("Time taken: {} ms", now.elapsed().unwrap().as_millis());
     Ok(())
 }

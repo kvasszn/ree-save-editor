@@ -11,7 +11,6 @@ pub mod msg;
 pub mod rsz;
 pub mod tex;
 pub mod user;
-pub mod dersz;
 pub mod pog;
 pub mod font;
 pub mod scn;

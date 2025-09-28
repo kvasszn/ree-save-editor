@@ -1,15 +1,15 @@
-use std::{collections::{HashMap, VecDeque}, io::{Cursor, Read, Seek}};
+use std::{collections::{HashMap, HashSet, VecDeque}, io::{Cursor, Read, Seek}, path::Path};
 
+use mhtame::rsz::dump::enum_map;
 use num_enum::TryFromPrimitive;
 
-use crate::{file_ext::{ReadExt, SeekExt}, reerr::Result, rsz::{dump::{RszDump, RszField}, rszserde::{DeRszInstance, DeRszType, Guid, RszDeserializerCtx, RszFieldsValue, StringU16}, Extern, TypeDescriptor}};
+use crate::{crypt::Mandarin, file_ext::{ReadExt, SeekExt}, reerr::{self, Result}, rsz::{dump::{RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, DeRszType, Guid, Object, RszDeserializerCtx, RszFieldsValue, StringU16}, Extern, TypeDescriptor}};
 
 #[derive(Debug)]
 pub struct SaveFile {
     pub data: Field,
     pub detail: Field
 }
-
 
 /*
  *  This shit lwk all wrong almost
@@ -33,7 +33,7 @@ pub struct SaveFile {
  */
 
 #[repr(i32)]
-#[derive(Debug, TryFromPrimitive, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq, Eq)]
 pub enum ArrayType {
     Value = 0,
     Class = 1,
@@ -58,8 +58,36 @@ pub enum FieldType {
     //C8 = 0xd, // guess
     //C16 = 0xe, // guess
     String = 0xf, // U16
-    Guid = 0x10,
+    Guid = 0x10, // this might overlap with something else or just be wrong rip
     Class = 0x11,
+}
+
+impl<'a> TryFrom<&'a RszField> for FieldType {
+    type Error = &'static str;
+    fn try_from(value: &'a RszField) -> std::result::Result<Self, Self::Error> {
+        if value.array {
+            return Ok(Self::Array)
+        }
+        if enum_map().get(&value.original_type).is_some() {
+            return Ok(Self::Enum)
+        }
+        Ok(match value.r#type.as_str() {
+            "Bool" => Self::Boolean,
+            "S8" => Self::S8,
+            "U8" => Self::U8,
+            "S16" => Self::S16,
+            "U16" => Self::U16,
+            "S32" => Self::S32,
+            "U32" => Self::U32,
+            "S64" => Self::S64,
+            "U64" => Self::U64,
+            "F32" => Self::F32,
+            "String" => Self::String,
+            "Guid" => Self::Guid,
+            "Class" => Self::Class,
+            _ => return Err("String value not in FieldType")
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -83,15 +111,21 @@ pub enum Field {
 }
 
 impl Field {
+    pub fn read_class_info<R: ReadExt + SeekExt + Seek + Read> (stream: &mut R) -> Result<Self> {
+        stream.seek_align_up(4)?;
+        let num_fields = stream.read_u32()?;
+        let hash = stream.read_u32()?;
+        Ok(Field::Class { num_fields, hash, fields: Vec::new() })
+    }
     pub fn read_class<R: ReadExt + SeekExt + Seek + Read> (stream: &mut R) -> Result<Self> {
         stream.seek_align_up(4)?;
         let num_fields = stream.read_u32()?;
         let hash = stream.read_u32()?;
-        println!("read_class: num_fields={num_fields:08X}, hash:{hash:08X}");
-        let type_info = RszDump::get_struct(hash)?;
-        println!("Class: {}", type_info.name);
+        //println!("read_class: num_fields={num_fields:08X}, hash:{hash:08X}");
+        let _type_info = RszDump::get_struct(hash)?;
+        //println!("Class: {}", type_info.name);
         let fields = (0..num_fields).map(|_i| {
-            println!("\tfield: {:?}", type_info.fields[_i as usize]);
+            //println!("\tfield: {:?}", type_info.fields[_i as usize]);
             let x = Field::from_stream(stream)?;
             Ok(x)
         }).collect::<Result<Vec<(u32, Field)>>>()?;
@@ -110,10 +144,10 @@ impl Field {
         let len = stream.read_u32()?;
         let array_type = stream.read_i32()?;
         let array_type = ArrayType::try_from(array_type)?;
-        println!("Array: {arr_field_type:?}, {arr_field_type_size:08X}, {len:08X}, {array_type:?}");
+        //println!("Array: {arr_field_type:?}, {arr_field_type_size:08X}, {len:08X}, {array_type:?}");
         let mut values = Vec::new();
-        for i in 0..len {
-            println!("read array member {i}");
+        for _i in 0..len {
+            //println!("read array member {i}");
             let value = match array_type {
                 ArrayType::Class => {
                     Field::read_class(stream)
@@ -141,7 +175,7 @@ impl Field {
         if field_type != FieldType::String {
             stream.seek_align_up(size as u64)?;
         }
-        println!("{size:08X}");
+        //println!("{size:08X}");
         let mut ctx = RszDeserializerCtx::new(stream, &fake_type_descriptors, &fake_extern_slots, &fake_roots);
         //let value = stream.read_u8_n(size as usize)?;
         let value: Box<dyn DeRszInstance> = match field_type {
@@ -163,7 +197,7 @@ impl Field {
             _ => panic!("bad field type for value")
         };
 
-        println!("value={value:?}");
+        //println!("value={value:?}");
         Ok(Field::Value {
             size,
             value
@@ -173,7 +207,7 @@ impl Field {
     pub fn from_stream<R: ReadExt + SeekExt + Seek + Read> (stream: &mut R) -> Result<(u32, Self)> {
         let unk = stream.read_u32()?;
         let field_type_i32 = stream.read_i32()?;
-        println!("Read field: {unk:08X} {field_type_i32:08X} pos={:08X}", stream.tell()?);
+        //println!("Read field: {unk:08X} {field_type_i32:08X} pos={:08X}", stream.tell()?);
         let field_type: FieldType = FieldType::try_from(field_type_i32).expect(&format!("No known type field type for {field_type_i32}"));
         let field = match field_type {
             FieldType::Class => {
@@ -201,24 +235,153 @@ impl Field {
         stream.seek_align_up(4)?;
         Ok((unk, field))
     }
+
+
+    pub fn make_class(hash: u32, fields: Vec<Box<dyn DeRszInstance>>, structs: Vec<(u32, Vec<Box<dyn DeRszInstance>>)>) -> Field {
+        let type_descriptor = RszDump::get_struct(hash).unwrap();
+        for (i, field) in fields.iter().enumerate() {
+            let field_info = &type_descriptor.fields[i];
+            if field_info.array {
+
+            }
+
+        }
+        todo!()
+        //Field::Class { num_fields: (), hash: (), fields: () }
+    }
+
+
+    pub fn make_value(field: &RszField, value: Box<dyn DeRszInstance>) -> Field {
+        Field::Value { size: field.size, value }
+    }
+
+    pub fn make_array(field: &RszField, values: Vec<Box<dyn DeRszInstance>>) -> Field {
+        let arr_field_type = FieldType::try_from(field).unwrap();
+        let arr_field_type_size = field.size;
+        let len = values.len() as u32;
+        let array_type = if field.r#type == "Object" {
+            ArrayType::Class
+        } else {ArrayType::Value};
+        let values: Vec<Field> = match array_type {
+            ArrayType::Value => {
+                values.into_iter().map(|v| {
+                    Self::make_value(field, v)
+                }).collect()
+            },
+            ArrayType::Class => {
+                values.into_iter().map(|v| {
+                    //Self::make_class(field.get_type_hash().unwrap(), v)
+                    Self::make_value(field, v)
+                }).collect()
+            }
+        };
+        Field::Array { 
+            arr_field_type,
+            arr_field_type_size,
+            len,
+            array_type,
+            values
+        }
+    }
 }
 
-#[derive(Debug)]
-pub enum SaveNode {
-    Object {
-        from_array: bool,
-        values: Vec<Box<dyn DeRszInstance>>,
-    },
-    Value {
-        field: &'static RszField,
-        value: Vec<Box<dyn DeRszInstance>>
-    },
-    Array(&'static RszField, Vec<Box<dyn DeRszInstance>>),
-    Unk,
+impl From<SaveFile> for DeRsz {
+    fn from(value: SaveFile) -> Self {
+        let fields = vec![value.data, value.detail];
+        Self::from(fields)
+    }
+}
+
+#[allow(unused_variables)]
+impl From<Vec<Field>> for DeRsz {
+    // top level should be a Class type always
+    fn from(fields: Vec<Field>) -> Self {
+        let mut structs: Vec<RszFieldsValue> = Vec::new();
+        let mut roots = Vec::new();
+        let mut object_counter = 0;
+        for field in fields {
+            roots.push(object_counter);
+            object_counter += 1;
+            let mut queue = VecDeque::new();
+            queue.push_back(field);
+            while let Some(field) = queue.pop_front() {
+                match field {
+                    Field::Class { num_fields: _, hash, fields } => {
+                        let mut field_vals: Vec<Box<dyn DeRszInstance>> = Vec::new();
+                        for (_unk, field) in fields {
+                            match field {
+                                Field::Class { num_fields: _, hash, ref fields } => {
+                                    field_vals.push(Box::new(Object {hash: hash, idx: object_counter}));
+                                    object_counter += 1;
+                                    queue.push_back(field);
+                                },
+                                Field::Value { size: _, value } => {
+                                    field_vals.push(value);
+                                },
+                                Field::Array { arr_field_type: _, arr_field_type_size: _, len: _, array_type, values } => {
+                                    let mut array_vals: Vec<Box<dyn DeRszInstance>> = Vec::new();
+                                    for value in values {
+                                        if array_type == ArrayType::Class {
+                                            if let Field::Class{ num_fields: _, hash, ref fields } = value {
+                                                array_vals.push(Box::new(Object {hash: hash, idx: object_counter}));
+                                                object_counter += 1;
+                                                queue.push_back(value);
+                                            }
+                                        } else if array_type == ArrayType::Value {
+                                            if let Field::Value { size: _, value } = value {
+                                                array_vals.push(value); 
+                                            }
+                                        }
+                                    }
+                                    field_vals.push(Box::new(array_vals));
+                                },
+                            }
+                        }
+                        structs.push((hash, field_vals));
+                    }
+                    _ => {
+                        panic!("Top level Field must be Class")
+                    }
+                }
+            }
+        }
+        Self {
+            roots,
+            offset: 0,
+            structs,
+            extern_idxs: HashSet::new()
+        }
+    }
 }
 
 impl SaveFile {
-    pub fn from_reader_v2<R: ReadExt + SeekExt + Seek + Read> (mut reader: R) -> Result<SaveFile> {
+    pub fn from_file(file: &Path) -> Result<SaveFile> {
+        let mandarin = Mandarin::init();
+        //let key: u64 = 0x011000011168AFC6;
+        let key: u64 = 76561198053503919;
+        let key: u64 = 76561198372695648;
+        let decrypted = mandarin.decrypt_file(file, key)?;
+        mandarin.uninit();
+        Self::from_decrypted(decrypted)
+    }
+    pub fn from_decrypted(buffer: Vec<u8>) -> Result<SaveFile> {
+        let mut buffer = Cursor::new(buffer);
+        let _compressed_size = buffer.read_u64()?;
+        let _unk = buffer.read_u32()?; // this mighte be compression level
+        let _compressed_size_sub0x10 = buffer.read_u32()?;
+        let decompressed_size = buffer.read_u64()?;
+
+        let compressed = &buffer.get_ref()[0x18..];
+        let mut decompressed = vec![0u8; decompressed_size as usize];
+        let mut decompressor = libdeflater::Decompressor::new();
+        let _decompression_result = decompressor.deflate_decompress(&compressed, &mut decompressed)?;
+        std::fs::write("save.bin", &decompressed)?;
+
+        let buffer = Cursor::new(decompressed);
+        Self::from_reader(buffer)
+    }
+
+    pub fn from_reader<R: ReadExt + SeekExt + Seek + Read> (mut reader: R) -> Result<SaveFile> {
         let mut unks: Vec<u32> = Vec::new();
         let unk = reader.read_u32()?;
         unks.push(unk);
@@ -230,110 +393,5 @@ impl SaveFile {
             data,
             detail
         })
-    }
-
-    pub fn from_reader<R: ReadExt + SeekExt + Seek + Read> (mut reader: R) -> Result<()> {
-        let mut queue: VecDeque<SaveNode> = VecDeque::new();
-
-        let fake_extern_slots = HashMap::<u32, Extern>::new();
-        let fake_roots = Vec::<u32>::new();
-        let fake_type_descriptors = Vec::new();
-        let mut ctx = RszDeserializerCtx::new(&mut reader, &fake_type_descriptors, &fake_extern_slots, &fake_roots);
-
-        let unk = ctx.data.read_u32()?;
-        let num_fields = ctx.data.read_u32()?;
-        let hash = ctx.data.read_u32()?;
-        //let unk = ctx.data.read_u32()?;
-        let type_info = RszDump::get_struct(hash)?;
-        println!("Read data {unk:08X}, {num_fields:08X}, {hash:08X}, {unk:08X}, {}", type_info.name);
-        for field in type_info.fields.iter().rev() {
-            println!("{}, {}", field.name, field.original_type);
-            if field.array {
-                queue.push_back(SaveNode::Array(&field, Vec::new()));
-            }
-            else if field.r#type.as_str() == "Object" {
-                queue.push_back(SaveNode::Object { from_array: false,  values: Vec::new() });
-            }
-            else {
-                queue.push_back(SaveNode::Value { field: &field, value: Vec::new()});
-            }
-        }
-        //let type_info = RszDump::get_struct(type_hash)?;
-        while let Some(node) = queue.pop_back() {
-            let unk = ctx.data.read_u32()?;
-            println!("UNK={unk:08X}");
-            println!("Popped {:?}", node);
-            match node {
-                SaveNode::Unk => {
-                    //let unk = ctx.data.read_u32()?;
-                },
-                SaveNode::Object { from_array, values } => {
-
-                    let type_val = if !from_array { ctx.data.read_u32()?} else {0};
-                    let num_fields = ctx.data.read_u32()?;
-                    let hash = ctx.data.read_u32()?;
-                    //let unk = ctx.data.read_u32()?;
-                    let type_info = RszDump::get_struct(hash)?;
-                    println!("Read data {type_val:08X}, {num_fields:08X}, {hash:08X}, {unk:08X}, {}", type_info.name);
-                    let mut obj_fields: Vec<RszFieldsValue> = Vec::new();
-
-                    if !from_array {
-                        //queue.push_back(SaveNode::Unk);
-                    }
-                    for field in type_info.fields.iter().rev() {
-                        println!("{}, {}", field.name, field.original_type);
-                        if field.array {
-                            queue.push_back(SaveNode::Array(&field, Vec::new()));
-                        }
-                        else if field.r#type.as_str() == "Object" {
-                            queue.push_back(SaveNode::Object { from_array: false,  values: Vec::new() });
-                        }
-                        else {
-                            println!("Pushed Unk");
-                            queue.push_back(SaveNode::Unk);
-                            queue.push_back(SaveNode::Value { field: &field, value: Vec::new()});
-                        }
-                    }
-                },
-                SaveNode::Array(field, mut values) => {
-                    let type_val = ctx.data.read_u32()?;
-                    let idk1 = ctx.data.read_u32()?;
-                    let idk2 = ctx.data.read_u32()?;
-                    let count = ctx.data.read_u32()?;
-                    let array_type = ctx.data.read_u32()?;
-                    println!("Array {idk1:08X}, {idk2:08X}, {count:X}, {array_type:X}");
-                    if array_type == 0 { // Value type array
-                        for _i in 0..count {
-                            println!("Pushed Value for array {_i}");
-                            let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
-                            let val: Box<dyn DeRszInstance> = dersz_fn(&mut ctx)?;
-                            println!("{val:?}");
-                            values.push(val);
-                        }
-                        //let unk = ctx.data.read_u32()?;
-                    } else {
-                        for _i in 0..count {
-                            println!("Pushed Object for array {_i}");
-                            panic!();
-                            queue.push_back(SaveNode::Object { from_array: true, values: Vec::new() });
-                        }
-                    }
-                    /*for _i in 0..count {
-                      }*/
-                    println!("Array: unk={unk:08X}, count={count:08X}, vals={values:?}, {}, {}", field.name, field.original_type);
-                }
-                SaveNode::Value { field, value } => {
-                    let type_val = ctx.data.read_u32()?;
-                    let size = ctx.data.read_u32()?;
-                    let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
-                    let x: Box<dyn DeRszInstance> = dersz_fn(&mut ctx)?;
-                    ctx.data.seek_align_up(4)?;
-                    //ctx.data.seek_align_up(field.align)?;
-                    println!("Value type={type_val:08X}, size={size:x}, {}, {}, val={x:?}", field.name, field.original_type);
-                }
-            }
-        }
-        Ok(())
-
     }
 }

@@ -10,6 +10,8 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct FileReader {
     dump_sdk: bool,
     sdk_types: HashSet<u32>,
+
+    #[allow(unused)]
     dump_all_rsz: bool,
     output_dir: std::path::PathBuf,
     root_dir: Option<std::path::PathBuf>,
@@ -38,7 +40,7 @@ impl FileReader {
 
 
     fn get_output_path(&self, file_path: &std::path::Path) -> std::path::PathBuf {
-        if self.keep_path_structure {
+        let path = if self.keep_path_structure {
             match self.root_dir {
                 Some(ref prefix) => {
                     let file = &self.get_full_file_path(file_path);
@@ -50,8 +52,8 @@ impl FileReader {
             let file = Path::new(&file_path);
             let path = file.file_name().unwrap().to_str().unwrap();
             PathBuf::from(path)
-        }
-
+        };
+        self.output_dir.join(path)
     }
 
     pub fn dump_file(&mut self, file: std::path::PathBuf) -> Result<()> {
