@@ -23,8 +23,6 @@ extern crate libdeflater;
 use clap::Parser;
 use file::FileReader;
 use rsz::dump::{ENUM_FILE, RSZ_FILE};
-use rsz::rszserde::DeRsz;
-use save::SaveFile;
 
 use std::error::Error;
 use std::fs::{read_to_string};
@@ -93,6 +91,7 @@ fn find_files_with_extension(base_dir: PathBuf, extension: &str) -> Vec<PathBuf>
 }
 
 fn main() -> Result<()> {
+    println!("Here");
     env_logger::init();
     let args = Args::parse();
     // Ugly but will change later
@@ -129,12 +128,7 @@ fn main() -> Result<()> {
 
     let mut file_reader = FileReader::new(args.out_dir.into(), args.root_dir.map(|x| PathBuf::from(x)), args.dump_sdk, args.try_dump_rsz, true);
     file_reader.dump_files(list)?;
-    /*if let Some(save_file) = args.save_file {
-        //Mandarin::sanity_check(&save_file);
-        let save = SaveFile::from_file(&save_file)?;
-        let dersz = DeRsz::from(save);
-        //println!("{}", serde_json::to_string_pretty(&dersz)?);
-    }*/
+
     println!("Time taken: {} ms", now.elapsed().unwrap().as_millis());
     Ok(())
 }

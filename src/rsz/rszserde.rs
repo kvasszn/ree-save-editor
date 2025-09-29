@@ -8,7 +8,6 @@ use std::{any::Any, collections::{HashMap, HashSet}, fmt::{Debug, Display}, io::
 use indexmap::IndexMap;
 use rsz_macros::{DeRszFrom, DeRszInstance};
 use serde::{Deserialize, Serialize};
-use syn::token::Enum;
 
 use crate::reerr::{self, Result, RszError};
 use crate::file_ext::*;
@@ -419,12 +418,19 @@ impl DeRszInstance for Object {
 
         if let Some(types) = struct_desc.name.strip_prefix("ace.Bitset`1<") {
             let mut r#type = types.strip_suffix(">").unwrap().to_string();
+            println!("{:?}", struct_desc);
             let is_bit = if enum_map().get(&(r#type.clone() + "Bit")).is_some() {
                 r#type = r#type + "Bit";
                 true
             } else { false };
 
-            let is_nullable = enum_map().get(&r#type).unwrap().get("INVALID").is_some() as u32;
+            let invalid = enum_map().get(&r#type).unwrap().get("INVALID");
+
+            let is_nullable = if let Some(invalid) = invalid {
+                invalid == "-1"
+            } else {
+                false
+            } as u32;
 
             if let Some(max) = field_values[1].as_any().downcast_ref::<i32>() {
                 if let Some(values) = field_values[0].as_any().downcast_ref::<Vec<Box<dyn DeRszInstance>>>() {
@@ -437,6 +443,7 @@ impl DeRszInstance for Object {
                             }).collect::<Vec<_>>());
                         } else {None}
                     }).flatten().collect::<Vec<_>>();
+                    println!("{is_bit} {is_nullable} {values:?}");
 
                     let values: Vec<String> = values.iter().map(|val| {
                         let val = if is_bit {2u32.pow(*val)} else { *val - is_nullable};
@@ -987,7 +994,7 @@ impl DeRszInstance for bool {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
+    fn to_json(&self, _ctx: &RszJsonSerializerCtx) -> serde_json::Value {
         serde_json::json!(self)
     }
     fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
@@ -1110,7 +1117,7 @@ impl DeRszInstance for String {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
+    fn to_json(&self, _ctx: &RszJsonSerializerCtx) -> serde_json::Value {
         serde_json::json!(self)
     }
     fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
@@ -1169,7 +1176,7 @@ impl<'a> DeRszType<'a> for Data {
 }
 
 impl RszFromJson for Data {
-    fn from_json(data: &serde_json::Value, ctx: &mut RszJsonDeserializerCtx) -> Result<Self> where Self: Sized {
+    fn from_json(_data: &serde_json::Value, _ctx: &mut RszJsonDeserializerCtx) -> Result<Self> where Self: Sized {
         Ok(Self {
             data: Vec::new()
         })

@@ -5,11 +5,9 @@ use byteorder::LittleEndian;
 use byteorder::WriteBytesExt;
 use dump::RszDump;
 use rszserde::DeRsz;
-use rszserde::DeRszInstance;
 use rszserde::DeRszType;
 use rszserde::RszDeserializerCtx;
 use rszserde::RszSerializerCtx;
-use rszserde::Struct;
 
 use crate::file_ext::*;
 

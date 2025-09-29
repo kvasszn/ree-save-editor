@@ -8,12 +8,11 @@ edition = "2024"
 [workspace]
 members = [
     ".",
-    "data",
 ]
 
 [features]
 default = []
-window = ["windows"]
+save = []
 
 [dependencies]
 rsz_macros = { path = "./rsz_macros" }
@@ -35,6 +34,12 @@ proc-macro2 = "1.0.94"
 log = "0.4.27"
 env_logger = "0.11.8"
 libdeflater = {git = "https://github.com/c-ola/libdeflater.git", branch = "master" }
+#libdeflater = {path = "../libdeflater/"}
 num_enum = "0.7.4"
+
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2.175"
-windows = { version = "0.61.3", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61.3", features = ["Win32", "Win32_System", "Win32_System_Memory", "Win32_Foundation"] }

@@ -3,7 +3,7 @@ use std::{collections::{HashMap, HashSet, VecDeque}, io::{Cursor, Read, Seek}, p
 use mhtame::rsz::dump::enum_map;
 use num_enum::TryFromPrimitive;
 
-use crate::{crypt::Mandarin, file_ext::{ReadExt, SeekExt}, reerr::{self, Result}, rsz::{dump::{RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, DeRszType, Guid, Object, RszDeserializerCtx, RszFieldsValue, StringU16}, Extern, TypeDescriptor}};
+use crate::{crypt::Mandarin, file_ext::{ReadExt, SeekExt}, reerr::Result, rsz::{dump::{RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, DeRszType, Guid, Object, RszDeserializerCtx, RszFieldsValue, StringU16}, Extern}};
 
 #[derive(Debug)]
 pub struct SaveFile {
@@ -237,20 +237,6 @@ impl Field {
     }
 
 
-    pub fn make_class(hash: u32, fields: Vec<Box<dyn DeRszInstance>>, structs: Vec<(u32, Vec<Box<dyn DeRszInstance>>)>) -> Field {
-        let type_descriptor = RszDump::get_struct(hash).unwrap();
-        for (i, field) in fields.iter().enumerate() {
-            let field_info = &type_descriptor.fields[i];
-            if field_info.array {
-
-            }
-
-        }
-        todo!()
-        //Field::Class { num_fields: (), hash: (), fields: () }
-    }
-
-
     pub fn make_value(field: &RszField, value: Box<dyn DeRszInstance>) -> Field {
         Field::Value { size: field.size, value }
     }
@@ -357,9 +343,9 @@ impl From<Vec<Field>> for DeRsz {
 impl SaveFile {
     pub fn from_file(file: &Path) -> Result<SaveFile> {
         let mandarin = Mandarin::init();
-        //let key: u64 = 0x011000011168AFC6;
-        let key: u64 = 76561198053503919;
-        let key: u64 = 76561198372695648;
+        let key: u64 = 0x011000011168AFC6;
+        //let key: u64 = 76561198053503919;
+        //let key: u64 = 76561198372695648;
         let decrypted = mandarin.decrypt_file(file, key)?;
         mandarin.uninit();
         Self::from_decrypted(decrypted)

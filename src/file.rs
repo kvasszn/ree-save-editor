@@ -68,6 +68,16 @@ impl FileReader {
         let file_ext = *split.get(1).ok_or(format!("Could not determine file type from file name"))?;
 
         match file_ext {
+
+            #[cfg(feature = "save")]
+            "bin" => {
+                //Mandarin::sanity_check(&save_file);
+
+                use crate::save::SaveFile;
+                let save = SaveFile::from_file(&save_file)?;
+                let dersz = DeRsz::from(save);
+                //println!("{}", serde_json::to_string_pretty(&dersz)?);
+            }
             "msg" => {
                 let msg = Msg::new(file_path.to_string_lossy().to_string())?;
                 msg.dump(output_path);

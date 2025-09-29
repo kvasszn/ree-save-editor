@@ -3,8 +3,9 @@ use std::{ffi::{c_void, CStr}, path::Path, ptr};
 #[cfg(target_os="linux")]
 use libc::{syscall, SYS_arch_prctl, MAP_ANONYMOUS, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE};
 #[cfg(target_os="windows")]
-use windows_sys::Win32::{System::Memory, Foundation::{HANDLE}};
-
+use windows::Win32::{
+    System::Memory::{self, *}, Foundation::{HANDLE}
+};
 
 use crate::reerr::Result;
 
@@ -52,8 +53,10 @@ pub extern "win64" fn HeapAlloc(_heap: *mut c_void, _flags: u32, size: usize) ->
 #[unsafe(no_mangle)]
 pub extern "win64" fn HeapFree(_heap: *mut c_void, _flags: u32, ptr: *mut c_void) -> i32 {
     println!("Hooked Free {ptr:?}");
-    if !ptr.is_null() {
-        let res = Memory::HeapFree(Memory::GetProcessHeap().unwrap(), Memory::HEAP_FLAGS(_flags), Some(ptr));
+    unsafe {
+        if !ptr.is_null() {
+            let res = Memory::HeapFree(Memory::GetProcessHeap().unwrap(), Memory::HEAP_FLAGS(_flags), Some(ptr));
+        }
     }
     return 1;
 }
@@ -78,14 +81,14 @@ pub fn read_u32 (x: &[u8], offset: usize) -> u32 {
 #[cfg(target_os="windows")]
 fn alloc_program(size: usize) -> *mut c_void {
     unsafe {
-        VirtualAlloc(std::ptr::null_mut(), size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+        Memory::VirtualAlloc(None, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
     }
 }
 
 #[cfg(target_os="windows")]
-fn dealloc(ptr: *mut c_void, size: usize) -> i32 {
+fn dealloc_program(ptr: *mut c_void, size: usize) -> i32 {
     unsafe {
-        VirtualFree(ptr, size, MEM_RELEASE) as i32
+        Memory::VirtualFree(ptr, size, MEM_RELEASE).map_or_else(|_| 0i32, |_| 1i32)
     }
 }
 
@@ -141,8 +144,9 @@ impl Mandarin {
             reserved: [0; 4],
         });
 
-        let teb_ptr = &*teb as *const _ as u64;
+        let teb_ptr = &*teb as *const _ as u64; //haha
         unsafe {
+            #[cfg(target_os="linux")]
             syscall(SYS_arch_prctl, Self::ARCH_SET_GS, teb_ptr);
         }
 
