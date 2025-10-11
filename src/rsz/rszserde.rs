@@ -610,9 +610,9 @@ impl Serialize for DeRsz {
             for root in &self.roots {
                 let ctx = RszJsonSerializerCtx {root: Some(*root), field: None, objects: &self.structs, parent: None};
                 let hash = self.structs[*root as usize].0;
-                println!("{hash}");
+                //println!("{hash}");
                 let name = &RszDump::get_struct(hash).unwrap().name;
-                println!("{name:?}");
+                //println!("{name:?}");
                 wrapped.roots.push(name);
                 let obj = Object {hash: self.structs[*root as usize].0, idx: *root as u32};
                 //let data = ctx.objects[*root as usize].1.to_json(&ctx);

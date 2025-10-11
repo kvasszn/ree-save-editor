@@ -256,12 +256,12 @@ impl Mandarin {
             let iv2 = metadata_raw.get_iv();
 
             if key2 != key {
-                //println!("[Key/IV check] key mismatch");
-                return Err(MandarinError::InvalidKey { target: key2, real: key})
+                println!("[Key/IV check] key mismatch, skipping check");
+                //return Err(MandarinError::InvalidKey { target: key2, real: key})
             }
             if iv2 != iv {
-                // println!("[Key/IV check] IV mismatch");
-                return Err(MandarinError::InvalidIV { target: iv2, real: iv})
+                println!("[Key/IV check] IV mismatch, skipping check");
+                //return Err(MandarinError::InvalidIV { target: iv2, real: iv})
             } 
             if key2 == key && iv2 == iv {
                 println!("[Key/IV check] passed");

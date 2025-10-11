@@ -94,7 +94,6 @@ fn find_files_with_extension(base_dir: PathBuf, extension: &str) -> Vec<PathBuf>
 }
 
 fn main() -> Result<()> {
-    println!("Here");
     env_logger::init();
     let args = Args::parse();
     // Ugly but will change later

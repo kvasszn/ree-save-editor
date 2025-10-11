@@ -127,9 +127,9 @@ impl Field {
         //println!("read_class: num_fields={num_fields:08X}, hash:{hash:08X}");
         let _type_info = RszDump::get_struct(hash)?;
 
-        println!("Class: {}, {}, {:08x}", _type_info.name, num_fields, hash);
+        //println!("Class: {}, {}, {:08x}", _type_info.name, num_fields, hash);
         let fields = (0..num_fields).map(|_i| {
-            print!("field: {}: {}, ", _type_info.fields[_i as usize].name, _type_info.fields[_i as usize].original_type);
+            //print!("field: {}: {}, ", _type_info.fields[_i as usize].name, _type_info.fields[_i as usize].original_type);
             let x = Field::from_stream(stream)?;
             Ok(x)
         }).collect::<Result<Vec<(u32, Field)>>>()?;
@@ -186,7 +186,7 @@ impl Field {
             FieldType::String => {
                 ctx.data.seek_align_up(4)?;
                 let x = StringU16::from_bytes(&mut ctx)?;
-                println!("{x}");
+                //println!("{x}");
                 Box::new(x)
             },
             FieldType::Guid => Box::new(Guid::from_bytes(&mut ctx)?),
@@ -213,7 +213,7 @@ impl Field {
 
     pub fn from_stream<R: ReadExt + SeekExt + Seek + Read> (stream: &mut R) -> Result<(u32, Self)> {
         let unk = stream.read_u32()?;
-        println!("unk: {:08x}", unk);
+        //println!("unk: {:08x}", unk);
         let field_type_i32 = stream.read_i32()?;
         //println!("Read field: {unk:08X} {field_type_i32:08X} pos={:08X}", stream.tell()?);
         let field_type: FieldType = FieldType::try_from(field_type_i32).expect(&format!("No known type field type for {field_type_i32}"));

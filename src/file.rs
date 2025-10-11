@@ -291,7 +291,7 @@ impl FileReader {
                     //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);
                     let mut output_path = output_path.clone();
                     output_path.set_file_name(output_path.file_name().unwrap().to_string_lossy().to_string() + ".json");
-                    println!("{output_path:?}");
+                    //println!("{output_path:?}");
                     std::fs::create_dir_all(output_path.parent().unwrap())?;
                     let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
                     let json = serde_json::to_string_pretty(&dersz)?;
