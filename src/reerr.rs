@@ -11,6 +11,7 @@ pub enum FileParseError {
     InvalidBool(u8),
     BadAlign(u64, u64),
     InvalidRszTypeHash(u32),
+    DataTooShort(usize, usize), // slice len, required size
 }
 
 impl Error for FileParseError {}
@@ -25,21 +26,22 @@ impl fmt::Display for FileParseError {
             Self::InvalidBool(v) => write!(f, "Invalid value {} for bool", *v),
             Self::BadAlign(pos, align) => write!(f, "Non-zero padding with pos:{:08X}, align:{:08X}", *pos, *align),
             Self::InvalidRszTypeHash(v) => write!(f, "Invalid type hash {:08X} not found in rsz", *v),
+            Self::DataTooShort(slice_len, size) => write!(f, "Slice too short with len {:08X}, required {:08X} bytes", *slice_len, *size),
         }
     }
 }
 
 #[derive(Debug)]
-pub enum RszError<'a> {
-    UnsetDeserializer(&'a str),
-    UnsetSerializer(&'a str),
+pub enum RszError {
+    UnsetDeserializer(String),
+    UnsetSerializer(String),
     InvalidRszTypeHash(u32),
     InvalidRszObjectIndex(u32, u32),
     MissingFieldDescription(String),
 }
-impl<'a> Error for RszError<'a> {}
+impl Error for RszError {}
 
-impl<'a> fmt::Display for RszError<'a> {
+impl fmt::Display for RszError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidRszTypeHash(v) => write!(f, "Invalid type hash {:08X} not found in rsz", *v),

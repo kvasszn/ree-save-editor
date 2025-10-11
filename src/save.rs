@@ -1,9 +1,9 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, io::{Cursor, Read, Seek}, path::Path};
+use std::{collections::{HashMap, HashSet, VecDeque}, io::{Cursor, Read, Seek, SeekFrom}};
 
-use mhtame::rsz::dump::enum_map;
+use crate::{file::{Magic, StructRW}, rsz::dump::enum_map};
 use num_enum::TryFromPrimitive;
 
-use crate::{crypt::Mandarin, file_ext::{ReadExt, SeekExt}, reerr::Result, rsz::{dump::{RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, DeRszType, Guid, Object, RszDeserializerCtx, RszFieldsValue, StringU16}, Extern}};
+use crate::{crypt::Mandarin, file_ext::{ReadExt, SeekExt}, reerr::Result, rsz::{dump::{RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, DeRszType, Guid, Object, RszDeserializerCtx, RszFieldsValue, StringU16, StructData}, Extern}};
 
 #[derive(Debug)]
 pub struct SaveFile {
@@ -54,12 +54,13 @@ pub enum FieldType {
     S64 = 0x9,
     U64 = 0xa,
     F32 = 0xb,
-    //F64 = 0xc, // this is a guess
-    //C8 = 0xd, // guess
+    F64 = 0xc, // this is a guess
+    //C8 = 0xd, // guess, wtf even aer these lol
     //C16 = 0xe, // guess
     String = 0xf, // U16
-    Guid = 0x10, // this might overlap with something else or just be wrong rip
+    Struct = 0x10, // this might overlap with something else or just be wrong rip
     Class = 0x11,
+    Guid = 0x12, // idfk??????? this wrong prob
 }
 
 impl<'a> TryFrom<&'a RszField> for FieldType {
@@ -82,7 +83,9 @@ impl<'a> TryFrom<&'a RszField> for FieldType {
             "S64" => Self::S64,
             "U64" => Self::U64,
             "F32" => Self::F32,
+            "F64" => Self::F64,
             "String" => Self::String,
+            "Struct" => Self::Struct,
             "Guid" => Self::Guid,
             "Class" => Self::Class,
             _ => return Err("String value not in FieldType")
@@ -123,9 +126,10 @@ impl Field {
         let hash = stream.read_u32()?;
         //println!("read_class: num_fields={num_fields:08X}, hash:{hash:08X}");
         let _type_info = RszDump::get_struct(hash)?;
-        //println!("Class: {}", type_info.name);
+
+        println!("Class: {}, {}, {:08x}", _type_info.name, num_fields, hash);
         let fields = (0..num_fields).map(|_i| {
-            //println!("\tfield: {:?}", type_info.fields[_i as usize]);
+            print!("field: {}: {}, ", _type_info.fields[_i as usize].name, _type_info.fields[_i as usize].original_type);
             let x = Field::from_stream(stream)?;
             Ok(x)
         }).collect::<Result<Vec<(u32, Field)>>>()?;
@@ -181,7 +185,9 @@ impl Field {
         let value: Box<dyn DeRszInstance> = match field_type {
             FieldType::String => {
                 ctx.data.seek_align_up(4)?;
-                Box::new(StringU16::from_bytes(&mut ctx)?)
+                let x = StringU16::from_bytes(&mut ctx)?;
+                println!("{x}");
+                Box::new(x)
             },
             FieldType::Guid => Box::new(Guid::from_bytes(&mut ctx)?),
             FieldType::U64 => Box::new(u64::from_bytes(&mut ctx)?),
@@ -194,7 +200,8 @@ impl Field {
             FieldType::S8 => Box::new(i8::from_bytes(&mut ctx)?),
             FieldType::F32 => Box::new(f32::from_bytes(&mut ctx)?),
             FieldType::Boolean => Box::new(bool::from_bytes(&mut ctx)?),
-            _ => panic!("bad field type for value")
+            FieldType::Struct => Box::new(StructData(ctx.data.read_u8_n(size as usize)?)),
+            _ => panic!("bad field type for value {:?}", field_type)
         };
 
         //println!("value={value:?}");
@@ -206,6 +213,7 @@ impl Field {
 
     pub fn from_stream<R: ReadExt + SeekExt + Seek + Read> (stream: &mut R) -> Result<(u32, Self)> {
         let unk = stream.read_u32()?;
+        println!("unk: {:08x}", unk);
         let field_type_i32 = stream.read_i32()?;
         //println!("Read field: {unk:08X} {field_type_i32:08X} pos={:08X}", stream.tell()?);
         let field_type: FieldType = FieldType::try_from(field_type_i32).expect(&format!("No known type field type for {field_type_i32}"));
@@ -238,7 +246,7 @@ impl Field {
 
 
     pub fn make_value(field: &RszField, value: Box<dyn DeRszInstance>) -> Field {
-        Field::Value { size: field.size, value }
+        Field::Value { size: field.size as u32, value }
     }
 
     pub fn make_array(field: &RszField, values: Vec<Box<dyn DeRszInstance>>) -> Field {
@@ -263,7 +271,7 @@ impl Field {
         };
         Field::Array { 
             arr_field_type,
-            arr_field_type_size,
+            arr_field_type_size: arr_field_type_size as u32,
             len,
             array_type,
             values
@@ -340,43 +348,80 @@ impl From<Vec<Field>> for DeRsz {
     }
 }
 
-impl SaveFile {
-    pub fn from_file(file: &Path) -> Result<SaveFile> {
-        let mandarin = Mandarin::init();
-        let key: u64 = 0x011000011168AFC6;
-        //let key: u64 = 76561198053503919;
-        //let key: u64 = 76561198372695648;
-        let decrypted = mandarin.decrypt_file(file, key)?;
-        mandarin.uninit();
-        Self::from_decrypted(decrypted)
-    }
-    pub fn from_decrypted(buffer: Vec<u8>) -> Result<SaveFile> {
-        let mut buffer = Cursor::new(buffer);
-        let _compressed_size = buffer.read_u64()?;
-        let _unk = buffer.read_u32()?; // this mighte be compression level
-        let _compressed_size_sub0x10 = buffer.read_u32()?;
-        let decompressed_size = buffer.read_u64()?;
+pub struct SaveContext {
+    pub key: u64,
+}
 
-        let compressed = &buffer.get_ref()[0x18..];
-        let mut decompressed = vec![0u8; decompressed_size as usize];
+impl StructRW<SaveContext> for SaveFile {
+    fn read<R: Read + Seek>(reader: &mut R, ctx: &mut SaveContext) -> crate::file::Result<Self>
+            where
+                Self: Sized {
+        let magic = Magic::<4>::read(reader, &mut ())?;
+        if &magic != b"DSSS" {
+            return Err(format!("Magic {}, != DSSS", String::from_utf8(magic.0.to_vec())?).into())
+        }
+        let version = u32::read(reader, &mut ())?;
+        if version != 2 {
+            return Err(format!("Save file version incorrect I hope: {version}").into())
+        }
+        let _flags = u32::read(reader, &mut ())?;
+        //println!("Save Flags: {:034b}", flags); // theres flags for encryption type, compression
+                                                // type, etc
+        let _save_or_user_i_think = u32::read(reader, &mut ())?;
+        //if null != 0 {
+        //    return Err(format!("Null is not zero: {null}").into())
+        //}
+
+        // Decryption
+        let data_start = reader.tell()?;
+        reader.seek(std::io::SeekFrom::End(-12))?;
+        let decrypted_len = u64::read(reader, &mut ())?;
+        let end_hash = u32::read(reader, &mut ())?;
+        reader.seek(SeekFrom::Start(data_start))?;
+        let mut encrypted: Vec<u8> = vec![];
+        reader.read_to_end(&mut encrypted)?;
+        //let mandarin = Mandarin::init();
+        //let decrypted_buf = mandarin.decrypt_bytes(&encrypted, decrypted_len as usize, ctx.key)?;
+        //mandarin.uninit();
+        let key = if ctx.key == 0 {
+            Mandarin::brute_force(&encrypted, decrypted_len)
+        } else {ctx.key};
+        //let key = Mandarin::brute_force(&encrypted, decrypted_len);
+        //println!("Found key: {:#x}", key);
+        let decrypted_buf = Mandarin::decrypt(&encrypted, decrypted_len, key)?;
+
+        println!("[Decrypted] hashthing idk: {:#010x}", end_hash);
+        // Decompression
+        let mut decrypted_buf = Cursor::new(&decrypted_buf);
+        let _compressed_size = u64::read(&mut decrypted_buf, &mut ())?;
+        let _unk = u32::read(&mut decrypted_buf, &mut ())?;
+        // this might just be an offset for smoehting
+        let _comrpressed_size_sub0x10 = u32::read(&mut decrypted_buf, &mut ())?;
+        let decompressed_size = u64::read(&mut decrypted_buf, &mut ())?;
+        //println!("{:#018x}, {:010x}, {:010x}", compressed_size, unk, comrpressed_size_sub0x10);
+        let pos = decrypted_buf.position() as usize;
+        let compressed = &decrypted_buf.get_ref()[pos..];
         let mut decompressor = libdeflater::Decompressor::new();
-        let _decompression_result = decompressor.deflate_decompress(&compressed, &mut decompressed)?;
-        std::fs::write("save.bin", &decompressed)?;
+        let mut decompressed = vec![0u8; decompressed_size as usize];
+        decompressor.deflate_decompress(&compressed, &mut decompressed)?;
+        println!("[Decompressed]");
 
-        let buffer = Cursor::new(decompressed);
-        Self::from_reader(buffer)
-    }
+        let data = &mut Cursor::new(&decompressed);
+        let mut unks = Vec::new();
+        let unk = u32::read(data, &mut ())?;
+        unks.push(unk);
+        let savedata = Field::read_class(data)?;
+        let unk = u32::read(data, &mut ())?;
+        unks.push(unk);
+        let detail = Field::read_class(data)?;
+        unks.iter().for_each(|_| {
+            //println!("{:#010x}", x);
+        });
 
-    pub fn from_reader<R: ReadExt + SeekExt + Seek + Read> (mut reader: R) -> Result<SaveFile> {
-        let mut unks: Vec<u32> = Vec::new();
-        let unk = reader.read_u32()?;
-        unks.push(unk);
-        let data = Field::read_class(&mut reader)?;
-        let unk = reader.read_u32()?;
-        unks.push(unk);
-        let detail = Field::read_class(&mut reader)?;
+        // Reading
+
         Ok(SaveFile {
-            data,
+            data: savedata,
             detail
         })
     }

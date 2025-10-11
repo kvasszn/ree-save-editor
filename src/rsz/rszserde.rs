@@ -105,52 +105,8 @@ impl<'a> From<&'a Rsz> for RszDeserializerCtx<'a> {
         let boxed: Box<dyn ReadSeek + 'a> = Box::new(cursor);
         let mut registry = DeRszRegistry::new();
         //registry.register::<Nullable>("Nullable");
-        registry.register::<u8>("U8");
-        registry.register::<u16>("U16");
-        registry.register::<u32>("U32");
-        registry.register::<u64>("U64");
-        registry.register::<i8>("S8");
-        registry.register::<i16>("S16");
-        registry.register::<i32>("S32");
-        registry.register::<i64>("S64");
-        registry.register::<u8>("F8");
-        registry.register::<u16>("F16");
-        registry.register::<f32>("F32");
-        registry.register::<f64>("F64");
-        registry.register::<String>("RuntimeType");
-        registry.register::<StringU16>("String");
-        registry.register::<StringU16>("Resource");
-        registry.register::<bool>("Bool");
-        registry.register::<UInt2>("Uint2");
-        registry.register::<UInt3>("Uint3");
-        registry.register::<UInt4>("Uint4");
-        registry.register::<Int2>("Int2");
-        registry.register::<Int3>("Int3");
-        registry.register::<Int4>("Int4");
-        registry.register::<Float2>("Float2");
-        registry.register::<Float3>("Float3");
-        registry.register::<Float4>("Float4");
-        registry.register::<Vec2>("Vec2");
-        registry.register::<Vec3>("Vec3");
-        registry.register::<Vec4>("Vec4");
-        registry.register::<Quaternion>("Quaternion");
-        registry.register::<Sphere>("Sphere");
-        registry.register::<Position>("Position");
-        registry.register::<Color>("Color");
-        registry.register::<Mat4x4>("Mat4");
-        registry.register::<Guid>("Guid");
-        registry.register::<Object>("Object");
-        registry.register::<Object>("UserData");
-        registry.register::<OBB>("OBB");
-        registry.register::<AABB>("AABB");
-        registry.register::<Data>("Data");
-        registry.register::<Range>("Range");
-        registry.register::<RangeI>("RangeI");
-        registry.register::<Rect>("Rect");
-        registry.register::<Struct>("Struct");
-        registry.register::<Guid>("GameObjectRef");
-        registry.register::<KeyFrame>("KeyFrame");
-        registry.register::<u64>("Size");
+        registry.init();
+
         Self {
             data: boxed,
             cur_hash: Vec::new(),
@@ -418,7 +374,7 @@ impl DeRszInstance for Object {
 
         if let Some(types) = struct_desc.name.strip_prefix("ace.Bitset`1<") {
             let mut r#type = types.strip_suffix(">").unwrap().to_string();
-            println!("{:?}", struct_desc);
+            //println!("{:?}", struct_desc);
             let is_bit = if enum_map().get(&(r#type.clone() + "Bit")).is_some() {
                 r#type = r#type + "Bit";
                 true
@@ -443,7 +399,7 @@ impl DeRszInstance for Object {
                             }).collect::<Vec<_>>());
                         } else {None}
                     }).flatten().collect::<Vec<_>>();
-                    println!("{is_bit} {is_nullable} {values:?}");
+                    //println!("{is_bit} {is_nullable} {values:?}");
 
                     let values: Vec<String> = values.iter().map(|val| {
                         let val = if is_bit {2u32.pow(*val)} else { *val - is_nullable};
@@ -463,7 +419,7 @@ impl DeRszInstance for Object {
         }
 
         let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
-            //println!("{i},{}, {}, {:#?}", struct_desc.name, hash, field_values[i]);
+            //println!("{i},{}, {}, {}, {:#?}", struct_desc.name, field.name, hash, field_values[i]);
             let obj = &field_values[i];
             let new_ctx = RszJsonSerializerCtx {
                 root: None,
@@ -602,6 +558,7 @@ impl DeRszRegistry {
         self.register::<Guid>("GameObjectRef");
         self.register::<KeyFrame>("KeyFrame");
         self.register::<u64>("Size");
+        //self.register::<Capsule>("Capsule");
     }
     pub fn new() -> Self {
         Self {
@@ -620,15 +577,13 @@ impl DeRszRegistry {
             Ok(Box::new(T::from_json(data, ctx)?))
         });
     }
-    pub fn get(&self, name: &'static str) -> Result<&DeserializerFn> {
-        let des = self.deserializers.get(name);
-        let desfn = des.ok_or(RszError::UnsetDeserializer(name, ));
-        Ok(desfn?)
+    pub fn get(&self, name: &str) -> Result<DeserializerFn> {
+        let de_fn = self.deserializers.get(name).copied();
+        de_fn.ok_or(RszError::UnsetDeserializer(name.to_string()).into())
     }
-    pub fn get_se(&self, name: &'static str) -> Result<&JsonDeserializerFn> {
-        let se = self.serializers.get(name);
-        let sefn = se.ok_or(RszError::UnsetSerializer(name));
-        Ok(sefn?)
+    pub fn get_se(&self, name: &str) -> Result<JsonDeserializerFn> {
+        let se_fn = self.serializers.get(name).copied();
+        se_fn.ok_or(RszError::UnsetSerializer(name.to_string()).into())
     }
 }
 
@@ -655,7 +610,9 @@ impl Serialize for DeRsz {
             for root in &self.roots {
                 let ctx = RszJsonSerializerCtx {root: Some(*root), field: None, objects: &self.structs, parent: None};
                 let hash = self.structs[*root as usize].0;
+                println!("{hash}");
                 let name = &RszDump::get_struct(hash).unwrap().name;
+                println!("{name:?}");
                 wrapped.roots.push(name);
                 let obj = Object {hash: self.structs[*root as usize].0, idx: *root as u32};
                 //let data = ctx.objects[*root as usize].1.to_json(&ctx);
@@ -1201,6 +1158,56 @@ struct KeyFrame{
     val: [f32; 3],
 }
 
+
+#[derive(Debug)]
+pub struct StructData(pub Vec<u8>);
+
+impl DeRszInstance for StructData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
+        //println!("{:?}", ctx.field);
+        let hash = *RszDump::name_map().get(&ctx.field.unwrap().original_type).unwrap();
+        let data = Box::new(Cursor::new(&self.0));
+        let fake_extern = HashMap::new();
+        let fake_types = Vec::new();
+        let cur_hash = vec![hash];
+        let field = vec![ctx.field.unwrap()];
+        let mut registry = DeRszRegistry::new();
+        registry.init();
+        let t = ctx.field.unwrap().r#type.clone();
+        let dersz_fn = registry.get(t.as_str());
+
+        let mut registry = DeRszRegistry::new();
+        registry.init();
+        let roots = vec![];
+        let mut de_ctx = RszDeserializerCtx {
+            roots: &roots,
+            registry: registry.into(),
+            data,
+            extern_slots: &fake_extern,
+            type_descriptors: &fake_types,
+            cur_hash,
+            field,
+        };
+        if let Ok(dersz_fn) = dersz_fn {
+            let x: Box<dyn DeRszInstance> = dersz_fn(&mut de_ctx).unwrap();
+            return x.to_json(ctx)
+        }
+
+        let s = Struct::from_bytes(&mut de_ctx).unwrap();
+        s.to_json(ctx)
+    }
+
+    fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
+        ctx.data.write_all(&self.0)?;
+        Ok(())
+    }
+}
+
+
 #[derive(Debug)]
 pub struct Struct {
     pub hash: u32,
@@ -1217,7 +1224,6 @@ impl DeRszInstance for Struct {
             Some(struct_desc) => struct_desc,
             None => return serde_json::Value::Null
         };
-
         let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
             let obj = &self.values[i];
             let new_ctx = RszJsonSerializerCtx {
@@ -1278,14 +1284,14 @@ impl<'a> DeRszType<'a> for Struct {
                     ctx.data.seek_align_up(field.align.into())?;
                     let mut vals = Vec::new();
                     for _ in 0..len {
-                        let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
+                        let dersz_fn = ctx.registry.get(&field.r#type)?;
                         let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                         vals.push(x);
                     }
                     values.push(Box::new(vals))
                 } else {
                     ctx.data.seek_align_up(field.align.into())?;
-                    let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
+                    let dersz_fn = ctx.registry.get(&field.r#type)?;
                     let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                     values.push(x);
                 }
@@ -1323,13 +1329,13 @@ impl RszFromJson for Struct {
                 let mut vals = Vec::new();
                 let values: Vec<serde_json::Value> = field_data.as_array().expect("field should be an array").to_vec();
                 for value in values {
-                    let sersz_fn = ctx.registry.get_se(field.r#type.as_str())?;
+                    let sersz_fn = ctx.registry.get_se(&field.r#type)?;
                     vals.push(sersz_fn(&value, &mut ctx)?)
                 }
                 //println!("array_vals: {vals:#?}");
                 field_values.push(Box::new(vals));
             } else {
-                let sersz_fn = ctx.registry.get_se(field.r#type.as_str())?;
+                let sersz_fn = ctx.registry.get_se(&field.r#type)?;
                 let x: Box<dyn DeRszInstance> = sersz_fn(&field_data, &mut ctx)?;
                 field_values.push(x);
             }
@@ -1341,7 +1347,7 @@ impl RszFromJson for Struct {
 }
 
 #[derive(Debug, DeRszInstance)]
-pub struct Guid([u8; 16]);
+pub struct Guid(pub [u8; 16]);
 
 derive_dersz_from_json!(Guid);
 

@@ -2,7 +2,6 @@ pub mod gensdk;
 pub mod align;
 pub mod reerr;
 pub mod bitfield;
-pub mod byte_reader;
 pub mod compression;
 pub mod file_ext;
 pub mod msg;
@@ -16,6 +15,7 @@ pub mod mesh;
 pub mod file;
 pub mod save;
 pub mod crypt;
+pub mod tdb;
 
 extern crate image;
 extern crate libdeflater;
@@ -64,6 +64,9 @@ struct Args {
 
     #[arg(long)]
     save_file: Option<PathBuf>,
+
+    #[arg(long)]
+    steamid: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -126,7 +129,7 @@ fn main() -> Result<()> {
         list.push(PathBuf::from(f));
     }
 
-    let mut file_reader = FileReader::new(args.out_dir.into(), args.root_dir.map(|x| PathBuf::from(x)), args.dump_sdk, args.try_dump_rsz, true);
+    let mut file_reader = FileReader::new(args.out_dir.into(), args.root_dir.map(|x| PathBuf::from(x)), args.dump_sdk, args.try_dump_rsz, true, args.steamid);
     file_reader.dump_files(list)?;
 
     println!("Time taken: {} ms", now.elapsed().unwrap().as_millis());

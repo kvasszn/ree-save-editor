@@ -1,9 +1,12 @@
 use crate::file_ext::*;
+use crate::rsz::rszserde::StringU16;
 use crate::rsz::*;
 use crate::reerr::{Result, FileParseError::*};
 use std::io::{Read, Seek};
+use file_macros::StructRW;
 use nalgebra_glm::Vec4;
 use serde::Serialize;
+use crate::file::{DefaultDump, StructRW};
 
 
 #[allow(dead_code)]
@@ -130,37 +133,18 @@ impl Pog {
     }
 }
 
-#[derive(Debug, Serialize)]
+impl DefaultDump for PogList {}
+
+#[derive(Debug, file_macros::StructRW, Serialize)]
 pub struct PogList {
-    paths: Vec<String>,
-}
-
-impl PogList {
-    pub fn new<F: Read + Seek>(mut file: F) -> Result<PogList> {
-        let magic = file.read_magic()?;
-        let ext = core::str::from_utf8(&magic)?;
-        if ext != "PGL\0" {
-            return Err(Box::new(MagicError { 
-                real_magic: String::from("PGL"), 
-                read_magic: ext.to_string()
-            }))
-        }
-        let _version = file.read_u32()?;
-        let count = file.read_u32()?;
-        let _ = file.read_u32()?;
-        let entry_offset = file.read_u64()?;
-        file.seek(std::io::SeekFrom::Start(entry_offset.into()))?;
-
-        let paths = (0..count).map(|_| {
-            file.read_u64()
-        }).collect::<Result<Vec<_>>>()?;
-        let paths = paths.iter().map(|offset| {
-            file.seek(std::io::SeekFrom::Start(*offset))?;
-            file.read_u16str()
-        }).collect::<Result<Vec<_>>>()?;
-
-        Ok(PogList {
-            paths
-        })
-    }
+    #[magic = b"PGL\0"]
+    magic: [u8; 4],
+    version: u32,
+    count: u32,
+    unk: u32,
+    paths_offset: u64,
+    #[varlist(ty = u64, count = count, offset = paths_offset)]
+    path_offsets: Vec<u64>,
+    #[varlist(ty = StringU16, count = count, offsets = path_offsets)]
+    paths: Vec<StringU16>
 }
