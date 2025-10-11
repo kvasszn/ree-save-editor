@@ -41,18 +41,27 @@ ENUM_FILE=<path/to/enums.json>
 ### Single File
 Make sure that the `-r` directory + the file directory of the file combine to the real file location
 ```
-./target/<release or debug>/mhwsgen -r <path/to/game/native> -o <output/directory> -f <path/to/file>
+./target/<release or debug>/mhtame -r <path/to/game/native> -o <output/directory> -f <path/to/file>
 ```
 To specify enums and rsz files, use:
 ```
-./target/<release or debug>/mhwsgen -r <path/to/game/native> -o <output/directory> -f <path/to/file> --rsz <pathtorsz> --enums <pathtoenums>
+./target/<release or debug>/mhtame -r <path/to/game/native> -o <output/directory> -f <path/to/file> --rsz <pathtorsz> --enums <pathtoenums>
 ```
 
 ### Multi File
 Note: the root directory prefix gets removed from the file path when saving
 ```
-./target/<release or debug>/mhwsgen -r <path/to/game/native> -o <output/directory> -l <path/to/list of files to process>
+./target/<release or debug>/mhtame -r <path/to/game/native> -o <output/directory> -l <path/to/list of files to process>
 ```
+
+## Dumping Save Files
+It's important to use the unpacked structs version of the rsz dump, otherwise the file doesnt get read properly.
+```
+./target/release/mhtame -f <path/to/savefile> --rsz rszmhwilds_unpacked_structs.json --steamid <your steam id>
+```
+For help getting your steamid: https://help.steampowered.com/en/faqs/view/2816-BE67-5B69-0FEC
+If you dont pass one in, the program will try to brute force the key, but i'm pretty sure this is like completely broken atm. Still need to figure some stuff out for it.
+
 
 ## Recreating Files
 As mentioned, this is still WIP, but if the program sees a file like `ItemData.user.3.json` (either in a list or single file), it will try and recreate `ItemData.user.3` from the json data.
