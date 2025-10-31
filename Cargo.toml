@@ -7,7 +7,7 @@ edition = "2024"
 
 [workspace]
 members = [
-    ".", "file_macros",
+    ".", "file_macros", "rsz_macros"
 ]
 
 [features]

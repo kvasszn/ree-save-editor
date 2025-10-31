@@ -8,7 +8,6 @@ pub mod compression;
 pub mod file_ext;
 pub mod file;
 pub mod save;
-pub mod crypt;
 pub mod msg;
 pub mod rsz;
 pub mod tdb;

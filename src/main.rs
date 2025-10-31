@@ -14,11 +14,11 @@ pub mod scn;
 pub mod mesh;
 pub mod file;
 pub mod save;
-pub mod crypt;
 pub mod tdb;
 
 extern crate image;
 extern crate libdeflater;
+
 
 use clap::Parser;
 use file::FileReader;

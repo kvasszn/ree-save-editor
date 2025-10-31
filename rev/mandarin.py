@@ -3,7 +3,7 @@ P2 = int.from_bytes(bytes.fromhex("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b26
 A = int.from_bytes(bytes.fromhex("a1002346d9d854e5c18e4ce4eb641bed7d282226c7268648c1909d59abfa7215"), byteorder='little')
 K = int.from_bytes(bytes.fromhex("395097eefeffeffe000000000000000000000000000000000000000000000000"), byteorder='little')
 
-result = (K * P2) - P2 = K * P2 (% P2)
+#result = (K * P2) - P2 = K * P2 (% P2)
 
 B = int.from_bytes(bytes.fromhex("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715"), byteorder='little')
 
@@ -16,7 +16,7 @@ print(f"B ^ e % M = {result2.to_bytes(32, 'little').hex()}")
 result3 = pow(P2, e, M)
 print(f"P2 ^ e % M = {result3.to_bytes(32, 'little').hex()}")
 
-mul = pow(B, e, M)
+#mul = pow(B, e, M)
 mul = result1
 e = 0x14
 print(f"{mul.to_bytes(32, 'little').hex()}")

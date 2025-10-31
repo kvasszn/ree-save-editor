@@ -1,9 +1,10 @@
-use std::{error::Error, fmt::Display, time::SystemTime, hash::Hasher};
+use std::{error::Error, fmt::Display, hash::Hasher, sync::OnceLock, time::SystemTime};
 
 use hex_literal::hex;
 use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
 use bytemuck::{Pod, Zeroable};
 use fasthash::{city::Hasher64, FastHasher};
+use num_bigint::BigUint;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct SplitMix64;
@@ -29,6 +30,18 @@ struct EncodedKeyChunk {
     a: [u8; 64],
 }
 
+impl EncodedKeyChunk {
+    pub fn decrypt(&self, exp: &BigUint, modulus: &BigUint) -> [u8; 8] {
+        let mut res = [0u8; 8];
+        let a = num_bigint::BigUint::from_bytes_le(&self.a);
+        let b = num_bigint::BigUint::from_bytes_le(&self.b);
+        let x = b.modpow(exp, modulus);
+        let k = a / x;
+        res.copy_from_slice(&k.to_bytes_le()[0..8]);
+        res
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct BlockMetaDataRaw {
@@ -37,39 +50,26 @@ struct BlockMetaDataRaw {
     litterally_no_idea: [u8; 8]
 }
 
+pub static P: OnceLock<BigUint> = OnceLock::new();
 impl BlockMetaDataRaw {
-    pub const _M: [u8; 32] = hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
-    pub const _P2: [u8; 32] = hex!("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b269a2a63c648855c39b0b");
-    pub const _A: [u8; 32] = hex!("a1002346d9d854e5c18e4ce4eb641bed7d282226c7268648c1909d59abfa7215");
-    pub const _B: [u8; 32] = hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
+    pub const P: [u8; 32] = hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
+    pub const _Q: [u8; 32] = hex!("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b269a2a63c648855c39b0b");
+    //pub const _A: [u8; 32] = hex!("a1002346d9d854e5c18e4ce4eb641bed7d282226c7268648c1909d59abfa7215");
+    pub const _IDK: [u8; 32] = hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
     pub const _E: u64 = 0x14;
+    pub const _EXP: u64 = 65537;
 
-    pub const POW_B_E_MOD_M: [u8; 32] = hex!("bb39c81702d5495b671844d2f5ee2b77b811eb6e076b236e41ee7ce342f51612");
-    pub const MUL: [u8; 32] = hex!("73365201b3ee153739a4d55137cdd5d5783d1bc8b4c005141ef689ceb2bf9901");
-
-    pub fn get_key(&self) -> [u8; 16] {
-        let mut key = [0u8; 16];
-        for i in 0..2 {
-            let chunk = self.chunks[i];
-            let a = num_bigint::BigUint::from_bytes_le(&chunk.a);
-            let _b = num_bigint::BigUint::from_bytes_le(&chunk.b);
-            let mul = num_bigint::BigUint::from_bytes_le(&Self::MUL);
-            let k = a / mul;
-            key[i*8..i*8+8].copy_from_slice(&k.to_bytes_le()[0..8]);
+    pub fn get_key_iv(&self, exp: &BigUint) -> [u8; 32] {
+        let mut res = [0u8; 32];
+        let p = P.get_or_init(|| {
+            BigUint::from_bytes_le(&Self::P)
+        });
+        //let p = num_bigint::BigUint::from_bytes_le(&Self::P);
+        for (i, chunk) in self.chunks.iter().enumerate() {
+            let x = chunk.decrypt(exp, &p);
+            res[i*8..i*8+8].copy_from_slice(&x);
         }
-        key
-    }
-    pub fn get_iv(&self) -> [u8; 16] {
-        let mut iv = [0u8; 16];
-        for i in 0..2 {
-            let chunk = self.chunks[i + 2];
-            let a = num_bigint::BigUint::from_bytes_le(&chunk.a);
-            let _b = num_bigint::BigUint::from_bytes_le(&chunk.b);
-            let mul = num_bigint::BigUint::from_bytes_le(&Self::MUL);
-            let k = a / mul;
-            iv[i*8..i*8+8].copy_from_slice(&k.to_bytes_le()[0..8]);
-        }
-        iv
+        res
     }
 }
 
@@ -119,15 +119,15 @@ impl Mandarin {
 
         // determine how many blocks we actually have, have to do this in order like this for the
         // prng state to be correct
-        /*let mut decryption_len_leftover = decrypted_len;
+        /*let mut encryption_len_leftover = decrypted_len;
         let mut num_real_blocks = 0;
         for i in 0..num_potential_blocks {
             let b = block_sizes[i as usize] as u64;
             num_real_blocks += 1;
-            if decryption_len_leftover <= b * 0x4000 {
+            if encryption_len_leftover <= b * 0x4000 {
                 break
             }
-            decryption_len_leftover -= b * 0x4000;
+            encryption_len_leftover -= b * 0x4000;
         }*/
 
         // loop through each real block that fits in the decrypted length
@@ -137,9 +137,10 @@ impl Mandarin {
         let c = 0xffffffffu64;
         println!("trying {} keys", c);
         let s = SystemTime::now();
-        let good_key = (0..0xffffffff).into_par_iter().find_first(|i| {
+        let good_key = (0..c).into_par_iter().find_first(|i| {
             let mut buf = [0u8; 0x210];
             let key = 0x0110000100000000 + i;
+            let exp = BigUint::from(!key);
             let mut state_p = initial_state_p.wrapping_add(!key);
             buf[0..0x210].copy_from_slice(&encrypted[0..0x210]);
 
@@ -160,10 +161,8 @@ impl Mandarin {
             }
 
             let metadata_raw = bytemuck::from_bytes::<BlockMetaDataRaw>(&buf[..0x210]);
-            let key2 = metadata_raw.get_key();
-            let iv2 = metadata_raw.get_iv();
-
-            key2 == key && iv2 == iv
+            let key_iv2 = metadata_raw.get_key_iv(&exp);
+            key_iv2[0..16] == key && key_iv2[16..32] == iv
         });
 
         let taken = s.elapsed().unwrap().as_secs_f64();
@@ -202,15 +201,15 @@ impl Mandarin {
 
         // determine how many blocks we actually have, have to do this in order like this for the
         // prng state to be correct
-        let mut decryption_len_leftover = decrypted_len;
+        let mut encryption_len_leftover = decrypted_len;
         let mut num_real_blocks = 0;
         for i in 0..num_potential_blocks {
             let b = block_sizes[i as usize] as u64;
             num_real_blocks += 1;
-            if decryption_len_leftover <= b * 0x4000 {
+            if encryption_len_leftover <= b * 0x4000 {
                 break
             }
-            decryption_len_leftover -= b * 0x4000;
+            encryption_len_leftover -= b * 0x4000;
         }
 
         //state_p = state_p.wrapping_add(unsafe{*(rands.as_ptr() as *const u64)});
@@ -222,6 +221,7 @@ impl Mandarin {
         let mut buf = vec![0u8; 0x20210];
         let mut decrypted = vec![0u8; decrypted_len as usize];
         let mut remaining_bytes = decrypted_len as usize;
+        let meta_exp = BigUint::from(!key);
 
         for i in 0..num_real_blocks as usize {
             //println!("BLOCK {} out of {num_real_blocks}", i + 1);
@@ -252,18 +252,25 @@ impl Mandarin {
 
             // key check
             let metadata_raw = bytemuck::from_bytes::<BlockMetaDataRaw>(&buf[..0x210]);
-            let key2 = metadata_raw.get_key();
-            let iv2 = metadata_raw.get_iv();
+            for b in &metadata_raw.chunks[0].a {
+                print!("{:02x}", b);
+            }
+            println!();
+            for b in &metadata_raw.chunks[0].b {
+                print!("{:02x}", b);
+            }
+            println!();
+            let key_iv2 = metadata_raw.get_key_iv(&meta_exp);
 
-            if key2 != key {
+            if key_iv2[0..16] != key {
                 println!("[Key/IV check] key mismatch, skipping check");
                 //return Err(MandarinError::InvalidKey { target: key2, real: key})
             }
-            if iv2 != iv {
+            if key_iv2[16..32] != iv {
                 println!("[Key/IV check] IV mismatch, skipping check");
                 //return Err(MandarinError::InvalidIV { target: iv2, real: iv})
             } 
-            if key2 == key && iv2 == iv {
+            if key_iv2[0..16] == key && key_iv2[16..32] == iv {
                 println!("[Key/IV check] passed");
             }
 
@@ -273,6 +280,120 @@ impl Mandarin {
             let mut data = &mut buf[0x210..0x210+block_size];
             cipher.apply_keystream(&mut data);
 
+            let bytes_to_copy = block_size.min(remaining_bytes);
+            //checksum
+            let mut h = Hasher64::new();
+            h.write(&data[..bytes_to_copy]);
+            let checksum = h.finish();
+            if checksum != target_checksum {
+                println!("[Checksum] failed");
+                return Err(MandarinError::InvalidChecksum { target: target_checksum, real: checksum })
+            } else {
+                println!("[Checksum] passed")
+            }
+            decrypted[decrypted_start..decrypted_start + bytes_to_copy].copy_from_slice(&data[..bytes_to_copy]);
+            remaining_bytes = remaining_bytes.wrapping_sub(block_size);
+            decrypted_start += bytes_to_copy;
+            encrypted_start += encrypted_read_size;
+            //println!("remaining_bytes={remaining_bytes:#x}");
+        }
+
+        Ok(decrypted)
+    }
+
+    pub fn encrypt(data: &[u8], key: u64) -> Result<Vec<u8>, MandarinError>{
+        let decrypted_len = data.len() as u64;
+        // calculate the block sizes >> 0xe for each "potential block"
+        let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
+        let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
+                                                                        // allocated, its on the stack
+                                                                        // but like variable size
+        let mut state_p: u64 = 0x7A36955255266CED;
+        for i in 0..num_potential_blocks as usize {
+            block_sizes[i] = (state_p & 7) as u8 + 1;
+            state_p = SplitMix64::next_int(&mut state_p);
+        }
+
+        // determine how many blocks we actually have, have to do this in order like this for the
+        // prng state to be correct
+        let mut encryption_len_leftover = decrypted_len;
+        let mut num_real_blocks = 0;
+        for i in 0..num_potential_blocks {
+            let b = block_sizes[i as usize] as u64;
+            num_real_blocks += 1;
+            if encryption_len_leftover <= b * 0x4000 {
+                break
+            }
+            encryption_len_leftover -= b * 0x4000;
+        }
+
+        //state_p = state_p.wrapping_add(unsafe{*(rands.as_ptr() as *const u64)});
+        state_p = state_p.wrapping_add(!key);
+
+        // loop through each real block that fits in the decrypted length
+        let mut encrypted_start = 0;
+        let mut decrypted_start = 0;
+        let mut buf = vec![0u8; 0x20210];
+        let mut decrypted = vec![0u8; decrypted_len as usize];
+        let mut remaining_bytes = decrypted_len as usize;
+        let meta_exp = BigUint::from(!key);
+
+        for i in 0..num_real_blocks as usize {
+            //println!("BLOCK {} out of {num_real_blocks}", i + 1);
+            let block_size = block_sizes[i] as usize * 0x4000;
+            let encrypted_read_size = block_size + 0x210;
+            buf[0..encrypted_read_size].copy_from_slice(&data[encrypted_start..encrypted_start+encrypted_read_size]);
+
+            // generate key and iv
+            let mut key = [0u8; 16];
+            let mut iv = [0u8; 16];
+            for j in 0..16 {
+                state_p = SplitMix64::next_int(&mut state_p);
+                key[j] = state_p as u8;
+                iv[j] = (state_p >> 8) as u8;
+            }
+
+            // this contains meta data for the block
+            // 4 pairs of big ints and a 16 byte checksum
+            for j in 0..0x210 {
+                state_p = SplitMix64::next_int(&mut state_p);
+                buf[j] = buf[j] ^ state_p as u8;
+            }
+
+            /*for b in &buf[0x200..0x210] {
+              print!("{b:02x}");
+            }
+            println!();*/
+
+            // key check
+            let metadata_raw = bytemuck::from_bytes::<BlockMetaDataRaw>(&buf[..0x210]);
+            for b in &metadata_raw.chunks[0].a {
+                print!("{:02x}", b);
+            }
+            println!();
+            for b in &metadata_raw.chunks[0].b {
+                print!("{:02x}", b);
+            }
+            println!();
+            let key_iv2 = metadata_raw.get_key_iv(&meta_exp);
+
+            if key_iv2[0..16] != key {
+                println!("[Key/IV check] key mismatch, skipping check");
+                //return Err(MandarinError::InvalidKey { target: key2, real: key})
+            }
+            if key_iv2[16..32] != iv {
+                println!("[Key/IV check] IV mismatch, skipping check");
+                //return Err(MandarinError::InvalidIV { target: iv2, real: iv})
+            } 
+            if key_iv2[0..16] == key && key_iv2[16..32] == iv {
+                println!("[Key/IV check] passed");
+            }
+
+            let target_checksum = metadata_raw.checksum;
+            type Aes128Ofb = ofb::Ofb<Aes128>;
+            let mut cipher = Aes128Ofb::new(&key.into(), &iv.into());
+            let mut data = &mut buf[0x210..0x210+block_size];
+            cipher.apply_keystream(&mut data);
 
             let bytes_to_copy = block_size.min(remaining_bytes);
             //checksum

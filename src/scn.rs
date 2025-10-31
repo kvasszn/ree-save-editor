@@ -1,6 +1,6 @@
 #![allow(unused)]
 use crate::file_ext::*;
-use crate::rsz::*;
+use crate::rsz::Rsz;
 use crate::reerr::{Result, FileParseError::*};
 use std::io::{Read, Seek};
 use nalgebra_glm::Vec4;

@@ -5,9 +5,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::file_ext::*;
-use crate::rsz::rszserde::DeRsz;
-use crate::rsz::rszserde::DeRszRegistry;
-use crate::rsz::*;
+use crate::rsz::{Rsz, rszserde::{DeRsz, DeRszRegistry}};
 use crate::reerr::{Result, FileParseError::*};
 use std::io::Write;
 use std::io::{Read, Seek};
@@ -30,10 +28,9 @@ pub struct User {
 impl User {
     pub fn new<F: Read + Seek>(mut file: F) -> Result<User> {
         let magic = file.read_magic()?;
-        let ext = core::str::from_utf8(&magic)?;
-        if ext != "USR\0" {
+        let ext = core::str::from_utf8(&magic)?; if ext != "USR\0" {
             return Err(Box::new(MagicError { 
-                real_magic: String::from("USR"), 
+                real_magic: String::from("USR💖"), 
                 read_magic: ext.to_string()
             }))
         }

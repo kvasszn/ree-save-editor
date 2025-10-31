@@ -1,6 +1,6 @@
 use std::{collections::HashSet, error::Error, fs::File, io::{Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}, time::SystemTime};
 
-use crate::{tdb::TDBHeader, file_ext::SeekExt, font::Oft, gensdk::Sdk, msg::Msg, pog::{Pog, PogList}, rsz::rszserde::{DeRsz, Guid, StringU16}, save::SaveContext, scn::Scn, tex::Tex, user::User};
+use crate::{file_ext::SeekExt, font::Oft, gensdk::Sdk, msg::Msg, pog::{Pog, PogList}, rsz::rszserde::{DeRsz, Guid, StringU16}, save::{types::to_dersz, SaveContext}, scn::Scn, tdb::TDBHeader, tex::Tex, user::User};
 use crate::save::SaveFile;
 use serde::Serialize;
 
@@ -100,7 +100,7 @@ macro_rules! derive_primitives {
     };
 }
 
-derive_primitives!(u8, u16, u32, u64, i8, i16, i32, i64);
+derive_primitives!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
 impl<C, T: StructRW<C>, const N: usize> StructRW<C> for [T; N] {
     fn read<R: Read + Seek>(reader: &mut R, ctx: &mut C) -> Result<Self>
@@ -114,6 +114,14 @@ impl<C, T: StructRW<C>, const N: usize> StructRW<C> for [T; N] {
 
                     // Convert from [MaybeUninit<T>] to [T] safely
                     Ok(unsafe { std::mem::transmute_copy::<[MaybeUninit<T>; N], [T; N]>(&arr) })
+    }
+}
+
+impl StructRW<usize> for Vec<u8> {
+    fn read<R: Read + Seek>(reader: &mut R, ctx: &mut usize) -> Result<Self> {
+        let mut values = vec![0u8; *ctx];
+        reader.read_exact(&mut values)?;
+        Ok(values)
     }
 }
 
@@ -287,7 +295,7 @@ impl FileReader {
                     let mut reader = File::open(&file)?;
                     let save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid})?;
                     //let save = SaveFile::from_file(&file)?;
-                    let dersz = DeRsz::from(save);
+                    let dersz = to_dersz(save.data)?;
                     //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);
                     let mut output_path = output_path.clone();
                     output_path.set_file_name(output_path.file_name().unwrap().to_string_lossy().to_string() + ".json");

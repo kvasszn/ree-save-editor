@@ -1,6 +1,5 @@
 use crate::file_ext::*;
-use crate::rsz::rszserde::StringU16;
-use crate::rsz::*;
+use crate::rsz::{Rsz, rszserde::StringU16};
 use crate::reerr::{Result, FileParseError::*};
 use std::io::{Read, Seek};
 use file_macros::StructRW;
