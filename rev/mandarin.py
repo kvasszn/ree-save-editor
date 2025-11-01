@@ -20,6 +20,7 @@ print(f"P2 ^ e % M = {result3.to_bytes(32, 'little').hex()}")
 mul = result1
 e = 0x14
 print(f"{mul.to_bytes(32, 'little').hex()}")
+print("pls", hex((M - 1) // P2))
 
 key_iv = bytes.fromhex("f6037f94fb38f8cd37b145deda249d793a9fb516119373e5f74d91d5469750eb")
 #key_iv=bytes.fromhex("f2a746e314d5ea52de15a16ebccda85646ad620cdffbcfff7c660eb536652f6e")

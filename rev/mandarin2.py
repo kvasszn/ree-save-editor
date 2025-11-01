@@ -15,8 +15,8 @@ n = p * q
 #K = 76561198252339142
 unk = K % q
 print(hex(unk))
-unk2 = pow(D, unk, n)
-print(hex(unk2))
+unk2 = pow(D, unk, p)
+print(unk2.to_bytes(64, byteorder='big').hex())
 unk2 = pow(D, unk, q)
 print(hex(unk2))
 
@@ -28,6 +28,9 @@ b = int.from_bytes(bytes.fromhex("bb39c81702d5495b671844d2f5ee2b77b811eb6e076b23
 print(hex(b))
 print(hex(a))
 unk = pow(b, K, p)
+print(hex(unk))
+
+unk = pow(0x14, -1, q)
 print(hex(unk))
 
 """

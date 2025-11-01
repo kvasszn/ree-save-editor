@@ -1,7 +1,7 @@
 pub mod crypt;
 pub mod types;
 
-use std::{io::{Cursor, Read, Seek, SeekFrom}};
+use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}};
 
 use fasthash::murmur3;
 use crate::{file::{Magic, StructRW}, save::types::Class};
@@ -45,9 +45,10 @@ impl StructRW<SaveContext> for SaveFile {
 
         let data_start = reader.tell()?;
         reader.seek(std::io::SeekFrom::End(-12))?;
-        //let _zero = u32::read(reader, &mut ())?;
         let decrypted_len = u64::read(reader, &mut ())?;
+        println!("{decrypted_len:x}");
         let end_hash = u32::read(reader, &mut ())?;
+        println!("{end_hash:x}");
         let len = reader.stream_position()?;
         reader.seek(SeekFrom::Start(0))?;
         let mut file_bytes: Vec<u8> = vec![];
@@ -64,16 +65,29 @@ impl StructRW<SaveContext> for SaveFile {
         let mut encrypted = vec![];
         reader.read_to_end(&mut encrypted)?;
         let data = if mandarin && deflate {
-            //let mandarin = Mandarin::init();
-            //let decrypted_buf = mandarin.decrypt_bytes(&encrypted, decrypted_len as usize, ctx.key)?;
-            //mandarin.uninit();
             let key = if ctx.key == 0 {
                 Mandarin::brute_force(&encrypted, decrypted_len as u64)
             } else {ctx.key};
-            //let key = Mandarin::brute_force(&encrypted, decrypted_len);
             //println!("Found key: {:#x}", key);
+            println!("{decrypted_len}");
             let decrypted_buf = Mandarin::decrypt(&encrypted, decrypted_len as u64, key)?;
             println!("[Decrypted]");
+            /*let encrypted_buf = Mandarin::encrypt(&decrypted_buf, key)?;
+            println!("[Re-Encrypted]");
+            let decrypted_buf = Mandarin::decrypt(&encrypted_buf, decrypted_buf.len() as u64, key)?;
+            println!("[Re-Decrypted]");
+            let mut data_cursor = Cursor::new(Vec::new());
+            data_cursor.write_all(b"DSSS")?;
+            data_cursor.write_all(&version.to_le_bytes())?;
+            data_cursor.write_all(&flags.to_le_bytes())?;
+            data_cursor.write_all(&_save_or_user_i_think.to_le_bytes())?;
+            data_cursor.write_all(&encrypted_buf)?;
+            data_cursor.write_all(&decrypted_len.to_le_bytes())?;
+            let data = &data_cursor.into_inner();
+            let file_hash = murmur3::Hash32::hash_with_seed(&data, 0xffffffff);
+            let mut f = File::create("./outputs/misc/saves/data001Slot.bin").unwrap();
+            f.write_all(&data)?;
+            f.write_all(&file_hash.to_le_bytes())?;*/
 
             // Decompression
             let mut decrypted_buf = Cursor::new(&decrypted_buf);
