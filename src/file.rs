@@ -228,6 +228,7 @@ pub struct FileReader {
 }
 
 impl FileReader {
+    
     pub fn new(output_dir: std::path::PathBuf, root_dir: Option<std::path::PathBuf>, dump_sdk: bool, dump_all_rsz: bool, keep_path_structure: bool, steamid: Option<String>) -> FileReader {
         Self {
             dump_sdk,
@@ -241,7 +242,7 @@ impl FileReader {
 
     }
 
-    fn get_full_file_path(&self, file_path: &std::path::Path) -> std::path::PathBuf {
+    pub fn get_full_file_path(&self, file_path: &std::path::Path) -> std::path::PathBuf {
         match self.root_dir {
             Some(ref root_dir) => root_dir.join(&file_path),
             None => PathBuf::from(&file_path),
@@ -249,7 +250,7 @@ impl FileReader {
     }
 
 
-    fn get_output_path(&self, file_path: &std::path::Path) -> std::path::PathBuf {
+    pub fn get_output_path(&self, file_path: &std::path::Path) -> std::path::PathBuf {
         let path = if self.keep_path_structure {
             match self.root_dir {
                 Some(ref prefix) => {

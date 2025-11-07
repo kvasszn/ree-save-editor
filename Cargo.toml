@@ -10,6 +10,11 @@ members = [
     ".", "file_macros", "rsz_macros"
 ]
 
+[[bin]]
+name = "mhtame-gui"
+path = "src/gui/main.rs"
+
+
 [features]
 default = []
 save = []
@@ -47,3 +52,6 @@ rayon = "1.11.0"
 bitfield = "0.19.3"
 num-bigint = "0.4.6"
 rug = "1.28.0"
+eframe = "0.33.0"
+egui_json_tree = "0.14.2"
+rfd = "0.15.4"

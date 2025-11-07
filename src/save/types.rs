@@ -106,6 +106,9 @@ impl DeRszInstance for Class {
     fn to_bytes(&self, _ctx: &mut crate::rsz::rszserde::RszSerializerCtx) -> Result<()> {
         todo!()
     }
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut crate::rsz::rszserde::RszEditSerializerCtx) -> Result<()> {
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +157,9 @@ impl DeRszInstance for Array {
         todo!()
     }
     fn to_bytes(&self, _ctx: &mut crate::rsz::rszserde::RszSerializerCtx) -> Result<()> {
+        todo!()
+    }
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut crate::rsz::rszserde::RszEditSerializerCtx) -> Result<()> {
         todo!()
     }
 }

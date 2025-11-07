@@ -3,7 +3,7 @@ use std::{error::Error, fmt::Display, hash::Hasher, time::SystemTime};
 use hex_literal::hex;
 use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
 use bytemuck::{Pod, Zeroable};
-use fasthash::{city::{self, Hasher64}, FastHash, FastHasher};
+use fasthash::{city::{self}, FastHash, FastHasher};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rug::{integer::Order, Complete, Integer};
 
@@ -22,40 +22,27 @@ impl SplitMix64 {
     }
 }
 
-// Metadata key and IV bigint math
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct EncodedKeyIVChunk {
-    mul: [u8; 64],
-    ct: [u8; 64],
-}
-
-impl EncodedKeyIVChunk {
-    pub fn new() -> Self {
-        Self {
-            mul: [0; 64],
-            ct: [0; 64],
-        }
-    }
-}
-
-// This seems to just be elgamal
-#[derive(Debug, Clone)]
-struct AuthCtx {
-    p: Integer,
-    q: Integer,
-    r: Integer,
-    s: Integer,
-    u: Integer,
-    e: Integer,
-}
-
 fn integer_to_bytes_le<const N: usize>(x: &Integer) -> [u8; N] {
     let mut buf = [0u8; N];
     let x_bytes = x.to_digits::<u8>(Order::Lsf); // Lsf = least-significant first = little-endian
     let len = x_bytes.len().min(N);
     buf[..len].copy_from_slice(&x_bytes[..len]);
     buf
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct Pair([u8; 64], [u8; 64]);
+
+// elgamal??
+#[derive(Debug, Clone)]
+struct AuthCtx {
+    p: Integer, // prime
+    q: Integer, // prime
+    r: Integer, // integer
+    s: Integer, // r ^ u mod q
+    u: Integer, // id mod q
+    e: Integer, // 0x14
 }
 
 impl AuthCtx {
@@ -68,7 +55,6 @@ impl AuthCtx {
         let r = Integer::from_digits(&Self::R, Order::Lsf);
         let u = Integer::from(u);
         let u = u.modulo(&q);
-        //let s = r.modpow(&u, &p);
         let s = r.pow_mod_ref(&u, &p).unwrap().complete();
         let e = Integer::from(0x14u64);
         Ok(AuthCtx {
@@ -76,42 +62,39 @@ impl AuthCtx {
         })
     }
 
-    /*pub fn update_u(&mut self, u: u64) {
+    pub fn update_u(&mut self, u: u64) {
         let u = Integer::from(u) % &self.q;
-        let s = self.r.modpow(&u, &self.p);
+        let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
         self.u = u;
         self.s = s;
-    }*/
-
-    pub fn encrypt(&self, pt: [u8; 8]) -> EncodedKeyIVChunk {
-        let x1 = self.s.pow_mod_ref(&self.e, &self.p).unwrap().complete();
-        let x0 = self.r.pow_mod_ref(&self.e, &self.p).unwrap().complete();
-        let pt = Integer::from_digits(&pt, Order::Lsf);
-        let ct = x1 * pt;
-        println!("{x0:x}");
-        let res0 = integer_to_bytes_le::<64>(&x0);
-        let res1 = integer_to_bytes_le::<64>(&ct);
-        EncodedKeyIVChunk {
-            mul: res0, ct: res1
-        }
     }
 
-    pub fn encrypt_bytes(&self, pt: [u8; 32]) -> [EncodedKeyIVChunk; 4] {
-        let mut chunks = [EncodedKeyIVChunk::new(); 4];
+    pub fn encrypt(&self, pt: [u8; 8]) -> Pair {
+        let x0 = self.r.pow_mod_ref(&self.e, &self.p).unwrap().complete();
+        let x1 = self.s.pow_mod_ref(&self.e, &self.p).unwrap().complete();
+        let pt = Integer::from_digits(&pt, Order::Lsf);
+        let ct = x1 * pt;
+        let res0 = integer_to_bytes_le::<64>(&x0);
+        let res1 = integer_to_bytes_le::<64>(&ct);
+        Pair(res0, res1)
+    }
+
+    pub fn decrypt(&self, chunk: &Pair) -> [u8; 8] {
+        let x0 = Integer::from_digits::<u8>(&chunk.0, Order::Lsf);
+        let ct = Integer::from_digits::<u8>(&chunk.1, Order::Lsf);
+        let x = x0.pow_mod_ref(&self.u, &self.p).unwrap().complete();
+        let k = ct / x;
+        integer_to_bytes_le::<8>(&k)
+    }
+
+    pub fn encrypt_bytes(&self, pt: [u8; 32]) -> [Pair; 4] {
+        let mut chunks = [Pair([0u8; 64], [0u8; 64]); 4];
         for i in 0..4 {
             let mut buf = [0u8; 8];
             buf.copy_from_slice(&pt[i*8..i*8+8]);
             chunks[i] = self.encrypt(buf);
         }
         chunks
-    }
-
-    pub fn decrypt(&self, chunk: &EncodedKeyIVChunk) -> [u8; 8] {
-        let mul = Integer::from_digits::<u8>(&chunk.mul, Order::Lsf);
-        let ct = Integer::from_digits::<u8>(&chunk.ct, Order::Lsf);
-        let x = mul.pow_mod_ref(&self.u, &self.p).unwrap().complete();
-        let k = ct / x;
-        integer_to_bytes_le::<8>(&k)
     }
 
     pub fn decrypt_block(&self, block: Block) -> [u8; 32] {
@@ -127,7 +110,7 @@ impl AuthCtx {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Block {
-    chunks: [EncodedKeyIVChunk; 4], // key/iv checker
+    chunks: [Pair; 4], // key/iv checker
     checksum: u64, // computed from city64 or farmhash of decrypted data
     litterally_no_idea: [u8; 8]
 }
@@ -236,6 +219,7 @@ impl Mandarin {
         }
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
+
         // calculate the block sizes >> 0xe for each "potential block"
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
@@ -296,8 +280,8 @@ impl Mandarin {
             // key check
             let auth_block = bytemuck::from_bytes::<Block>(&buf[..0x210]);
             let key_iv2 = auth.decrypt_block(*auth_block);
-            println!("mul={:?}", auth_block.chunks[0].mul);
-            println!("ct={:?}", auth_block.chunks[0].ct);
+            println!("mul={:?}", auth_block.chunks[0].0);
+            println!("ct={:?}", auth_block.chunks[0].0);
 
             if key_iv2[0..16] != key {
                 println!("[Key/IV check] block {i}: key mismatch, skipping check");
@@ -319,9 +303,6 @@ impl Mandarin {
 
             let bytes_to_copy = block_size.min(remaining_bytes);
             //checksum
-            let mut h = Hasher64::new();
-            h.write(&data[..bytes_to_copy]);
-            let checksum = h.finish();
             let checksum = city::Hash64::hash(&data[..bytes_to_copy]);
             if checksum != target_checksum {
                 println!("[Checksum] block {i}: failed");
@@ -427,8 +408,8 @@ impl Mandarin {
                 litterally_no_idea: [0u8; 8]
             };
 
-            println!("mul={:?}", block.chunks[0].mul);
-            println!("ct={:?}", block.chunks[0].ct);
+            println!("mul={:?}", block.chunks[0].0);
+            println!("ct={:?}", block.chunks[0].1);
 
             let auth_block = bytemuck::bytes_of::<Block>(&block);
             buf[0..0x210].copy_from_slice(auth_block);

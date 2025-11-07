@@ -211,3 +211,20 @@ pub fn get_enum_name(name: &str, value: &str) -> Option<String> {
     }
     None
 }
+
+pub fn get_enum_list(name: &str) -> Option<&HashMap<String, String>> {
+    let name_tmp = name.replace("[]", "").replace("_Serializable", "_Fixed");
+    if let Some(map) = enum_map().get(&name_tmp) {
+        return Some(map);
+    }
+    let name_tmp = name_tmp.replace("_Fixed", "");
+    if let Some(map) = enum_map().get(&name_tmp) {
+        return Some(map);
+    }
+
+    let name = name.replace("_Serializable", "");
+    if let Some(map) = enum_map().get(&name) {
+        return Some(map);
+    }
+    None
+}
