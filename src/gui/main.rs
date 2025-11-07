@@ -1,10 +1,11 @@
 pub mod editor;
 use core::f32;
-use std::{fs::File, path::PathBuf};
+use std::{fs::File, path::PathBuf, sync::{mpsc::{self, Receiver, Sender}, Arc, Mutex}};
 
 use eframe::egui::{self, Color32, FontDefinitions, FontFamily, FontSelection, Frame, ScrollArea, TextEdit, TextStyle};
 use egui_json_tree::{render::{DefaultRender, RenderContext}, *};
-use mhtame::{file::{FileReader, StructRW}, rsz::dump::{ENUM_FILE, RSZ_FILE}, save::{types::to_dersz, SaveContext, SaveFile}, user::User};
+use mhtame::{edit::{Edit, RszEditCtx}, file::{FileReader, StructRW}, rsz::{dump::{RszDump, ENUM_FILE, RSZ_FILE}, rszserde::DeRsz}, save::{types::to_dersz, SaveContext, SaveFile}, user::User};
+use rug::az::UnwrappedAs;
 use serde_json::json;
 
 use crate::editor::Editor;
@@ -19,7 +20,6 @@ pub fn main() -> eframe::Result<()> {
     eframe::run_native("mhtame",
         options,
         Box::new(|cc| {
-            setup_custom_fonts(&cc.egui_ctx);
             Ok(Box::<TameApp>::default())
         }),
     )
@@ -31,13 +31,16 @@ pub struct TameApp {
     steam_id: String,
     file_reader: FileReader,
     json_value: Option<serde_json::Value>,
-    user_value: Option<User>
-
+    user_value: Option<User>,
+    dersz: Option<DeRsz>,
+    tx: Sender<PathBuf>,
+    rx: Receiver<PathBuf>,
 }
 
 impl Default for TameApp {
     fn default() -> Self {
         let file_reader = FileReader::new("outputs".into(), None, false, false, true, None);
+        let (tx, rx) = mpsc::channel();
         Self {
             current_file_name: None,
             file_name: "".to_string(),
@@ -45,73 +48,11 @@ impl Default for TameApp {
             steam_id: "".to_string(),
             json_value: None,
             user_value: None,
+            dersz: None,
+            tx, rx,
         }
     }
-
 }
-
-fn setup_custom_fonts(ctx: &egui::Context) {
-    //let mut fonts = egui::FontDefinitions::default();
-    
-    // Load your custom font
-    /*fonts.font_data.insert(
-        "my_font".to_owned(),
-        egui::FontData::from_static(include_bytes!("path/to/your/font.ttf")),
-    );
-    
-    // Set it as the proportional font (used for most text)
-    fonts
-        .families
-        .entry(egui::FontFamily::Proportional)
-        .or_default()
-        .insert(0, "my_font".to_owned());*/
-    
-    // Optionally set it as the monospace font too
-    /*fonts
-        .families
-        .entry(egui::FontFamily::Monospace)
-        .or_default()
-        .insert(0, "my_font".to_owned());*/
-    
-    // Apply the fonts to the context
-    //ctx.set_fonts(fonts);
-}
-
-
-#[derive(Clone)]
-struct MyPayload { pub path: String }
-
-/*impl eframe::App for TameApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("mhtame");
-            let f = Frame::default();
-
-            let file_select = ui.add(TextEdit::singleline(&mut self.file_name));
-            let dropped_files = ctx.input(|i| i.raw.dropped_files.clone());
-            if !dropped_files.is_empty() {
-                let file = &dropped_files[0];
-                if let Some(path) = &file.path {
-                    self.current_file_name = Some(path.display().to_string());
-                } else {
-                    self.current_file_name = Some(file.name.clone());
-                }
-            }
-
-            egui::CentralPanel::default().show(ctx, |ui| {
-                ui.heading("File Drop Example");
-
-                ui.label("Drag and drop a file anywhere on the window!");
-
-                if let Some(file) = &self.current_file_name {
-                    ui.separator();
-                    ui.label(format!("Last dropped file: {file}"));
-                }
-            });
-
-        });
-    }
-}*/
 
 impl eframe::App for TameApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -138,34 +79,54 @@ impl eframe::App for TameApp {
             ui.horizontal(|ui| {
                 ui.label("path:");
                 ui.add(TextEdit::singleline(&mut self.file_name).desired_width(400.0));
-                if ui.button("Select File").clicked() {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                        self.current_file_name = Some(path.display().to_string());
-                        let json_value = if let Some(file) = &self.current_file_name {
-                            /*let steamid = if let Some(hex) = self.steam_id.strip_prefix("0x") {
-                                u64::from_str_radix(hex, 16)
-                            } else {
-                                u64::from_str_radix(&self.steam_id, 10)
-                            }.unwrap();
-                            //Mandarin::sanity_check(&file_path);
-                            let mut reader = File::open(file).unwrap();
-                            let save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid}).unwrap();
-                            //let save = SaveFile::from_file(&file)?;
-                            let dersz = to_dersz(save.data).unwrap();
-                            //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);
-                            let json = json!(&dersz);
-                            Some(json)*/
-                            let reader = File::open(file).unwrap();
-                            let user = User::new(reader).unwrap();
-                            //let json = json!(user);
-                            Some(user)
-                        } else {
-                            None
-                        };
-                        //self.json_value = json_value;
-                        self.user_value = json_value;
-                    }
+
+                if ui.button("Open File").clicked() {
+                    let tx = self.tx.clone();
+                    std::thread::spawn(move || {
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            println!("{path:?}");
+                            tx.send(path).unwrap();
+                        }
+                    });
                 }
+
+                if let Ok(result) = self.rx.try_recv() {
+                    self.current_file_name = Some(result.display().to_string());
+                    let reader = File::open(result).unwrap();
+                    let user = User::new(reader).unwrap();
+                    let result = user.rsz.deserialize_to_dersz().unwrap();
+                    self.dersz = Some(result);
+                    println!("{}", serde_json::json!(self.dersz));
+                    println!("Loaded");
+                }
+
+                /*if ui.button("Select File").clicked() {
+                  if let Some(path) = rfd::FileDialog::new().pick_file() {
+                  self.current_file_name = Some(path.display().to_string());
+                  let json_value = if let Some(file) = &self.current_file_name {
+                /*let steamid = if let Some(hex) = self.steam_id.strip_prefix("0x") {
+                u64::from_str_radix(hex, 16)
+                } else {
+                u64::from_str_radix(&self.steam_id, 10)
+                }.unwrap();
+                //Mandarin::sanity_check(&file_path);
+                let mut reader = File::open(file).unwrap();
+                let save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid}).unwrap();
+                //let save = SaveFile::from_file(&file)?;
+                let dersz = to_dersz(save.data).unwrap();
+                //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);
+                let json = json!(&dersz);
+                Some(json)*/
+                let reader = File::open(file).unwrap();
+                let user = User::new(reader).unwrap();
+                Some(user)
+            } else {
+                None
+            };
+            //self.json_value = json_value;
+            self.user_value = json_value;
+            }
+            }*/
             });
             ui.horizontal(|ui| {
                 ui.label("Steam ID:");
@@ -175,17 +136,28 @@ impl eframe::App for TameApp {
             ui.separator();
             ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
                 ui.style_mut().override_font_id = Some(egui::FontId::monospace(14.0));
-                if let Some(value) = &mut self.user_value {
-                    let mut dersz = value.rsz.deserialize_to_dersz().unwrap();
-                    Editor::show(ui, &mut dersz);
-                }
+                if let Some(dersz) = self.dersz.as_mut() {
+                    //println!("struct: {:?}", dersz.structs[22]);
+                    //println!("{:?}", dersz.roots);
+                    for root in &dersz.roots {
+                        let val = dersz.structs.get(*root as usize).unwrap();
 
-                if let Some(value) = &mut self.json_value {
-                    JsonTree::new("file", value).show(ui);
+                        let (hash, mut field_values) = {
+                            let val = dersz.structs.get_mut(*root as usize).unwrap();
+                            let (hash, field_values) = std::mem::take(&mut *val);
+                            (hash, field_values)
+                        };
+                        let root_type = RszDump::get_struct(hash).unwrap();
+                        ui.label(&root_type.name);
+                        let mut ctx = RszEditCtx::new(*root, &mut dersz.structs);
+                        field_values.edit(ui, &mut ctx);
+                        dersz.structs[*root as usize] = (hash, field_values);
+                    }
                 }
+                //let mut fake_structs = Vec::new();
+                //let mut ctx = RszEditCtx::new(0, &mut fake_structs);
+                //value.edit(ui, &mut ctx);
             })
         });
     }
 }
-
-

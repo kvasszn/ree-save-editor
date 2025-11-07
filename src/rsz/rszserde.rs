@@ -7,10 +7,11 @@ use std::{any::Any, cell::{RefCell, RefMut}, collections::{HashMap, HashSet}, fm
 
 use eframe::egui::{CollapsingHeader, TextEdit, Ui};
 use indexmap::IndexMap;
-use rsz_macros::{DeRszFrom, DeRszInstance};
+use rsz_macros::{DeRszFrom, DeRszInstance, Edit};
 use serde::{Deserialize, Serialize};
 
-use crate::reerr::{self, Result, RszError};
+use crate::edit::{Edit, RszEditCtx};
+use crate::{reerr::{self, Result, RszError}};
 use crate::file_ext::*;
 use super::{dump::{enum_map, get_enum_name, get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, Extern, Rsz, TypeDescriptor};
 
@@ -159,11 +160,10 @@ pub trait DeRszInstanceClone {
     fn clone_box(&self) -> Box<dyn DeRszInstance>;
 }
 
-pub trait DeRszInstance: Debug + DeRszInstanceClone + Any {
+pub trait DeRszInstance: Debug + DeRszInstanceClone + Any + Edit {
     fn as_any(&self) -> &dyn Any;
     fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value;
     fn to_bytes(&self, _ctx: &mut RszSerializerCtx) -> Result<()>;
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()>;
 }
 
 pub struct RszJsonDeserializerCtx<'a> {
@@ -221,24 +221,6 @@ impl DeRszInstance for Vec<Box<dyn DeRszInstance>> {
         }
         Ok(())
     }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        for (i, item) in self.iter_mut().enumerate() {
-            ctx.id += 1;
-            let mut new_ctx = RszEditSerializerCtx {
-                root: None,
-                field: ctx.field,
-                objects: ctx.objects,
-                parent: ctx.parent,
-                id: ctx.id,
-            };
-            CollapsingHeader::new(format!("{i}:"))
-                .id_salt(ctx.id)
-                .show(ui, |ui| {
-                    item.edit(ui, &mut new_ctx).unwrap();
-                });
-        };
-        Ok(())
-    }
 }
 
 impl<T: 'static + DeRszInstance + Debug + Serialize + Clone> DeRszInstance for Vec<T> {
@@ -255,24 +237,6 @@ impl<T: 'static + DeRszInstance + Debug + Serialize + Clone> DeRszInstance for V
         for item in self {
             item.to_bytes(ctx)?;
         }
-        Ok(())
-    }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        for (i, item) in self.iter_mut().enumerate() {
-            ctx.id += 1;
-            let mut new_ctx = RszEditSerializerCtx {
-                root: None,
-                field: ctx.field,
-                objects: ctx.objects,
-                parent: ctx.parent,
-                id: ctx.id,
-            };
-            CollapsingHeader::new(format!("{i}:"))
-                .id_salt(ctx.id)
-                .show(ui, |ui| {
-                    item.edit(ui, &mut new_ctx).unwrap();
-                });
-        };
         Ok(())
     }
 }
@@ -326,24 +290,6 @@ impl<T: 'static + DeRszInstance + Debug + Clone, const N: usize> DeRszInstance f
         for i in 0..self.len() {
             self[i].to_bytes(ctx)?;
         }
-        Ok(())
-    }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        for (i, item) in self.iter_mut().enumerate() {
-            ctx.id += 1;
-            let mut new_ctx = RszEditSerializerCtx {
-                root: None,
-                field: ctx.field,
-                objects: ctx.objects,
-                parent: ctx.parent,
-                id: ctx.id,
-            };
-            CollapsingHeader::new(format!("{i}:"))
-                .id_salt(ctx.id)
-                .show(ui, |ui| {
-                    item.edit(ui, &mut new_ctx).unwrap();
-                });
-        };
         Ok(())
     }
 }
@@ -534,142 +480,6 @@ impl DeRszInstance for Object {
     fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
         self.idx.to_bytes(ctx)
     }
-
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        let idx = ctx.root.unwrap_or(self.idx) as usize;
-        let (hash, mut field_values) = {
-            let val = ctx.objects.get_mut(idx).ok_or(RszError::InvalidRszObjectIndex(self.idx, self.hash))?;
-            let (hash, field_values) = std::mem::take(&mut *val);
-            (hash, field_values)
-        };
-        let struct_desc = RszDump::get_struct(hash)?;
-        if struct_desc.name.ends_with("_Serializable") {
-            struct_desc.fields.iter().enumerate().for_each(|(i, field)| {
-                let obj = &mut field_values[i];
-                if i == 0 {
-                    /*if struct_desc.name.ends_with("Bit_Serializable") {
-                      if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
-                      if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
-                      return (field.name.clone(), serde_json::json!(enum_str_val))
-                      }
-                      }
-                      }*/
-                    if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
-                        if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}", &field.name));
-                                ui.label(enum_str_val);
-                            });
-                        }
-                    }
-                    else if let Some(enummable) = obj.as_any().downcast_ref::<u32>() {
-                        if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}", &field.name));
-                                ui.label(enum_str_val);
-                            });
-                        }
-                    }
-                    else if let Some(enummable) = obj.as_any().downcast_ref::<u64>() {
-                        if let Some(enum_str_val) = enummable.get_enum_name(&struct_desc.name) {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}", &field.name));
-                                ui.label(enum_str_val);
-                            });
-                        }
-                    }
-                } else {
-                    let mut new_ctx = RszEditSerializerCtx {
-                        root: None,
-                        field: Some(&field),
-                        objects: ctx.objects,
-                        parent: Some(struct_desc),
-                        id: ctx.id,
-                    };
-                    ctx.id += 1;
-                    CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                        .id_salt(ctx.id)
-                        .show(ui, |ui| {
-                            obj.edit(ui, &mut new_ctx).unwrap();
-                        });
-                }
-            });
-            return Ok(());
-        }
-
-        // Enumerable Param
-        if let Some(types) = ctx.parent.and_then(|parent| parent.name.strip_prefix("app.cEnumerableParam`2<")) {
-            let types = types.strip_suffix(">").unwrap().split(",").collect::<Vec<&str>>();
-            struct_desc.fields.iter().enumerate().for_each(|(i, field)| {
-                let obj = &mut field_values[i];
-                if field.name.contains("EnumValue") {
-                    if let Some(enummable) = obj.as_any().downcast_ref::<i32>() {
-                        if let Some(enum_str_val) = enummable.get_enum_name(&types[0]) {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}", &field.name));
-                                ui.label(enum_str_val);
-                            });
-                        }
-                    }
-                    else if let Some(enummable) = obj.as_any().downcast_ref::<u32>() {
-                        if let Some(enum_str_val) = enummable.get_enum_name(&types[0]) {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}", &field.name));
-                                ui.label(enum_str_val);
-                            });
-                        }
-                    }
-                } else {
-                    let mut new_ctx = RszEditSerializerCtx {
-                        root: None,
-                        field: Some(&field),
-                        objects: ctx.objects,
-                        parent: Some(struct_desc),
-                        id: ctx.id,
-                    };
-                    ctx.id += 1;
-                    CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                        .id_salt(ctx.id)
-                        .show(ui, |ui| {
-                            obj.edit(ui, &mut new_ctx).unwrap();
-                        });
-                }
-            });
-            return Ok(());
-        }
-        let mut i = 0;
-        for item in &mut field_values {
-            ctx.id += 1;
-            let field_info = &struct_desc.fields[i];
-            let mut new_ctx = RszEditSerializerCtx {
-                root: None,
-                field: Some(&field_info),
-                objects: ctx.objects,
-                parent: Some(struct_desc),
-                id: ctx.id,
-            };
-            if let Some(obj) = item.as_any().downcast_ref::<Object>() {
-                ui.horizontal(|ui| {
-                    //ui.label(&field_info.name);
-                    CollapsingHeader::new(format!("{}: {}", &field_info.name, &field_info.original_type))
-                        .id_salt(ctx.id)
-                        .show(ui, |ui| {
-                            item.edit(ui, &mut new_ctx).unwrap();
-                        });
-                });
-            } else {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{}", &field_info.name));
-                    item.edit(ui, &mut new_ctx).unwrap();
-                });
-            }
-            i += 1;
-        }
-
-        ctx.objects[idx] = (hash, field_values);
-        Ok(())
-    }
-
 }
 
 impl<'a> DeRszType<'a> for Object {
@@ -728,9 +538,6 @@ impl DeRszInstance for ExternObject {
         })
     }
     fn to_bytes(&self, _ctx: &mut RszSerializerCtx) -> Result<()> {
-        todo!()
-    }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
         todo!()
     }
 }
@@ -986,49 +793,49 @@ impl DeRsz {
  * types
  */
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct UInt2(u32, u32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct UInt3(u32, u32, u32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct UInt4(u32, u32, u32, u32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Int2(i32, i32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Int3(i32, i32, i32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Int4(i32, i32, i32, i32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Color(u8, u8, u8, u8);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Vec2(f32, f32, f32, f32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Vec3(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Vec4(f32, f32, f32, f32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Quaternion(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Sphere(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Position(f64, f64, f64);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Float2(f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Float3(f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Float4(f32, f32, f32, f32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Mat4x4([f32; 16]);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Edit)]
 pub struct AnimationCurve3D {
     pub xkeys: Vec<AnimationCurve3DKey>,
     pub ykeys: Vec<AnimationCurve3DKey>,
@@ -1041,7 +848,7 @@ pub struct AnimationCurve3D {
     pub loop_wrap_no: u32,
 }
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct AnimationCurve3DKey {
     pub unk1: [u8; 22],
 }
@@ -1060,10 +867,6 @@ macro_rules! derive_dersz_instance {
             }
             fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
                 Ok(ctx.data.write_all(&self.to_le_bytes())?)
-            }
-            fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-                ui.add(eframe::egui::DragValue::new(self).speed(0.0).range(<$t>::MIN..=<$t>::MAX));
-                Ok(())
             }
         }
     };
@@ -1104,43 +907,9 @@ pub fn capitalize(s: &str) -> String {
     c
 }
 
-trait Enummable {
+pub trait Enummable {
     fn get_enum_name(&self, enum_type: &str) -> Option<String>;
 }
-
-/*impl DeRszInstance for usize {
-  fn as_any(&self) -> &dyn Any {
-  self
-  }
-  fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value {
-  return ctx.field.map_or(serde_json::json!(self), |field| {
-  let tmp = field.original_type.replace("[]", "");
-  let enum_str_val = self.get_enum_name(&tmp);
-  if let Some(enum_str_val) = enum_str_val {
-  serde_json::json!(enum_str_val)
-  } else {
-  serde_json::json!(self)
-  }
-  });
-  }
-  fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
-  Ok(ctx.data.write_all(&self.to_le_bytes())?)
-  }
-  fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-  let enum_name = ctx.field.map_or(serde_json::json!(self), |field| {
-  let tmp = field.original_type.replace("[]", "");
-  let enum_str_val = self.get_enum_name(&tmp);
-  if let Some(enum_str_val) = enum_str_val {
-  enum_str_val
-  } else {
-  self.to_string()
-  }
-  });
-  ui.label(enum_name);
-  Ok(())
-  }
-  }*/
-
 
 macro_rules! derive_dersz_type_enum{
     ($rsz_type:ty) => {
@@ -1178,36 +947,7 @@ macro_rules! derive_dersz_type_enum{
             fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
                 Ok(ctx.data.write_all(&self.to_le_bytes())?)
             }
-            fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-                match ctx.field {
-                    Some(field) => {
-                        let tmp = field.original_type.replace("[]", "");
-                        let enum_str_val = self.get_enum_name(&tmp);
-                        if let Some(mut enum_str_val) = enum_str_val {
-                            if let Some(map) = get_enum_list(&tmp) {
-                                ui.label(enum_str_val.to_string());
-                                eframe::egui::ComboBox::from_label("")
-                                    .selected_text(&enum_str_val)
-                                    .show_ui(ui, |ui| {
-                                        for (key, val) in map.iter() {
-                                            if let Ok(_) = key.parse::<i64>() {
-                                                ui.selectable_value(&mut enum_str_val, val.to_string(), val);
-                                            }
-                                        }
-                                    });
-                            } else {
-                                ui.label(enum_str_val.to_string());
-                            }
-                        } else {
-                            ui.label(self.to_string());
-                        }
-                    },
-                    None => {
-                        ui.label(self.to_string());
-                    }
-                }
-                Ok(())
-            }
+
         }
         impl RszFromJson for $rsz_type {
             fn from_json(data: &serde_json::Value, ctx: &mut RszJsonDeserializerCtx) -> Result<$rsz_type> {
@@ -1264,10 +1004,7 @@ impl DeRszInstance for bool {
     fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
         Ok(ctx.data.write_all(&(*self as u8).to_le_bytes())?)
     }
-    fn edit(&mut self, ui: &mut Ui, _ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        ui.checkbox(self, "");
-        Ok(())
-    }
+
 }
 derive_dersz_from_json!(bool);
 impl<'a> DeRszType<'a> for bool {
@@ -1280,7 +1017,7 @@ impl<'a> DeRszType<'a> for bool {
     }
 }
 
-#[derive(DeRszInstance, Clone)]
+#[derive(DeRszInstance, Clone, Edit)]
 pub struct StringU16(pub Vec<u16>);
 
 impl Display for StringU16 {
@@ -1326,7 +1063,7 @@ impl<'de> Deserialize<'de> for StringU16 {
     }
 }
 
-#[derive(DeRszInstance, Clone)]
+#[derive(DeRszInstance, Clone, Edit)]
 pub struct StringU16NullTerminated(pub Vec<u16>);
 
 impl Display for StringU16NullTerminated {
@@ -1383,9 +1120,6 @@ impl DeRszInstance for Option<Box<dyn DeRszInstance>> {
     fn to_bytes(&self, _ctx: &mut RszSerializerCtx) -> Result<()> {
         todo!()
     }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        todo!()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1404,9 +1138,6 @@ impl DeRszInstance for Nullable {
         })
     }
     fn to_bytes(&self, _ctx: &mut RszSerializerCtx) -> Result<()> {
-        todo!()
-    }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
         todo!()
     }
 }
@@ -1441,10 +1172,6 @@ impl DeRszInstance for String {
     fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
         Ok(ctx.data.write_all(&self.as_bytes())?)
     }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        ui.add(TextEdit::singleline(self));
-        Ok(())
-    }
 }
 
 derive_dersz_from_json!(String);
@@ -1458,30 +1185,30 @@ impl<'a> DeRszType<'a> for String {
 
 
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Edit)]
 pub struct RuntimeType(String);
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
 struct OBB {
     center: Vec3,
     half_extents: Vec3,
     orientation: [Vec3; 3], // local axes (right, up, forward)
 }
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
 struct AABB{
     a: Vec4,
     b: Vec4,
 }
 
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
 struct Rect{
     start: UInt2,
     end: UInt2,
 }
 
-#[derive(Debug, Serialize, DeRszInstance, Clone)]
+#[derive(Debug, Serialize, DeRszInstance, Clone, Edit)]
 struct Data {
     data: Vec<u8>
 }
@@ -1505,19 +1232,19 @@ impl RszFromJson for Data {
     }
 }
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
 struct Range{
     start: f32,
     end: f32,
 }
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
 struct RangeI{
     start: i32,
     end: i32,
 }
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 struct KeyFrame{
     time: f32,
     val: [f32; 3],
@@ -1569,9 +1296,6 @@ impl DeRszInstance for StructData {
     fn to_bytes(&self, ctx: &mut RszSerializerCtx) -> Result<()> {
         ctx.data.write_all(&self.0)?;
         Ok(())
-    }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        todo!()
     }
 }
 
@@ -1627,9 +1351,6 @@ impl DeRszInstance for Struct {
             self.values[i].to_bytes(ctx)?;
         }
         Ok(())
-    }
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
-        todo!()
     }
 }
 

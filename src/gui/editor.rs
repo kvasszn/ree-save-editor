@@ -1,5 +1,5 @@
 use eframe::egui::Ui;
-use mhtame::rsz::{dump::RszDump, rszserde::{DeRsz, DeRszInstance, RszEditSerializerCtx}};
+use mhtame::{edit::{Edit, RszEditCtx}, rsz::{dump::RszDump, rszserde::{DeRsz, DeRszInstance, RszEditSerializerCtx}}};
 
 pub struct Editor {
     display_string: String
@@ -17,8 +17,8 @@ impl Editor {
                 (hash, field_values)
             };
             let root_type = RszDump::get_struct(hash).unwrap();
-            let mut ctx = RszEditSerializerCtx::new(*root, &mut dersz.structs);
-            field_values.edit(ui, &mut ctx).unwrap();
+            let mut ctx = RszEditCtx::new(*root, &mut dersz.structs);
+            field_values.edit(ui, &mut ctx);
         }
     }
 }

@@ -15,6 +15,7 @@ pub mod mesh;
 pub mod file;
 pub mod save;
 pub mod tdb;
+pub mod edit;
 
 extern crate image;
 extern crate libdeflater;

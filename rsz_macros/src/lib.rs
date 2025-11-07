@@ -69,32 +69,6 @@ pub fn derive_instance(input: TokenStream) -> TokenStream {
                     field_to
                 }
             };
-            let fields_edit: Vec<proc_macro2::TokenStream> = match &data.fields {
-                syn::Fields::Named(fields_named) => {
-                    // Handle named fields (e.g., struct S { a: T, b: U })
-                    let field_to: Vec<proc_macro2::TokenStream> = fields_named.named.iter().enumerate().map(|(_i, f)| {
-                        let ident = f.ident.as_ref().unwrap();
-                        let _ty = &f.ty;
-                        quote! { self.#ident.edit(ui, ctx)?; }
-                    }).collect();
-                    field_to
-                },
-                syn::Fields::Unnamed(fields_unnamed) => {
-                    // Handle tuple structs (e.g., struct S(T, U))
-                    let field_to: Vec<proc_macro2::TokenStream> = fields_unnamed.unnamed.iter().enumerate().map(|(i, f)| {
-                        let _ty = &f.ty;
-                        let i: syn::Index = i.into();
-                        quote! { self.#i.edit(ui, ctx)?; }
-                    }).collect::<Vec<_>>();
-                    field_to
-                },
-                syn::Fields::Unit => {
-                    let field_to: Vec<proc_macro2::TokenStream> = (0..1).map(|_i| {
-                        quote!{ }.into()
-                    }).collect();
-                    field_to
-                }
-            };
             let res = quote! {
                 impl DeRszInstance for #name {
                     fn as_any(&self) -> &dyn Any {
@@ -107,9 +81,60 @@ pub fn derive_instance(input: TokenStream) -> TokenStream {
                         #(#fields_to)*
                         Ok(())
                     }
-                    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditSerializerCtx) -> Result<()> {
+                }
+            };
+            res
+        }
+        _ => {
+            syn::Error::new_spanned(&input, "DeRszType can only be derived for structs")
+                .to_compile_error()
+        }
+    };
+    result.into()
+}
+
+
+#[proc_macro_derive(Edit)]
+pub fn derive_edit(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+    let _meta = match RszMeta::from_attrs(&input.attrs) {
+        Ok(meta) => meta,
+        Err(err) => return err.to_compile_error().into(),
+    };
+
+    let result = match &input.data {
+        syn::Data::Struct(data) => {
+            let fields_edit: Vec<proc_macro2::TokenStream> = match &data.fields {
+                syn::Fields::Named(fields_named) => {
+                    // Handle named fields (e.g., struct S { a: T, b: U })
+                    let field_to: Vec<proc_macro2::TokenStream> = fields_named.named.iter().enumerate().map(|(_i, f)| {
+                        let ident = f.ident.as_ref().unwrap();
+                        let _ty = &f.ty;
+                        quote! { self.#ident.edit(ui, ctx); }
+                    }).collect();
+                    field_to
+                },
+                syn::Fields::Unnamed(fields_unnamed) => {
+                    // Handle tuple structs (e.g., struct S(T, U))
+                    let field_to: Vec<proc_macro2::TokenStream> = fields_unnamed.unnamed.iter().enumerate().map(|(i, f)| {
+                        let _ty = &f.ty;
+                        let i: syn::Index = i.into();
+                        quote! { self.#i.edit(ui, ctx); }
+                    }).collect::<Vec<_>>();
+                    field_to
+                },
+                syn::Fields::Unit => {
+                    let field_to: Vec<proc_macro2::TokenStream> = (0..1).map(|_i| {
+                        quote!{ }.into()
+                    }).collect();
+                    field_to
+                }
+            };
+            let res = quote! {
+                impl<'a> Edit for #name {
+                    fn edit(&mut self, ui: &mut Ui, ctx: &mut RszEditCtx) {
                         #(#fields_edit)*
-                        Ok(())
                     }
                 }
             };
