@@ -1,10 +1,13 @@
-use std::{fmt::Debug, str::FromStr};
+use std::{collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 
 use eframe::egui::{CollapsingHeader, ComboBox, TextEdit, Ui};
+use fasthash::murmur3;
 use half::f16;
 use serde::Serialize;
 
-use crate::{rsz::{dump::{get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, rszserde::{DeRsz, DeRszInstance, Enummable, ExternObject, Guid, Nullable, Object, RszFieldsValue, Struct, StructData}}, save::types::{Array, Class}, user::User};
+use crate::{rsz::{dump::{get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Nullable, Object, RszDeserializerCtx, RszFieldsValue, StringU16, Struct, StructData}}, save::{types::{Array, Class, FieldType}, SaveFile}, user::User};
+
+pub type EditableFile = dyn Edit;
 
 type C<'a> = RszEditCtx<'a>;
 pub trait Edit {
@@ -43,7 +46,7 @@ macro_rules! edit {
 macro_rules! derive_edit_num {
     ($ty:ty) => {
         impl Edit for $ty {
-            fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C) {
+            fn edit(&mut self, ui: &mut eframe::egui::Ui, _ctx: &mut C) {
                 ui.add(eframe::egui::DragValue::new(self).speed(0.0).range(<$ty>::MIN..=<$ty>::MAX));
             }
         }
@@ -357,7 +360,7 @@ impl Edit for u64 {
 }
 
 impl Edit for half::f16 {
-    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditCtx) {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, _ctx: &mut RszEditCtx) {
         let mut s = self.to_string();
         ui.add(TextEdit::singleline(&mut s));
         *self = f16::from_str(&s).unwrap_or_default();
@@ -378,48 +381,148 @@ impl Edit for bool {
 }
 
 impl Edit for Option<Box<dyn DeRszInstance>> {
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+    fn edit(&mut self, _ui: &mut Ui, _ctx: &mut C) {
         todo!()
     }
 }
 
 impl Edit for Nullable {
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+    fn edit(&mut self, _ui: &mut Ui, _ctx: &mut C) {
         todo!()
     }
 }
 
 impl Edit for StructData {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
-        todo!()
+        let hash = *RszDump::name_map().get(&ctx.field.unwrap().original_type).unwrap();
+        let data = Box::new(Cursor::new(&self.0));
+        let fake_extern = HashMap::new();
+        let fake_types = Vec::new();
+        let cur_hash = vec![hash];
+        let field = vec![ctx.field.unwrap()];
+        let mut registry = DeRszRegistry::new();
+        registry.init();
+        let t = ctx.field.unwrap().r#type.clone();
+        let dersz_fn = registry.get(t.as_str());
+
+        let mut registry = DeRszRegistry::new();
+        registry.init();
+        let roots = vec![];
+        let mut de_ctx = RszDeserializerCtx {
+            roots: &roots,
+            registry: registry.into(),
+            data,
+            extern_slots: &fake_extern,
+            type_descriptors: &fake_types,
+            cur_hash,
+            field,
+        };
+        if let Ok(dersz_fn) = dersz_fn {
+            let mut x: Box<dyn DeRszInstance> = dersz_fn(&mut de_ctx).unwrap();
+            x.edit(ui, ctx);
+        } else {
+            let mut s = Struct::from_bytes(&mut de_ctx).unwrap();
+            s.edit(ui, ctx);
+        }
     }
 }
 
 impl Edit for String {
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+    fn edit(&mut self, ui: &mut Ui, _ctx: &mut C) {
         ui.add(TextEdit::singleline(self));
     }
 }
 
 impl Edit for Struct {
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+    fn edit(&mut self, ui: &mut Ui, _ctx: &mut C) {
+        println!("here");
         todo!()
     }
 }
 
 impl Edit for Array {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
-        todo!()
+        for (i,value) in self.values.iter_mut().enumerate() {
+            ctx.id += 1;
+            let mut new_ctx = RszEditCtx {
+                root: None,
+                field: ctx.field,
+                objects: ctx.objects,
+                parent: ctx.parent,
+                id: ctx.id,
+            };
+            //println!("{:?}", item);
+            if self.field_type == FieldType::Class || self.field_type == FieldType::Struct {
+                CollapsingHeader::new(format!("{i}:"))
+                    .id_salt(ctx.id)
+                    .show(ui, |ui| {
+                        value.edit(ui, &mut new_ctx);
+                    });
+
+            } else {
+                ui.horizontal(|ui| {
+                    ui.label(format!("  {}", &i));
+                    value.edit(ui, &mut new_ctx);
+                });
+            }
+        }
     }
 }
 impl Edit for Class {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
-        todo!()
+        let struct_desc = RszDump::get_struct(self.hash).unwrap();
+        for (_i, field) in struct_desc.fields.iter().enumerate() {
+            let field_hash = murmur3::hash32_with_seed(&field.name, 0xffffffff);
+            if let Some(field_value) = self.fields.get_mut(&field_hash) {
+                ctx.id += 1;
+                let mut new_ctx = RszEditCtx {
+                    root: None,
+                    field: Some(&field),
+                    objects: ctx.objects,
+                    parent: Some(struct_desc),
+                    id: ctx.id,
+                };
+                match field.r#type.as_str() {
+                    "Object" | "Struct" => {
+                        CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                            .id_salt(ctx.id)
+                            .show(ui, |ui| {
+                                field_value.edit(ui, &mut new_ctx);
+                            });
+                    }
+                    _ => {
+                        if field.array {
+                            CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                                .id_salt(ctx.id)
+                                .show(ui, |ui| {
+                                    field_value.edit(ui, &mut new_ctx);
+                                });
+                        }
+                        else {
+                            ui.horizontal(|ui| {
+                                ui.label(format!("  {}", &field.name));
+                                field_value.edit(ui, &mut new_ctx);
+                            });
+                        }
+                    }
+
+                }
+            } else {
+                println!("Missing field: {}, {:08x} in struct {}", &field.name, field_hash, struct_desc.name);
+            }
+        }
+    }
+}
+
+impl Edit for SaveFile {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+        self.data.edit(ui, ctx);
+        //self.detail.edit(ui, ctx);
     }
 }
 
 impl Edit for DeRsz {
-    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C) {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, _ctx: &mut C) {
         for root in &self.roots {
             //let (root_hash, root_struct) = &dersz.structs[*root as usize];
             //let val = dersz.structs.get_mut(idx).ok_or(RszError::InvalidRszObjectIndex(self.idx, self.hash))?;
@@ -429,7 +532,7 @@ impl Edit for DeRsz {
                 let (hash, field_values) = std::mem::take(&mut *val);
                 (hash, field_values)
             };
-            let root_type = RszDump::get_struct(hash).unwrap();
+            let _root_type = RszDump::get_struct(hash).unwrap();
             let mut ctx = RszEditCtx::new(*root, &mut self.structs);
             field_values.edit(ui, &mut ctx);
         }
@@ -437,7 +540,7 @@ impl Edit for DeRsz {
 }
 
 impl Edit for Guid {
-    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C) {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, _ctx: &mut C) {
         let mut disp = uuid::Uuid::from_bytes_le(self.0).to_string();
         ui.add(TextEdit::singleline(&mut disp).clip_text(false));
         if let Ok(edited) = uuid::Uuid::from_str(&disp) {
@@ -445,5 +548,13 @@ impl Edit for Guid {
         } else {
             println!("Invalid Value for Guid");
         }
+    }
+}
+impl Edit for StringU16 {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, _ctx: &mut C) {
+        let mut disp = String::from_utf16_lossy(&self.0);
+        ui.add(TextEdit::singleline(&mut disp).clip_text(false));
+        let encoded: Vec<u16> = disp.encode_utf16().collect();
+        *self = StringU16(encoded)
     }
 }

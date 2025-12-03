@@ -70,9 +70,9 @@ impl<'a> TryFrom<&'a RszField> for FieldType {
 
 #[derive(Debug, Clone)]
 pub struct Class {
-    num_fields: u32,
-    hash: u32,
-    fields: HashMap<u32, Box<dyn DeRszInstance>>
+    pub num_fields: u32,
+    pub hash: u32,
+    pub fields: HashMap<u32, Box<dyn DeRszInstance>>
 }
 
 impl StructRW for Class {
@@ -82,8 +82,8 @@ impl StructRW for Class {
         //seek_align_up(reader, 4)?;
         let num_fields = u32::read(reader, ctx)?;
         let hash = u32::read(reader, ctx)?;
-        let type_info = RszDump::get_struct(hash)?;
-        //println!("Class: {}, {num_fields}, {hash:08x}", type_info.name);
+        let _type_info = RszDump::get_struct(hash)?;
+        //println!("Class: {}, {num_fields}, {hash:08x}", _type_info.name);
         let fields = (0..num_fields).map(|_i| {
             read_field(reader)
         }).collect::<Result<HashMap<u32, Box<dyn DeRszInstance>>>>()?;
@@ -110,10 +110,10 @@ impl DeRszInstance for Class {
 
 #[derive(Debug, Clone)]
 pub struct Array {
-    field_type: FieldType,
+    pub field_type: FieldType,
     field_type_size: u32,
-    array_type: ArrayType,
-    values: Vec<Box<dyn DeRszInstance>>
+    pub array_type: ArrayType,
+    pub values: Vec<Box<dyn DeRszInstance>>
 }
 
 impl StructRW for Array {

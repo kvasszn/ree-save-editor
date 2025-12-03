@@ -228,7 +228,6 @@ pub struct FileReader {
 }
 
 impl FileReader {
-    
     pub fn new(output_dir: std::path::PathBuf, root_dir: Option<std::path::PathBuf>, dump_sdk: bool, dump_all_rsz: bool, keep_path_structure: bool, steamid: Option<String>) -> FileReader {
         Self {
             dump_sdk,

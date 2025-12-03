@@ -20,11 +20,11 @@ pub trait ReadSeek: Read + Seek {}
 impl<'a, T: Read + Seek> ReadSeek for T {}
 pub struct RszDeserializerCtx<'a> {
     pub data: Box<dyn ReadSeek + 'a>,
-    type_descriptors: &'a Vec<TypeDescriptor>,
-    roots: &'a Vec<u32>,
-    cur_hash: Vec<u32>,
-    extern_slots: &'a HashMap<u32, Extern>,
-    field: Vec<&'a RszField>,
+    pub type_descriptors: &'a Vec<TypeDescriptor>,
+    pub roots: &'a Vec<u32>,
+    pub cur_hash: Vec<u32>,
+    pub extern_slots: &'a HashMap<u32, Extern>,
+    pub field: Vec<&'a RszField>,
     pub registry: Rc<DeRszRegistry>
 }
 
@@ -1092,7 +1092,7 @@ impl<'a> DeRszType<'a> for bool {
     }
 }
 
-#[derive(DeRszInstance, Clone, Edit)]
+#[derive(DeRszInstance, Clone)]
 pub struct StringU16(pub Vec<u16>);
 
 impl Display for StringU16 {
