@@ -1,6 +1,7 @@
 use std::{fmt::Debug, str::FromStr};
 
-use eframe::egui::{CollapsingHeader, TextEdit, Ui};
+use eframe::egui::{CollapsingHeader, ComboBox, TextEdit, Ui};
+use half::f16;
 use serde::Serialize;
 
 use crate::{rsz::{dump::{get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, rszserde::{DeRsz, DeRszInstance, Enummable, ExternObject, Guid, Nullable, Object, RszFieldsValue, Struct, StructData}}, save::types::{Array, Class}, user::User};
@@ -256,14 +257,18 @@ impl Edit for i32 {
                 if let Some(mut enum_str_val) = enum_str_val {
                     if let Some(map) = get_enum_list(&tmp) {
                         //ui.label(enum_str_val.to_string());
-                        println!("{:?}", map);
-                        eframe::egui::ComboBox::from_label("")
+                        // probably better to pregenerate the enums into a single file that
+                        // that maps String -> Vec<String>
+                        let mut options: Vec<&String> = map.iter().filter_map(|x| if x.0.parse::<Self>().is_ok() {
+                            Some(x.1)
+                        } else {None}).collect();
+                        options.sort();
+
+                        eframe::egui::ComboBox::from_id_salt(ctx.id)
                             .selected_text(&enum_str_val)
                             .show_ui(ui, |ui| {
-                                for (key, val) in map.iter() {
-                                    if let Ok(_) = key.parse::<Self>() {
-                                    }
-                                    ui.selectable_value(&mut enum_str_val, val.to_string(), val);
+                                for option in options {
+                                    ui.selectable_value(&mut enum_str_val, option.to_string(), option);
                                 }
                             });
                         *self = get_enum_val(&tmp, &enum_str_val).unwrap() as Self;
@@ -351,6 +356,14 @@ impl Edit for u64 {
     }
 }
 
+impl Edit for half::f16 {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditCtx) {
+        let mut s = self.to_string();
+        ui.add(TextEdit::singleline(&mut s));
+        *self = f16::from_str(&s).unwrap_or_default();
+    }
+}
+
 derive_edit_num!(i8);
 derive_edit_num!(i16);
 derive_edit_num!(i64);
@@ -426,7 +439,7 @@ impl Edit for DeRsz {
 impl Edit for Guid {
     fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C) {
         let mut disp = uuid::Uuid::from_bytes_le(self.0).to_string();
-        ui.add(TextEdit::singleline(&mut disp));
+        ui.add(TextEdit::singleline(&mut disp).clip_text(false));
         if let Ok(edited) = uuid::Uuid::from_str(&disp) {
             self.0 = edited.to_bytes_le();
         } else {

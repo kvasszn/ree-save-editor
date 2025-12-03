@@ -34,8 +34,9 @@ impl StructRW<SaveContext> for SaveFile {
             return Err(format!("Save file version incorrect I hope: {version}").into())
         }
         let flags = u32::read(reader, &mut ())?;
-        println!("Save Flags: {:034b}", flags); // theres flags for encryption type, compression,
+        println!("Version={version}, Save Flags: {:034b}", flags); // theres flags for encryption type, compression,
                                                 // etc
+        // rise doesn't look at this
         let _save_or_user_i_think = u32::read(reader, &mut ())?;
         let mandarin = flags & 0x10 != 0;
         let blowfish = flags & 0x1 != 0;
@@ -46,9 +47,9 @@ impl StructRW<SaveContext> for SaveFile {
         let data_start = reader.tell()?;
         reader.seek(std::io::SeekFrom::End(-12))?;
         let decrypted_len = u64::read(reader, &mut ())?;
-        println!("{decrypted_len:x}");
+        println!("decrypted_len={decrypted_len:x}");
         let end_hash = u32::read(reader, &mut ())?;
-        println!("{end_hash:x}");
+        println!("end_hash={end_hash:x}");
         let len = reader.stream_position()?;
         reader.seek(SeekFrom::Start(0))?;
         let mut file_bytes: Vec<u8> = vec![];
@@ -64,7 +65,7 @@ impl StructRW<SaveContext> for SaveFile {
         reader.seek(SeekFrom::Start(data_start))?;
         let mut encrypted = vec![];
         reader.read_to_end(&mut encrypted)?;
-        let data = if mandarin && deflate {
+        let data = if mandarin && deflate || true {
             let key = if ctx.key == 0 {
                 Mandarin::brute_force(&encrypted, decrypted_len as u64)
             } else {ctx.key};

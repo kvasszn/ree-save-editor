@@ -5,6 +5,7 @@
 
 use std::{any::Any, cell::{RefCell, RefMut}, collections::{HashMap, HashSet}, fmt::{Debug, Display}, io::{Cursor, Read, Seek, SeekFrom, Write}, rc::Rc, str::FromStr};
 
+use half::f16;
 use eframe::egui::{CollapsingHeader, TextEdit, Ui};
 use indexmap::IndexMap;
 use rsz_macros::{DeRszFrom, DeRszInstance, Edit};
@@ -347,10 +348,10 @@ impl DeRszInstance for Object {
                 return extern_obj.to_json(ctx)
             }
         }
-
-        if struct_desc.name == "via.AnimationCurve3D" {
+        
+        /*if struct_desc.name == "via.AnimationCurve3D" {
             return field_values[0].to_json(ctx)
-        }
+        }*/
         // Serializable Enum
         if struct_desc.name.ends_with("_Serializable") {
             let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
@@ -461,11 +462,15 @@ impl DeRszInstance for Object {
                     //  state.serialize_element(format!("{max}").as_str())?;
                 }
             }
-
         }
 
-        let values = struct_desc.fields.iter().enumerate().map(|(i, field)| {
+        if struct_desc.name.contains("via.AnimationCurve") {
+            return field_values[0].to_json(ctx);
+        }
+
+        let values = struct_desc.fields.iter().enumerate().filter_map(|(i, field)| {
             //println!("{i},{}, {}, {}, {:#?}", struct_desc.name, field.name, hash, field_values[i]);
+            // Stupid ass thing here idk
             let obj = &field_values[i];
             let new_ctx = RszJsonSerializerCtx {
                 root: None,
@@ -473,7 +478,7 @@ impl DeRszInstance for Object {
                 objects: ctx.objects,
                 parent: Some(struct_desc)
             };
-            (field.name.clone(), obj.to_json(&new_ctx))
+            Some((field.name.clone(), obj.to_json(&new_ctx)))
         }).collect::<IndexMap<String, serde_json::Value>>();
         serde_json::to_value(values).unwrap()
     }
@@ -604,6 +609,8 @@ impl DeRszRegistry {
         self.register::<Guid>("GameObjectRef");
         self.register::<KeyFrame>("KeyFrame");
         self.register::<u64>("Size");
+        self.register::<AnimationCurve>("via.AnimationCurve");
+        self.register::<AnimationCurve3D>("via.AnimationCurve3D");
         //self.register::<Capsule>("Capsule");
     }
     pub fn new() -> Self {
@@ -691,12 +698,14 @@ impl<'a> DeRszType<'a> for DeRsz {
                 log::debug!("\nDeserializing: {struct_type:?}");
 
                 let mut field_values: RszFieldsValue = (hash, Vec::new());
-                if struct_type.name == "via.AnimationCurve3D" {
-                    let x: Box<dyn DeRszInstance> = Box::new(AnimationCurve3D::from_bytes(ctx)?);
-                    //println!("{:?}", x);
-                    field_values.1.push(x);
+                if let Ok(deser) = ctx.registry.get(&struct_type.name) {
+                    ctx.data.seek_align_up(4)?; // i dont have proper field alignment, would have
+                                                // to add with a macro i think (easiest)
+                    //println!("{:?}, {:?}, {:?}", ctx.data.read_u8_n(256), half::f16::from_bits(u16::from_le_bytes([128, 63])), half::f16::from_bits(u16::from_le_bytes([64, 86])));
+                    let val = deser(ctx)?;
+                    field_values.1.push(val);
                     structs.push(field_values);
-                    continue;
+                    continue
                 }
                 for field in &struct_type.fields {
                     if let Some(field_hash) = field.get_type_hash() {
@@ -712,6 +721,9 @@ impl<'a> DeRszType<'a> for DeRsz {
                       let len_left = end - pos;
                       ctx.data.seek(SeekFrom::Start(pos))?;
                       println!("{:x}, len {}", ctx.data.tell()?, len_left);*/
+                    if field.name == "_ShellList" && struct_type.name == "app.user_data.EmParamLegendary" {
+                        //continue;
+                    }
                     //println!("0x{:x}", ctx.data.tell()?);
                     if field.array {
                         ctx.data.seek_align_up(4)?;
@@ -728,7 +740,6 @@ impl<'a> DeRszType<'a> for DeRsz {
                             let pos = ctx.data.tell()?;
                             //println!("idx: {_i}, pos: {}, data {:?}", ctx.data.tell()?, ctx.data.read_u8_n(32)?);
                             ctx.data.seek(SeekFrom::Start(pos))?;
-
                             let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                             let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                             vals.push(x);
@@ -741,6 +752,11 @@ impl<'a> DeRszType<'a> for DeRsz {
                         ctx.data.seek(SeekFrom::Start(pos))?;
                         let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                         let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
+                        if let Some(x) = x.as_any().downcast_ref::<Object>() {
+                            if x.idx > 1000000 { //choose a big number that works
+                                ctx.data.seek_relative(-4)?;
+                            }
+                        }
                         field_values.1.push(x);
                     }
                     #[cfg(debug_assertions)]
@@ -835,11 +851,12 @@ pub struct Float4(f32, f32, f32, f32);
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
 pub struct Mat4x4([f32; 16]);
 
+// this is all wrong lmfao
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Edit)]
 pub struct AnimationCurve3D {
-    pub xkeys: Vec<AnimationCurve3DKey>,
-    pub ykeys: Vec<AnimationCurve3DKey>,
-    pub zkeys: Vec<AnimationCurve3DKey>,
+    pub xkeys: Vec<AnimationCurveKey3D>,
+    pub ykeys: Vec<AnimationCurveKey3D>,
+    pub zkeys: Vec<AnimationCurveKey3D>,
     pub min_value: f32,
     pub max_value: f32,
     pub min_time: f32,
@@ -848,9 +865,66 @@ pub struct AnimationCurve3D {
     pub loop_wrap_no: u32,
 }
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
-pub struct AnimationCurve3DKey {
-    pub unk1: [u8; 22],
+#[derive(Debug, Serialize, DeRszInstance, Clone, Copy, Edit)]
+pub struct AnimationCurveKey3D {
+    pub value: f32,
+    pub curve_type: u16,
+    #[serde(serialize_with="f16::serialize_as_f32")]
+    pub time: f16, //f16
+    #[serde(serialize_with="f16::serialize_as_f32")]
+    pub in_normal_x: f16,
+    #[serde(serialize_with="f16::serialize_as_f32")]
+    pub in_normal_y: f16,
+    #[serde(serialize_with="f16::serialize_as_f32")]
+    pub out_normal_x: f16,
+    #[serde(serialize_with="f16::serialize_as_f32")]
+    pub out_normal_y: f16,
+}
+
+impl<'a> DeRszType<'a> for AnimationCurveKey3D {
+    fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> where Self: Sized {
+        ctx.data.seek_align_up(16)?;
+        let res = AnimationCurveKey3D{
+            value: f32::from_bytes(ctx)?,
+            curve_type: u16::from_bytes(ctx)?,
+            time: f16::from_bytes(ctx)?,
+            in_normal_x: f16::from_bytes(ctx)?,
+            in_normal_y: f16::from_bytes(ctx)?,
+            out_normal_x: f16::from_bytes(ctx)?,
+            out_normal_y: f16::from_bytes(ctx)?,
+        };
+        Ok(res)
+    }
+}
+
+
+impl RszFromJson for AnimationCurveKey3D {
+    fn from_json(data: &serde_json::Value, ctx: &mut RszJsonDeserializerCtx) -> Result<Self> where Self: Sized {
+        Ok(Self {
+            value: f32::from_json(&data["value"], ctx)?,
+            curve_type: u16::from_json(&data["curve_type"], ctx)?,
+            time: f16::from_json(&data["time"], ctx)?,
+            in_normal_x: f16::from_json(&data["in_normal_x"], ctx)?,
+            in_normal_y: f16::from_json(&data["in_normal_y"], ctx)?,
+            out_normal_x: f16::from_json(&data["out_normal_x"], ctx)?,
+            out_normal_y: f16::from_json(&data["out_normal_y"], ctx)?,
+        })
+    }
+}
+
+//#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+//pub struct AnimationCurveKeyRaw([u8; 22]);
+
+
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Edit)]
+pub struct AnimationCurve {
+    pub keys: Vec<AnimationCurveKey3D>,
+    pub min_value: f32,
+    pub max_value: f32,
+    pub min_time: f32,
+    pub max_time: f32,
+    pub loop_count: u32,
+    pub loop_wrap_no: u32,
 }
 
 
@@ -988,6 +1062,7 @@ derive_dersz_full!(u16);
 derive_dersz_full!(i8);
 derive_dersz_full!(i16);
 derive_dersz_full!(i64);
+derive_dersz_full!(half::f16);
 
 pub type F8 = u8; // scuffed
 pub type F16 = u16; // scuffed
@@ -1233,19 +1308,19 @@ impl RszFromJson for Data {
 }
 
 #[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
-struct Range{
+pub struct Range{
     start: f32,
     end: f32,
 }
 
 #[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
-struct RangeI{
+pub struct RangeI{
     start: i32,
     end: i32,
 }
 
 #[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
-struct KeyFrame{
+pub struct KeyFrame{
     time: f32,
     val: [f32; 3],
 }

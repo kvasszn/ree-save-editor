@@ -55,3 +55,4 @@ rug = "1.28.0"
 eframe = "0.33.0"
 egui_json_tree = "0.14.2"
 rfd = "0.15.4"
+half = { version = "2.7.1", features = ["serde"] }

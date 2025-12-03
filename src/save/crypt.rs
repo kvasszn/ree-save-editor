@@ -281,7 +281,7 @@ impl Mandarin {
             let auth_block = bytemuck::from_bytes::<Block>(&buf[..0x210]);
             let key_iv2 = auth.decrypt_block(*auth_block);
             println!("mul={:?}", auth_block.chunks[0].0);
-            println!("ct={:?}", auth_block.chunks[0].0);
+            println!("ct={:?}", auth_block.chunks[0].1);
 
             if key_iv2[0..16] != key {
                 println!("[Key/IV check] block {i}: key mismatch, skipping check");

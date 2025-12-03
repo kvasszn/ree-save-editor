@@ -148,7 +148,7 @@ pub fn derive_edit(input: TokenStream) -> TokenStream {
     result.into()
 }
 
-
+// add an attribute for alignment
 #[proc_macro_derive(DeRszFrom, attributes(rsz))]
 pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -179,6 +179,7 @@ pub fn derive_from_bytes(input: TokenStream) -> TokenStream {
                         let ty = &f.ty;
                         quote! { #ident: <#ty>::from_json(data, ctx)? }
                     });
+
 
                     quote! {
                         impl<'a> DeRszType<'a> for #name {
