@@ -1,11 +1,10 @@
 use std::{collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 
-use eframe::egui::{CollapsingHeader, ComboBox, TextEdit, Ui};
+use eframe::egui::{CollapsingHeader, TextEdit, Ui};
 use fasthash::murmur3;
 use half::f16;
-use serde::Serialize;
 
-use crate::{rsz::{dump::{get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Nullable, Object, RszDeserializerCtx, RszFieldsValue, StringU16, Struct, StructData}}, save::{types::{Array, Class, FieldType}, SaveFile}, user::User};
+use crate::{rsz::{dump::{get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{types::{Array, Class, FieldType}, SaveFile}};
 
 pub type EditableFile = dyn Edit;
 
@@ -223,7 +222,7 @@ impl Edit for Object {
                     parent: Some(struct_desc),
                     id: ctx.id,
                 };
-                if let Some(obj) = item.as_any().downcast_ref::<Object>() {
+                if let Some(_obj) = item.as_any().downcast_ref::<Object>() {
                     ui.horizontal(|ui| {
                         //ui.label(&field_info.name);
                         CollapsingHeader::new(format!("{}: {}", &field_info.name, &field_info.original_type))
@@ -247,9 +246,10 @@ impl Edit for Object {
 }
 impl Edit for ExternObject {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
-        todo!()
+        self.path.edit(ui, ctx);
     }
 }
+
 ///AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH AIDK
 impl Edit for i32 {
     fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditCtx) {
@@ -381,21 +381,26 @@ impl Edit for bool {
 }
 
 impl Edit for Option<Box<dyn DeRszInstance>> {
-    fn edit(&mut self, _ui: &mut Ui, _ctx: &mut C) {
-        todo!()
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+        if let Some(x) = self {
+            x.edit(ui, ctx);
+        } else {
+            ui.label("[None]");
+        }
     }
 }
 
 impl Edit for Nullable {
-    fn edit(&mut self, _ui: &mut Ui, _ctx: &mut C) {
-        todo!()
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+        self.has_value.edit(ui, ctx);
+        self.value.edit(ui, ctx);
     }
 }
 
 impl Edit for StructData {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
         let hash = *RszDump::name_map().get(&ctx.field.unwrap().original_type).unwrap();
-        let data = Box::new(Cursor::new(&self.0));
+        let data = Box::new(Cursor::new(self.0.clone()));
         let fake_extern = HashMap::new();
         let fake_types = Vec::new();
         let cur_hash = vec![hash];
@@ -420,9 +425,23 @@ impl Edit for StructData {
         if let Ok(dersz_fn) = dersz_fn {
             let mut x: Box<dyn DeRszInstance> = dersz_fn(&mut de_ctx).unwrap();
             x.edit(ui, ctx);
+            let mut data = Cursor::new(Vec::<u8>::new());
+            let mut ser_ctx = RszSerializerCtx {
+                data: &mut data,
+                base_addr: 0
+            };
+            x.to_bytes(&mut ser_ctx).unwrap();
+            self.0 = data.into_inner();
         } else {
             let mut s = Struct::from_bytes(&mut de_ctx).unwrap();
             s.edit(ui, ctx);
+            let mut data = Cursor::new(Vec::<u8>::new());
+            let mut ser_ctx = RszSerializerCtx {
+                data: &mut data,
+                base_addr: 0
+            };
+            s.to_bytes(&mut ser_ctx).unwrap();
+            self.0 = data.into_inner();
         }
     }
 }
@@ -434,9 +453,48 @@ impl Edit for String {
 }
 
 impl Edit for Struct {
-    fn edit(&mut self, ui: &mut Ui, _ctx: &mut C) {
-        println!("here");
-        todo!()
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+        let struct_desc = RszDump::get_struct(self.hash).unwrap();
+        for (_i, field) in struct_desc.fields.iter().enumerate() {
+            let field_hash = murmur3::hash32_with_seed(&field.name, 0xffffffff);
+            if let Some(field_value) = self.values.get_mut(_i) {
+                ctx.id += 1;
+                let mut new_ctx = RszEditCtx {
+                    root: None,
+                    field: Some(&field),
+                    objects: ctx.objects,
+                    parent: Some(struct_desc),
+                    id: ctx.id,
+                };
+                match field.r#type.as_str() {
+                    "Object" | "Struct" => {
+                        CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                            .id_salt(ctx.id)
+                            .show(ui, |ui| {
+                                field_value.edit(ui, &mut new_ctx);
+                            });
+                    }
+                    _ => {
+                        if field.array {
+                            CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                                .id_salt(ctx.id)
+                                .show(ui, |ui| {
+                                    field_value.edit(ui, &mut new_ctx);
+                                });
+                        }
+                        else {
+                            ui.horizontal(|ui| {
+                                ui.label(format!("  {}", &field.name));
+                                field_value.edit(ui, &mut new_ctx);
+                            });
+                        }
+                    }
+
+                }
+            } else {
+                println!("Missing field: {}, {:08x} in struct {}", &field.name, field_hash, struct_desc.name);
+            }
+        }
     }
 }
 

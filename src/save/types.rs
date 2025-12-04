@@ -1,10 +1,9 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, fs::read, hash::Hasher, io::{Read, Seek}};
+use std::{collections::{HashMap, HashSet, VecDeque}, io::{Read, Seek}};
 
 use fasthash::FastHash;
 use num_enum::TryFromPrimitive;
-use serde::Serialize;
 
-use crate::{align::{align_up, seek_align_up}, reerr::{FileParseError, Result}, rsz::{dump::{enum_map, RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, StringU16, StructData}}};
+use crate::{align::{seek_align_up}, reerr::{ Result}, rsz::{dump::{enum_map, RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, StringU16, StructData}}};
 use crate::file::*;
 
 #[repr(i32)]

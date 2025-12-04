@@ -1,7 +1,7 @@
 pub mod crypt;
 pub mod types;
 
-use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}};
+use std::{io::{Cursor, Read, Seek, SeekFrom}};
 
 use fasthash::murmur3;
 use crate::{file::{Magic, StructRW}, save::types::Class};
