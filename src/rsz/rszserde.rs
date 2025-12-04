@@ -3,10 +3,10 @@
  * Deserializer/Serializer
  */
 
-use std::{any::Any, cell::{RefCell, RefMut}, collections::{HashMap, HashSet}, fmt::{Debug, Display}, io::{Cursor, Read, Seek, SeekFrom, Write}, rc::Rc, str::FromStr};
+use std::{any::Any, collections::{HashMap, HashSet}, fmt::{Debug, Display}, io::{Cursor, Read, Seek, SeekFrom, Write}, rc::Rc, str::FromStr};
 
 use half::f16;
-use eframe::egui::{CollapsingHeader, TextEdit, Ui};
+use eframe::egui::{Ui};
 use indexmap::IndexMap;
 use rsz_macros::{DeRszFrom, DeRszInstance, Edit};
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::edit::{Edit, RszEditCtx};
 use crate::{reerr::{self, Result, RszError}};
 use crate::file_ext::*;
-use super::{dump::{enum_map, get_enum_name, get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, Extern, Rsz, TypeDescriptor};
+use super::{dump::{enum_map, get_enum_name, get_enum_val, RszDump, RszField, RszStruct}, Extern, Rsz, TypeDescriptor};
 
 pub trait ReadSeek: Read + Seek {}
 impl<'a, T: Read + Seek> ReadSeek for T {}
@@ -529,7 +529,7 @@ impl RszFromJson for Object {
 
 #[derive(Debug, Clone)]
 pub struct ExternObject {
-    path: String,
+    pub path: String,
     pub object: Object,
 }
 
@@ -1199,8 +1199,8 @@ impl DeRszInstance for Option<Box<dyn DeRszInstance>> {
 
 #[derive(Debug, Clone)]
 pub struct Nullable {
-    has_value: bool,
-    value: Option<Box<dyn DeRszInstance>>
+    pub has_value: bool,
+    pub value: Option<Box<dyn DeRszInstance>>
 }
 impl DeRszInstance for Nullable {
     fn as_any(&self) -> &dyn Any {

@@ -1,19 +1,15 @@
 pub mod editor;
 use core::f32;
-use std::{fs::File, path::PathBuf, sync::{mpsc::{self, Receiver, Sender}, Arc, Mutex}};
+use std::{fs::File, path::PathBuf, sync::{mpsc::{self, Receiver, Sender}}};
 
-use eframe::egui::{self, Color32, FontDefinitions, FontFamily, FontSelection, Frame, ScrollArea, TextEdit, TextStyle};
-use egui_json_tree::{render::{DefaultRender, RenderContext}, *};
-use mhtame::{edit::{Edit, EditableFile, RszEditCtx}, file::{FileReader, StructRW}, rsz::{dump::{RszDump, ENUM_FILE, RSZ_FILE}, rszserde::DeRsz}, save::{types::to_dersz, SaveContext, SaveFile}, user::User};
-use rug::az::UnwrappedAs;
-use serde_json::json;
+use eframe::egui::{self,  ScrollArea, TextEdit};
+use mhtame::{edit::{Edit, RszEditCtx}, file::{FileReader, StructRW}, rsz::{dump::{ENUM_FILE, RSZ_FILE}, rszserde::DeRsz}, save::{SaveContext, SaveFile}, user::User};
 use clap::{Parser};
-use crate::editor::Editor;
 
 #[derive(Parser, Debug)]
 #[command(name = "mhtame-gui")]
 #[command(version, about, long_about = None)]
-struct GuiArgs {
+pub struct GuiArgs {
     #[arg(short('f'), long)]
     file_name: Option<String>,
 
@@ -38,7 +34,7 @@ pub fn main() -> eframe::Result<()> {
     RSZ_FILE.set("rszmhwilds_unpacked_structs.json".to_string()).unwrap();
     eframe::run_native("mhtame",
         options,
-        Box::new(|cc| {
+        Box::new(|_cc| {
             Ok(Box::new(TameApp::new(args)))
         }),
     )
@@ -49,8 +45,6 @@ pub struct TameApp {
     current_file_name: Option<String>,
     steam_id: Option<u64>,
     file_reader: FileReader,
-    json_value: Option<serde_json::Value>,
-    user_value: Option<User>,
     dersz: Option<DeRsz>,
     tx: Sender<PathBuf>,
     rx: Receiver<PathBuf>,
@@ -75,8 +69,6 @@ impl TameApp {
             file_name: args.file_name.unwrap_or_default(),
             file_reader,
             steam_id: steamid,
-            json_value: None,
-            user_value: None,
             dersz: None,
             tx, rx,
             updated: false,
@@ -95,8 +87,6 @@ impl Default for TameApp {
             file_name: "".to_string(),
             file_reader,
             steam_id: None,
-            json_value: None,
-            user_value: None,
             dersz: None,
             tx, rx,
             updated: false,
