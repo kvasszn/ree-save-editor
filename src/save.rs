@@ -4,9 +4,7 @@ pub mod types;
 use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
 use flate2::{Compression, write::{DeflateDecoder, DeflateEncoder}};
-use fasthash::murmur3;
-use crate::{file::{Magic, StructRW}, rsz::rszserde::{DeRszInstance, RszSerializerCtx}, save::types::Class};
-use fasthash::FastHash;
+use crate::{util::murmur3, file::{Magic, StructRW}, rsz::rszserde::{DeRszInstance, RszSerializerCtx}, save::types::Class};
 
 use crate::file_ext::SeekExt;
 
@@ -66,7 +64,7 @@ impl SaveFile {
         fb.write_all(&data)?;
         fb.write_all(&decrypted_size.to_le_bytes())?;
         let data = &fb.into_inner();
-        let file_hash = murmur3::hash32_with_seed(&data, 0xffffffff);
+        let file_hash = murmur3(&data, 0xffffffff);
         let mut f = File::create(path).unwrap();
         f.write_all(&data)?;
         f.write_all(&file_hash.to_le_bytes())?;
@@ -108,7 +106,7 @@ impl StructRW<SaveContext> for SaveFile {
             reader.seek(SeekFrom::Start(0))?;
             let mut file_bytes: Vec<u8> = vec![];
             reader.read_to_end(&mut file_bytes)?;
-            let file_hash = murmur3::Hash32::hash_with_seed(&file_bytes[..(len as usize - 4)], 0xffffffff);
+            let file_hash = murmur3(&file_bytes[..(len as usize - 4)], 0xffffffff);
             if end_hash != file_hash {
                 println!("[File Hash Check] Invalid File Hashes: target={:x}, calculated={:x}", end_hash, file_hash);
             } else {

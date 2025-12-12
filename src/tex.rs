@@ -163,7 +163,11 @@ impl Tex {
                 if in_size > out_size {
                     return Err(Box::new(FileParseError::TexReadError{source: format!("in_size {in_size} larger than out_size {out_size}")}))
                 }
+                //let mut decompressor = Decompressor::new().unwrap();
+
+
                 match libdeflater::GDeflateDecompressor::gdeflate_decompress(&in_buf, &mut out_buf)
+                //match decompressor.decompress(&in_data.get_ref())
                 {
                     Ok(x) => {
                         bytes_read += x as u32;

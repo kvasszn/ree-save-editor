@@ -1,11 +1,9 @@
-use std::{error::Error, fmt::Display, hash::Hasher, time::SystemTime};
+use std::{error::Error, fmt::Display, time::SystemTime};
 
 use hex_literal::hex;
 use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
 use bytemuck::{Pod, Zeroable};
-use fasthash::{city::{self}, FastHash, FastHasher};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use rug::{integer::Order, Complete, Integer};
 
 pub struct SplitMix64;
 
@@ -22,13 +20,55 @@ impl SplitMix64 {
     }
 }
 
-fn integer_to_bytes_le<const N: usize>(x: &Integer) -> [u8; N] {
-    let mut buf = [0u8; N];
-    let x_bytes = x.to_digits::<u8>(Order::Lsf); // Lsf = least-significant first = little-endian
-    let len = x_bytes.len().min(N);
-    buf[..len].copy_from_slice(&x_bytes[..len]);
-    buf
+// Using rug
+#[cfg(target_os = "linux")]
+mod backend {
+    pub use rug::{Integer, integer::Order};
+
+    pub fn mod_exp(base: &Integer, exp: &Integer, modulus: &Integer) -> Integer {
+        base.pow_mod_ref(exp, modulus).unwrap().into()
+    }
+
+    pub fn bytes_to_int(bytes: &[u8]) -> Integer {
+        Integer::from_digits(bytes, Order::Lsf)
+    }
+
+    pub fn int_to_bytes_le<const N: usize>(n: &Integer) -> [u8; N] {
+        let mut out = [0u8; N];
+        let digits = n.to_digits::<u8>(Order::Lsf);
+        let len = digits.len().min(N);
+        out[..len].copy_from_slice(&digits[..len]);
+        out
+    }
 }
+
+#[cfg(target_os = "windows")]
+mod backend {
+    pub use num_bigint::{BigInt as Integer, Sign};
+    pub use num_traits::{FromPrimitive, ToPrimitive};
+    
+    // Helper: Modular Exponentiation for Num-BigInt
+    pub fn mod_exp(base: &Integer, exp: &Integer, modulus: &Integer) -> Integer {
+        base.modpow(exp, modulus)
+    }
+
+    // Helper: Bytes to Integer (Little Endian)
+    pub fn bytes_to_int(bytes: &[u8]) -> Integer {
+        Integer::from_bytes_le(Sign::Plus, bytes)
+    }
+
+    // Helper: Integer to Bytes (Little Endian, fixed size)
+    pub fn int_to_bytes_le<const N: usize>(n: &Integer) -> [u8; N] {
+        let mut out = [0u8; N];
+        let digits = n.to_bytes_le().1; // Returns (Sign, Vec<u8>)
+        let len = digits.len().min(N);
+        out[..len].copy_from_slice(&digits[..len]);
+        out
+    }
+}
+
+use backend::*;
+
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -49,42 +89,43 @@ impl AuthCtx {
     pub const P: [u8; 32] = hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
     pub const Q: [u8; 32] = hex!("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b269a2a63c648855c39b0b");
     pub const R: [u8; 32] = hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
+
     pub fn init(u: u64) -> crate::reerr::Result<Self> {
-        let p = Integer::from_digits(&Self::P, Order::Lsf);
-        let q = Integer::from_digits(&Self::Q, Order::Lsf);
-        let r = Integer::from_digits(&Self::R, Order::Lsf);
+        let p = bytes_to_int(&Self::P);
+        let q = bytes_to_int(&Self::Q);
+        let r = bytes_to_int(&Self::R);
         let u = Integer::from(u);
-        let u = u.modulo(&q);
-        let s = r.pow_mod_ref(&u, &p).unwrap().complete();
+        let u = u % &q;
+        let s = mod_exp(&r, &u, &p);
         let e = Integer::from(0x14u64);
         Ok(AuthCtx {
             p, q, r, s, u, e,
         })
     }
 
-    pub fn update_u(&mut self, u: u64) {
+    /*pub fn update_u(&mut self, u: u64) {
         let u = Integer::from(u) % &self.q;
         let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
         self.u = u;
         self.s = s;
-    }
+    }*/
 
     pub fn encrypt(&self, pt: [u8; 8]) -> Pair {
-        let x0 = self.r.pow_mod_ref(&self.e, &self.p).unwrap().complete();
-        let x1 = self.s.pow_mod_ref(&self.e, &self.p).unwrap().complete();
-        let pt = Integer::from_digits(&pt, Order::Lsf);
+        let x0 = mod_exp(&self.r, &self.e, &self.p);
+        let x1 = mod_exp(&self.s, &self.e, &self.p);
+        let pt = bytes_to_int(&pt);
         let ct = x1 * pt;
-        let res0 = integer_to_bytes_le::<64>(&x0);
-        let res1 = integer_to_bytes_le::<64>(&ct);
+        let res0 = int_to_bytes_le::<64>(&x0);
+        let res1 = int_to_bytes_le::<64>(&ct);
         Pair(res0, res1)
     }
 
     pub fn decrypt(&self, chunk: &Pair) -> [u8; 8] {
-        let x0 = Integer::from_digits::<u8>(&chunk.0, Order::Lsf);
-        let ct = Integer::from_digits::<u8>(&chunk.1, Order::Lsf);
-        let x = x0.pow_mod_ref(&self.u, &self.p).unwrap().complete();
+        let x0 = bytes_to_int(&chunk.0);
+        let ct = bytes_to_int(&chunk.0);
+        let x = mod_exp(&x0, &self.u, &self.p);
         let k = ct / x;
-        integer_to_bytes_le::<8>(&k)
+        int_to_bytes_le::<8>(&k)
     }
 
     pub fn encrypt_bytes(&self, pt: [u8; 32]) -> [Pair; 4] {
@@ -303,7 +344,7 @@ impl Mandarin {
 
             let bytes_to_copy = block_size.min(remaining_bytes);
             //checksum
-            let checksum = city::Hash64::hash(&data[..bytes_to_copy]);
+            let checksum = cityhasher::hash::<u64>(&data[..bytes_to_copy]);
             if checksum != target_checksum {
                 println!("[Checksum] block {i}: failed");
                 return Err(MandarinError::InvalidChecksum { target: target_checksum, real: checksum })
@@ -330,11 +371,13 @@ impl Mandarin {
         }
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
-        let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
+        //let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
+        let rands_int = bytes_to_int(&rands[0..32]);
         let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
-        let n = Integer::from_digits(&n, Order::Lsf);
+        let n = bytes_to_int(&n);
+        //let n = Integer::from_digits(&n, Order::Lsf);
         let e = Integer::from(65537);
-        let encrypted_key = rands_int.pow_mod_ref(&e, &n).unwrap().complete();
+        let encrypted_key = mod_exp(&rands_int, &e, &n);
 
         // calculate the block sizes >> 0xe for each "potential block"
         let data_len = data.len() as u64;
@@ -394,7 +437,7 @@ impl Mandarin {
             key_iv[0..16].copy_from_slice(&key);
             key_iv[16..32].copy_from_slice(&iv);
             let chunks = auth.encrypt_bytes(key_iv);
-            let checksum = city::Hash64::hash(&buf[0x210..0x210+bytes_to_copy]);
+            let checksum = cityhasher::hash::<u64>(&buf[0x210..0x210+bytes_to_copy]);
             //println!("{key:?}, {iv:?}, {checksum}");
 
             type Aes128Ofb = ofb::Ofb<Aes128>;
@@ -424,7 +467,7 @@ impl Mandarin {
             encrypted_start += block_size + 0x210;
             //println!("remaining_bytes={remaining_bytes:#x}");
         }
-        let integer = integer_to_bytes_le::<0x80>(&encrypted_key);
+        let integer = int_to_bytes_le::<0x80>(&encrypted_key);
         encrypted[encrypted_start..encrypted_start+0x80].copy_from_slice(&integer);
         Ok(encrypted[..encrypted_start+0x80].to_vec())
     }

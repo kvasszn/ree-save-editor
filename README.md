@@ -11,7 +11,7 @@ Also looked at it to figure out how to read some of the file formats.
 Uses praydog's emulation dumper for the rsz files.
 
 ## Build
-
+Compiling on Windows might be a little funky. Have fun!
 ```
 git clone https://github.com/kvasszn/mhtame.git
 cd mhtame
