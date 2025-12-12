@@ -57,6 +57,7 @@ cityhasher = "0.1.0"
 murmur3 = "0.5.2"
 num-bigint = "0.4.6"
 num-traits = "0.2"
+shellexpand = "3.1.1"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]

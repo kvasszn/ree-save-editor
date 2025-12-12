@@ -44,7 +44,6 @@ pub fn main() -> eframe::Result<()> {
 
 pub struct TameApp {
     file_name: String,
-    current_file_name: Option<String>,
     steam_id: Option<u64>,
     file_reader: FileReader,
     dersz: Option<DeRsz>,
@@ -74,14 +73,13 @@ impl TameApp {
         } else { None };
         let (tx_output, rx_output) = mpsc::channel();
         Self {
-            current_file_name: args.file_name.clone(),
+            updated: args.file_name.is_none(),
             file_name: args.file_name.unwrap_or_default(),
             file_reader,
             steam_id: steamid,
             dersz: None,
             tx, rx,
             tx_output, rx_output,
-            updated: false,
             current_file: None,
             output_path: PathBuf::from("./outputs/saves/"),
             show_popup: false,
@@ -97,14 +95,13 @@ impl Default for TameApp {
         let (tx, rx) = mpsc::channel();
         let (tx_output, rx_output) = mpsc::channel();
         Self {
-            current_file_name: None,
             file_name: "".to_string(),
             file_reader,
             steam_id: None,
             dersz: None,
             tx, rx,
             tx_output, rx_output,
-            updated: false,
+            updated: true,
             current_file: None,
             output_path: PathBuf::from("./outputs/saves/"),
             show_popup: false,
@@ -120,19 +117,16 @@ impl eframe::App for TameApp {
         if !dropped_files.is_empty() {
             let df = &dropped_files[0];
             if let Some(path) = &df.path {
-                self.current_file_name = Some(path.display().to_string());
+                self.file_name = path.display().to_string();
                 self.updated = false;
                 println!("Dropped file path: {}", path.display());
             } else {
-                self.current_file_name = Some(df.name.clone());
+                self.file_name = df.name.clone();
                 self.updated = false;
                 println!("Dropped file name: {}", df.name);
             }
         }
 
-        if let Some(file) = &self.current_file_name {
-            self.file_name = file.clone()
-        };
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.style_mut().spacing.item_spacing *= 1.5;
             ui.style_mut().spacing.button_padding *= 1.5;
@@ -142,7 +136,15 @@ impl eframe::App for TameApp {
             ui.heading("MH Wilds Save Editor");
             ui.horizontal(|ui| {
                 ui.label("File:");
-                ui.add(TextEdit::singleline(&mut self.file_name).desired_width(400.0));
+                let mut s = self.file_name.clone();
+                ui.add(TextEdit::singleline(&mut s).desired_width(400.0));
+                match shellexpand::full(&s.trim()) {
+                    Ok(s) => self.file_name = s.to_string(),
+                    Err(e) => {
+                        self.file_name = s;
+                        eprintln!("Error expanding file name {}: {e}", self.file_name)
+                    }
+                }
 
                 if ui.button("Open File").clicked() {
                     let tx = self.tx.clone();
@@ -156,23 +158,21 @@ impl eframe::App for TameApp {
                 if ui.button("Save").clicked() {
                     if let Some(steamid) = self.steam_id {
                         if let Some(save_file) = &self.current_file {
-                            if let Some(path) = &self.current_file_name {
-                                let path = PathBuf::from(path);
-                                if let Some(file_name) = path.file_name() {
-                                    let mut path = self.output_path.clone();
-                                    if create_dir_all(&path).is_ok() {
-                                        path.push(file_name);
-                                        self.popup_msg = match save_file.save(&path, steamid) {
-                                            Ok(()) => format!("Saved to {path:?}"),
-                                            Err(e) => format!("Failed to save file {e}")
-                                        };
-                                        self.show_popup = true;
-                                    } else {
-                                        self.popup_msg = String::from("Could not create directory for file");
-                                        self.show_popup = true;
+                            let path = PathBuf::from(&self.file_name);
+                            if let Some(file_name) = path.file_name() {
+                                let mut path = self.output_path.clone();
+                                if create_dir_all(&path).is_ok() {
+                                    path.push(file_name);
+                                    self.popup_msg = match save_file.save(&path, steamid) {
+                                        Ok(()) => format!("Saved to {path:?}"),
+                                        Err(e) => format!("Failed to save file {e}")
                                     };
-                                } 
-                            }
+                                    self.show_popup = true;
+                                } else {
+                                    self.popup_msg = String::from("Could not create directory for file");
+                                    self.show_popup = true;
+                                };
+                            } 
                         }
                     } else {
                         self.popup_msg = String::from("Need a steamid to save");
@@ -185,19 +185,25 @@ impl eframe::App for TameApp {
                 }
 
                 if !self.updated {
-                    if let Some(path) = &self.current_file_name {
-                        if let Ok(mut reader) = File::open(path) {
-                            if let Some(steamid) = self.steam_id {
-                                if let Ok(save) = SaveFile::read(&mut reader, &mut SaveContext { key: steamid }) {
-                                    self.current_file = Some(save);
+                    println!("{:?}, {:?}", shellexpand::full(&self.file_name), std::fs::exists(&self.file_name));
+                    if std::fs::exists(&self.file_name).unwrap_or(false) {
+                        match File::open(&self.file_name) {
+                            Ok(mut reader) => {if let Some(steamid) = self.steam_id {
+                                    if let Ok(save) = SaveFile::read(&mut reader, &mut SaveContext { key: steamid }) {
+                                        self.current_file = Some(save);
+                                    }
                                 }
-                                self.updated = true;
                             }
-                        } else {
-                            self.popup_msg = String::from("Failed to open path to file {path}");
-                            self.show_popup = true;
+                            Err(e) => {
+                                self.popup_msg = format!("Failed to open path to file {}, {e}", self.file_name);
+                                self.show_popup = true;
+                            }
                         }
+                    } else {
+                        self.popup_msg = format!("File {} does not exists", self.file_name);
+                        self.show_popup = true;
                     }
+                    self.updated = true;
                 }
 
                 if self.show_popup {
@@ -211,7 +217,7 @@ impl eframe::App for TameApp {
                                 ui.label(&self.popup_msg);
                                 ui.vertical_centered(|ui| {
                                     if ui.button("Close").clicked() {
-                                        self.show_popup= false;
+                                        self.show_popup = false;
                                     }
                                 });
                             });
@@ -222,7 +228,7 @@ impl eframe::App for TameApp {
                 }
 
                 if let Ok(result) = self.rx.try_recv() {
-                    self.current_file_name = Some(result.display().to_string());
+                    self.file_name = result.display().to_string();
                     self.updated = false;
                 }
             });

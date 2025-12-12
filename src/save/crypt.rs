@@ -122,7 +122,7 @@ impl AuthCtx {
 
     pub fn decrypt(&self, chunk: &Pair) -> [u8; 8] {
         let x0 = bytes_to_int(&chunk.0);
-        let ct = bytes_to_int(&chunk.0);
+        let ct = bytes_to_int(&chunk.1);
         let x = mod_exp(&x0, &self.u, &self.p);
         let k = ct / x;
         int_to_bytes_le::<8>(&k)
