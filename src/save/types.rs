@@ -1,9 +1,10 @@
 use std::{collections::{HashMap, HashSet, VecDeque}, io::{Read, Seek}};
 
-use fasthash::FastHash;
+use fasthash::{FastHash, murmur3};
+use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
 
-use crate::{align::{seek_align_up}, reerr::{ Result}, rsz::{dump::{enum_map, RszDump, RszField}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, StringU16, StructData}}};
+use crate::{align::seek_align_up, reerr::Result, rsz::{self, dump::{RszDump, RszField, enum_map}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, RszSerializerCtx, StringU16, StructData}}};
 use crate::file::*;
 
 #[repr(i32)]
@@ -29,16 +30,16 @@ pub enum FieldType {
     U64 = 0xa,
     F32 = 0xb,
     //F64 = 0xc, // this is a guess
-    //C8 = 0xd, // guess, wtf even aer these lol
+    //C8 = 0xd, // guess, wtf even aer these lol, oh just char8 and char 16 probably, i dont think
+    //they're used at all though
     //C16 = 0xe, // guess
     String = 0xf, // U16
     Struct = 0x10, // this might overlap with something else or just be wrong rip
     Class = 0x11,
-    //Guid = 0x12, // idfk??????? this wrong prob
 }
 
 impl<'a> TryFrom<&'a RszField> for FieldType {
-    type Error = &'static str;
+    type Error = String;
     fn try_from(value: &'a RszField) -> std::result::Result<Self, Self::Error> {
         if value.array {
             return Ok(Self::Array)
@@ -46,6 +47,7 @@ impl<'a> TryFrom<&'a RszField> for FieldType {
         if enum_map().get(&value.original_type).is_some() {
            return Ok(Self::Enum)
         }
+        let s = value.r#type.clone();
         Ok(match value.r#type.as_str() {
             "Bool" => Self::Boolean,
             "S8" => Self::S8,
@@ -59,10 +61,11 @@ impl<'a> TryFrom<&'a RszField> for FieldType {
             "F32" => Self::F32,
             //"F64" => Self::F64,
             "String" => Self::String,
-            "Struct" => Self::Struct,
+            "Struct" | "Guid" => Self::Struct,
             //"Guid" => Self::Guid,
-            "Class" => Self::Class,
-            _ => return Err("String value not in FieldType")
+            "Class" | "Object" => Self::Class,
+            _ => Self::Struct,
+            //_ => return Err(format!("String value not in FieldType {s}"))
         })
     }
 }
@@ -71,7 +74,7 @@ impl<'a> TryFrom<&'a RszField> for FieldType {
 pub struct Class {
     pub num_fields: u32,
     pub hash: u32,
-    pub fields: HashMap<u32, Box<dyn DeRszInstance>>
+    pub fields: IndexMap<u32, Box<dyn DeRszInstance>>
 }
 
 impl StructRW for Class {
@@ -85,7 +88,7 @@ impl StructRW for Class {
         //println!("Class: {}, {num_fields}, {hash:08x}", _type_info.name);
         let fields = (0..num_fields).map(|_i| {
             read_field(reader)
-        }).collect::<Result<HashMap<u32, Box<dyn DeRszInstance>>>>()?;
+        }).collect::<Result<IndexMap<u32, Box<dyn DeRszInstance>>>>()?;
 
         Ok(Class {
             num_fields,
@@ -95,15 +98,92 @@ impl StructRW for Class {
     }
 }
 
+pub fn write_value(value: &Box<dyn DeRszInstance>, field_size: Option<u32>, field_type: FieldType, ctx: &mut rsz::rszserde::RszSerializerCtx) -> Result<()> {
+    if let Some(field_size) = field_size {
+        if field_type != FieldType::String {
+            seek_align_up(ctx.data, field_size as u64)?;
+        }
+    }
+    // might need to change this?, not sure if i need to downcast for Class type or Structs (these
+    // are probably converted into they're native types, unsure of alignment)
+    match field_type {
+        FieldType::String => {
+            seek_align_up(ctx.data, 4)?;
+            if let Some(s) = value.as_any().downcast_ref::<StringU16>() {
+                (s.0.len() as u32).to_bytes(ctx)?;
+                for item in &s.0 {
+                    item.to_bytes(ctx)?;
+                }
+            } else {
+                panic!("Expected String Type found {:?}", value);
+            }
+        },
+        FieldType::Struct => {
+            if let Some(sd) = value.as_any().downcast_ref::<StructData>() {
+                seek_align_up(ctx.data, sd.0.len() as u64)?;
+                ctx.data.write(&sd.0)?;
+            } else {
+                value.to_bytes(ctx)?;
+            }
+        },
+        _ => {
+            value.to_bytes(ctx)?
+        }
+    }
+    Ok(())
+}
+
+pub fn write_field(field: (&u32, &Box<dyn DeRszInstance>), type_info: &RszField, ctx: &mut rsz::rszserde::RszSerializerCtx) -> Result<()> {
+    let name_hash = field.0;
+    let field_value = field.1;
+    let field_type = FieldType::try_from(type_info)?;
+    let mut field_size = match field_type {
+        FieldType::Class | FieldType::Array | FieldType::String => None,
+        _ => Some(type_info.size)
+    };
+    name_hash.to_bytes(ctx)?;
+    (field_type as i32).to_bytes(ctx)?;
+    // if its StructData, the rszdump is broken so i have to infer the size from the StructData
+    // inner value
+    if let Some(sd) = field.1.as_any().downcast_ref::<StructData>() {
+        field_size = Some(sd.0.len() as u32)
+    }
+    if let Some(field_size) = field_size {
+        field_size.to_bytes(ctx)?;
+    }
+    write_value(field_value, field_size, field_type, ctx)?;
+    seek_align_up(ctx.data, 4)?;
+    Ok(())
+}
+
 impl DeRszInstance for Class {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn to_json(&self, ctx: &crate::rsz::rszserde::RszJsonSerializerCtx) -> serde_json::Value {
+    fn to_json(&self, _ctx: &crate::rsz::rszserde::RszJsonSerializerCtx) -> serde_json::Value {
         todo!()
     }
-    fn to_bytes(&self, _ctx: &mut crate::rsz::rszserde::RszSerializerCtx) -> Result<()> {
-        todo!()
+    fn to_bytes(&self, ctx: &mut crate::rsz::rszserde::RszSerializerCtx) -> Result<()> {
+        self.num_fields.to_bytes(ctx)?;
+        self.hash.to_bytes(ctx)?;
+        let type_info = RszDump::get_struct(self.hash)?;
+        for field in &self.fields {
+            let mut field_info = type_info.fields.iter()
+                .find(|x| murmur3::hash32_with_seed(&x.name, 0xffffffff) == *field.0);
+            if field_info.is_none() {
+                if let Some(idx) = self.fields.get_index_of(field.0) {
+                    field_info = type_info.fields.get(idx);
+                    //println!("{:?}", field_info);
+                }
+            }
+            if let Some(field_info) = field_info {
+                write_field(field, field_info, ctx)?;
+            } else {
+                panic!("Skipped field {:?}, {:?}", field_info, field);
+            }
+        }
+        seek_align_up(ctx.data, 4)?;
+        Ok(())
     }
 }
 
@@ -148,12 +228,29 @@ impl DeRszInstance for Array {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn to_json(&self, ctx: &crate::rsz::rszserde::RszJsonSerializerCtx) -> serde_json::Value {
+    fn to_json(&self, _ctx: &crate::rsz::rszserde::RszJsonSerializerCtx) -> serde_json::Value {
 
         todo!()
     }
-    fn to_bytes(&self, _ctx: &mut crate::rsz::rszserde::RszSerializerCtx) -> Result<()> {
-        todo!()
+    fn to_bytes(&self, ctx: &mut crate::rsz::rszserde::RszSerializerCtx) -> Result<()> {
+        seek_align_up(ctx.data, 4)?;
+        (self.field_type as i32).to_bytes(ctx)?;
+        self.field_type_size.to_bytes(ctx)?;
+        (self.values.len() as u32).to_bytes(ctx)?;
+        (self.array_type as i32).to_bytes(ctx)?;
+        for item in &self.values {
+            match self.array_type {
+                ArrayType::Class => {
+                    // this could a None?
+                    item.to_bytes(ctx)?;
+                }
+                ArrayType::Value => {
+                    write_value(item, Some(self.field_type_size), self.field_type, ctx)?;
+                }
+            }
+        }
+        seek_align_up(ctx.data, 4)?;
+        Ok(())
     }
 }
 

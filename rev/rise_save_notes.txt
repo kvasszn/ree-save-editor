@@ -1,0 +1,3 @@
+seems like the Rds does a bunch of modular exponentiation to fuck with some globals and function pointers, im not sure if these are just for control flow in the module, but possibly
+i think its also just using aes based on the dll having some AES constants 
+

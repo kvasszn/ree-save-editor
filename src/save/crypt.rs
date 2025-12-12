@@ -280,8 +280,8 @@ impl Mandarin {
             // key check
             let auth_block = bytemuck::from_bytes::<Block>(&buf[..0x210]);
             let key_iv2 = auth.decrypt_block(*auth_block);
-            println!("mul={:?}", auth_block.chunks[0].0);
-            println!("ct={:?}", auth_block.chunks[0].1);
+            //println!("mul={:?}", auth_block.chunks[0].0);
+            //println!("ct={:?}", auth_block.chunks[0].1);
 
             if key_iv2[0..16] != key {
                 println!("[Key/IV check] block {i}: key mismatch, skipping check");
@@ -310,12 +310,12 @@ impl Mandarin {
             } else {
                 println!("[Checksum] block {i}: passed")
             }
-            println!("{key:?}, {iv:?}, {checksum}");
+            //println!("{key:?}, {iv:?}, {checksum:x}");
             decrypted[decrypted_start..decrypted_start + bytes_to_copy].copy_from_slice(&data[..bytes_to_copy]);
             remaining_bytes = remaining_bytes.wrapping_sub(block_size);
             decrypted_start += bytes_to_copy;
             encrypted_start += encrypted_read_size;
-            println!("remaining_bytes={remaining_bytes:#x}");
+            //println!("remaining_bytes={remaining_bytes:#x}");
         }
 
         Ok(decrypted)
@@ -387,7 +387,7 @@ impl Mandarin {
             //to separate the two
             let block_size = block_sizes[i] as usize * 0x4000;
             let bytes_to_copy = block_size.min(remaining_bytes);
-            println!("to_copy={bytes_to_copy}, block_size={block_size}, remaining_bytes={remaining_bytes}");
+            //println!("to_copy={bytes_to_copy}, block_size={block_size}, remaining_bytes={remaining_bytes}");
             buf[0x210..bytes_to_copy + 0x210].copy_from_slice(&data[decrypted_start..decrypted_start+bytes_to_copy]);
 
             let mut key_iv = [0u8; 32];
@@ -395,7 +395,7 @@ impl Mandarin {
             key_iv[16..32].copy_from_slice(&iv);
             let chunks = auth.encrypt_bytes(key_iv);
             let checksum = city::Hash64::hash(&buf[0x210..0x210+bytes_to_copy]);
-            println!("{key:?}, {iv:?}, {checksum}");
+            //println!("{key:?}, {iv:?}, {checksum}");
 
             type Aes128Ofb = ofb::Ofb<Aes128>;
             let mut cipher = Aes128Ofb::new(&key.into(), &iv.into());
@@ -408,8 +408,8 @@ impl Mandarin {
                 litterally_no_idea: [0u8; 8]
             };
 
-            println!("mul={:?}", block.chunks[0].0);
-            println!("ct={:?}", block.chunks[0].1);
+            //println!("mul={:?}", block.chunks[0].0);
+            //println!("ct={:?}", block.chunks[0].1);
 
             let auth_block = bytemuck::bytes_of::<Block>(&block);
             buf[0..0x210].copy_from_slice(auth_block);
@@ -422,7 +422,7 @@ impl Mandarin {
             remaining_bytes = remaining_bytes.wrapping_sub(bytes_to_copy);
             decrypted_start += bytes_to_copy;
             encrypted_start += block_size + 0x210;
-            println!("remaining_bytes={remaining_bytes:#x}");
+            //println!("remaining_bytes={remaining_bytes:#x}");
         }
         let integer = integer_to_bytes_le::<0x80>(&encrypted_key);
         encrypted[encrypted_start..encrypted_start+0x80].copy_from_slice(&integer);
