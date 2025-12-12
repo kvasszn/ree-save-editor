@@ -13,9 +13,6 @@
 
 LittleEndian();
 
-FSeek(0x205D0);
-FSeek(0x20);
-
 void AlignUp(int align){
     local int pos = FTell();
     local int aligned = (pos + (align - 1)) & ~(align - 1);

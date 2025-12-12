@@ -9,12 +9,13 @@ pub fn align_up<T: Copy + Add<Output = T> + Sub<Output = T> + Rem<Output = T>>(
     value + (align - value % align) % align
 }
 
-pub fn seek_align_up<R: Read + Seek>(stream: &mut R, align: u64) -> Result<u64> {
+pub fn seek_align_up<S: Seek + ?Sized>(stream: &mut S, align: u64) -> Result<u64> {
     let pos = stream.stream_position()?;
     let aligned = align_up(pos, align);
     if aligned != pos {
-        let mut buf = vec![0; (aligned - pos).try_into()?];
-        stream.read_exact(&mut buf).map_err(|_f| Box::new(FileParseError::BadAlign(pos, align)))?;
+        stream.seek(std::io::SeekFrom::Start(aligned)).map_err(|_f| Box::new(FileParseError::BadAlign(pos, align)))?;
+        //let mut buf = vec![0; (aligned - pos).try_into()?];
+        //stream.read_exact(&mut buf).map_err()?;
     }
     Ok(aligned)
 }

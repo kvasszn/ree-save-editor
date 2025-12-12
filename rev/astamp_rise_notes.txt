@@ -1,0 +1,19 @@
+So a few notes from just abusing unencrypting on files:
+-Operates on blocks of 16 bytes
+-If mangled, the block on which the edit happens is fine 
+-However the block BEFORE that one will be completely mangled, however no other block is affected.
+
+It's operating right to left non-cascading, the cyphertext of the "next block" encrypts the "current block"
+-The key (if there even is one) is not changing or actually being updated, it's simply using the "next" block's cyphertext
+-The "key generation" procedure is not "simple". Changing a bit results in wildly different values on the block whose decryption is affected by it (the block "previous" to the bit edited one). However once the "key" for the block is generated its just an xor. Its an xor since if one wishes for a block to decrypt to a specific value it suffices to xor the plain and cypher and use that to xor the target value (obv the previous block will be mangled)
+-The "last" block actually uses up to 32 bytes beyond the defined cyphertext. It uses 16 bytes for the actual last block, and then it uses the 16 bytes AFTER THOSE to generate a sort of verification value that should result in 0. This are the 4 extra bytes on the decrypted block (compared to the stated cypher size), 
+-It will NOT kill itself if all of that data is missing though. No clue how it generates it but it doesn't need it.
+-Additionaly not all of the cipher is actually data (Save File has a plaintext 69E50 big  while the cypher size is reported as 699F0. Those 500 bytes (aprox) near the beggining are probably encrypted from the looks of it, but also relevant to the encryption. Messing with PARTS of them is weird though. Sometimes they break only the first 0x40000 bytes of encryption and the rest decrypts fine. Sometimes they only mangle specific parts and fill them with seas of 0s (that should not be 0)
+Stuff only relevant to the save file
+The save portion past the cypher block is not encrypted with the same algorithm at least, or if it does it must reread headers or SOMETHING because just increasing the block size produces garbage.
+
+HOWEVER despite the ending of that section looking like garbage, if decrypted it will end up in a repeating pattern that's not 0s which means it's probably encrypted just with a different key.
+
+However, I have strong reason to believe it's not just file yuxtaposition, because the cypher size at the bottom is "correct" enough in so far the verification int32 does mark as 0.
+Also murmur hash of SOMETHING at the end (according to ando). And a blake hash inside the encrypted secction's header (at least in other REF games)
+The encryption functions aren't called through REF btw, the C++ primitives are called directly. You need to hide your debugger if you are breakpointing functions that save to file because it can decide to disable saving

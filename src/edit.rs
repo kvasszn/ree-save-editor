@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
+use std::{any::Any, collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 
 use eframe::egui::{CollapsingHeader, TextEdit, Ui};
 use fasthash::murmur3;
@@ -9,7 +9,7 @@ use crate::{rsz::{dump::{get_enum_list, get_enum_val, RszDump, RszField, RszStru
 pub type EditableFile = dyn Edit;
 
 type C<'a> = RszEditCtx<'a>;
-pub trait Edit {
+pub trait Edit: Any {
     fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C);
 }
 
@@ -536,8 +536,39 @@ impl Edit for Class {
                 let mut new_ctx = RszEditCtx {
                     root: None,
                     field: Some(&field),
-                    objects: ctx.objects,
-                    parent: Some(struct_desc),
+                    objects: ctx.objects, parent: Some(struct_desc),
+                    id: ctx.id,
+                };
+                match field.r#type.as_str() {
+                    "Object" | "Struct" => {
+                        CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                            .id_salt(ctx.id)
+                            .show(ui, |ui| {
+                                field_value.edit(ui, &mut new_ctx);
+                            });
+                    }
+                    _ => {
+                        if field.array {
+                            CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                                .id_salt(ctx.id)
+                                .show(ui, |ui| {
+                                    field_value.edit(ui, &mut new_ctx);
+                                });
+                        }
+                        else {
+                            ui.horizontal(|ui| {
+                                ui.label(format!("  {}", &field.name));
+                                field_value.edit(ui, &mut new_ctx);
+                            });
+                        }
+                    }
+                }
+            } else if let Some((k, field_value)) = self.fields.get_index_mut(_i) {
+                ctx.id += 1;
+                let mut new_ctx = RszEditCtx {
+                    root: None,
+                    field: Some(&field),
+                    objects: ctx.objects, parent: Some(struct_desc),
                     id: ctx.id,
                 };
                 match field.r#type.as_str() {
@@ -574,8 +605,18 @@ impl Edit for Class {
 
 impl Edit for SaveFile {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
-        self.data.edit(ui, ctx);
-        //self.detail.edit(ui, ctx);
+        ctx.id += 1;
+        CollapsingHeader::new(format!("data"))
+            .id_salt(ctx.id)
+            .show(ui, |ui| {
+                self.data.edit(ui, ctx);
+            });
+        ctx.id += 1;
+        CollapsingHeader::new(format!("detail"))
+            .id_salt(ctx.id)
+            .show(ui, |ui| {
+                self.detail.edit(ui, ctx);
+            });
     }
 }
 
@@ -584,7 +625,6 @@ impl Edit for DeRsz {
         for root in &self.roots {
             //let (root_hash, root_struct) = &dersz.structs[*root as usize];
             //let val = dersz.structs.get_mut(idx).ok_or(RszError::InvalidRszObjectIndex(self.idx, self.hash))?;
-
             let (hash, mut field_values) = {
                 let val = self.structs.get_mut(*root as usize).unwrap();
                 let (hash, field_values) = std::mem::take(&mut *val);

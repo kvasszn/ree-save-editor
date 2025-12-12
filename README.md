@@ -1,7 +1,7 @@
 # MH Tame
 This repo is mainly for dumping RE engine files into readable json. It also does converts textures to png and fonts. and I'm working on recreating some files from json.
 
-Files that it currently supports are `user, tex, msg, pog, poglst, oft`.
+Files that it currently supports are `user, tex, msg, pog, poglst, oft` and `wilds saves`.
 Some basic support exists for `scn` files, but it's rough, RSZ works for it though.
 
 Makes use of texture codecs, and file reading stuff from ![https://github.com/wwylele/mhrice](https://github.com/wwylele/mhrice)
@@ -16,10 +16,29 @@ Uses praydog's emulation dumper for the rsz files.
 git clone https://github.com/kvasszn/mhtame.git
 cd mhtame
 git submodule update --init
-cargo build --release # the release flag optimizes speeds alot
+cargo build --bin mhtame --release # the release flag optimizes speeds alot
 ```
 
 ## Usage
+
+### Save Editing
+It can finally support editing saves, in a GUI too. Use this carefully, might potentially break things.
+I will eventually add features for copying over save data from different saves or slots.
+
+I also plan on eventually adding support for more RE games, just takes a while to reverse capcom's save files.
+
+This requires knowing your Steam ID.
+
+```
+cargo build --bin mhtame-gui --release
+```
+
+You can either pass in things through CLI or use the GUI.
+```
+./mhtame-gui -f <path/to/save/file> --steamid <steamid>
+```
+
+### File Dumping
 
 By default, the program will dump or recreates files based on their extensions and headers. It can only recreate `User` files from json, but this is still WIP and some things don't work.
 
@@ -54,14 +73,14 @@ Note: the root directory prefix gets removed from the file path when saving
 ./target/<release or debug>/mhtame -r <path/to/game/native> -o <output/directory> -l <path/to/list of files to process>
 ```
 
-## Dumping Save Files
-It's important to use the unpacked structs version of the rsz dump, otherwise the file doesnt get read properly.
+### Dumping Save Files
+It's important to use the packed structs version of the rsz dump, otherwise the file doesnt get read properly.
 ```
-./target/release/mhtame -f <path/to/savefile> --rsz rszmhwilds_unpacked_structs.json --steamid <your steam id>
+./target/release/mhtame -f <path/to/savefile> --rsz rszmhwilds_packed.json --steamid <your steam id>
 ```
 For help getting your steamid: https://help.steampowered.com/en/faqs/view/2816-BE67-5B69-0FEC
 If you dont pass one in, the program will try to brute force the key, but i'm pretty sure this is like completely broken atm. Still need to figure some stuff out for it.
 
 
-## Recreating Files
+### Recreating Files
 As mentioned, this is still WIP, but if the program sees a file like `ItemData.user.3.json` (either in a list or single file), it will try and recreate `ItemData.user.3` from the json data.
