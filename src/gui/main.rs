@@ -1,7 +1,7 @@
 use core::f32;
 use std::{fs::{File, create_dir_all}, path::PathBuf, sync::mpsc::{self, Receiver, Sender}};
 
-use eframe::egui::{self,  ScrollArea, TextEdit, Vec2};
+use eframe::egui::{self, Key, ScrollArea, TextEdit, Vec2};
 use mhtame::{edit::{Edit, RszEditCtx}, file::{FileReader, StructRW}, rsz::{dump::{ENUM_FILE, RSZ_FILE}, rszserde::DeRsz}, save::{SaveContext, SaveFile}};
 use clap::{Parser};
 
@@ -223,8 +223,14 @@ impl eframe::App for TameApp {
                             });
                         });
                 }
+
                 if ui.input(|i| i.pointer.any_pressed()) {
                     self.show_popup = false;
+                }
+
+                if ui.input(|i| i.key_pressed(Key::Enter)) {
+                    self.show_popup = false;
+                    self.updated = false;
                 }
 
                 if let Ok(result) = self.rx.try_recv() {
@@ -249,7 +255,7 @@ impl eframe::App for TameApp {
                 if ui.button("Choose Output Path").clicked() {
                     let tx = self.tx_output.clone();
                     std::thread::spawn(move || {
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                        if let Some(path) = rfd::FileDialog::new().pick_folder() {
                             tx.send(path).unwrap();
                         }
                     });
