@@ -1,10 +1,9 @@
 use std::{any::Any, collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 
 use eframe::egui::{CollapsingHeader, TextEdit, Ui};
-use fasthash::murmur3;
 use half::f16;
 
-use crate::{rsz::{dump::{get_enum_list, get_enum_val, RszDump, RszField, RszStruct}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{types::{Array, Class, FieldType}, SaveFile}};
+use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{SaveFile, types::{Array, Class, FieldType}}, util::murmur3};
 
 pub type EditableFile = dyn Edit;
 
@@ -456,7 +455,7 @@ impl Edit for Struct {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
         let struct_desc = RszDump::get_struct(self.hash).unwrap();
         for (_i, field) in struct_desc.fields.iter().enumerate() {
-            let field_hash = murmur3::hash32_with_seed(&field.name, 0xffffffff);
+            let field_hash = murmur3(&field.name, 0xffffffff);
             if let Some(field_value) = self.values.get_mut(_i) {
                 ctx.id += 1;
                 let mut new_ctx = RszEditCtx {
@@ -530,7 +529,7 @@ impl Edit for Class {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
         let struct_desc = RszDump::get_struct(self.hash).unwrap();
         for (_i, field) in struct_desc.fields.iter().enumerate() {
-            let field_hash = murmur3::hash32_with_seed(&field.name, 0xffffffff);
+            let field_hash = murmur3(&field.name, 0xffffffff);
             if let Some(field_value) = self.fields.get_mut(&field_hash) {
                 ctx.id += 1;
                 let mut new_ctx = RszEditCtx {

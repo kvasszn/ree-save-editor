@@ -1,4 +1,5 @@
 pub mod gensdk;
+pub mod util;
 pub mod align;
 pub mod reerr;
 pub mod bitfield;

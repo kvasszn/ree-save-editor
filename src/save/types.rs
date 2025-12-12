@@ -1,10 +1,9 @@
 use std::{collections::{HashMap, HashSet, VecDeque}, io::{Read, Seek}};
 
-use fasthash::{FastHash, murmur3};
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
 
-use crate::{align::seek_align_up, reerr::Result, rsz::{self, dump::{RszDump, RszField, enum_map}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, RszSerializerCtx, StringU16, StructData}}};
+use crate::{align::seek_align_up, reerr::Result, rsz::{self, dump::{RszDump, RszField, enum_map}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, RszSerializerCtx, StringU16, StructData}}, util::murmur3};
 use crate::file::*;
 
 #[repr(i32)]
@@ -169,7 +168,7 @@ impl DeRszInstance for Class {
         let type_info = RszDump::get_struct(self.hash)?;
         for field in &self.fields {
             let mut field_info = type_info.fields.iter()
-                .find(|x| murmur3::hash32_with_seed(&x.name, 0xffffffff) == *field.0);
+                .find(|x| murmur3(&x.name, 0xffffffff) == *field.0);
             if field_info.is_none() {
                 if let Some(idx) = self.fields.get_index_of(field.0) {
                     field_info = type_info.fields.get(idx);
@@ -315,7 +314,6 @@ pub fn to_dersz(object: Class) -> Result<DeRsz> {
     let mut roots = vec![];
     let mut structs: Vec<RszFieldsValue> = vec![];
     let extern_idxs: HashSet<u32> = HashSet::new();
-    use fasthash::murmur3::Hash32;
     let mut queue = VecDeque::new();
     queue.push_back(&object);
     let mut obj_counter = 0;
@@ -327,7 +325,7 @@ pub fn to_dersz(object: Class) -> Result<DeRsz> {
         //println!("{:?}", obj.fields.keys());
         let mut fields: Vec<Box<dyn DeRszInstance>> = Vec::with_capacity(type_info.fields.len());
         for field in type_info.fields.iter() {
-            let name_hash = Hash32::hash_with_seed(field.name.as_bytes(), 0xffffffff);
+            let name_hash = murmur3(field.name.as_bytes(), 0xffffffff);
             //println!("{name_hash:#x}, {}", field.name);
             match obj.fields.get(&name_hash) {
                 Some(value) => {

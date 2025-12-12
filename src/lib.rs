@@ -1,6 +1,7 @@
 use std::io::Result;
 
 pub mod edit;
+pub mod util;
 pub mod align;
 pub mod gensdk;
 pub mod reerr;
