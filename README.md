@@ -22,12 +22,13 @@ cargo build --bin mhtame --release # the release flag optimizes speeds alot
 ## Usage
 
 ### Save Editing
-It can finally support editing saves, in a GUI too. Use this carefully, might potentially break things.
-I will eventually add features for copying over save data from different saves or slots.
+It can finally support editing saves for Monster Hunter Wilds, in a GUI too. Use this carefully, might potentially break things.
 
-I also plan on eventually adding support for more RE games, just takes a while to reverse capcom's save files.
+**ALSO PLEASE MAKE BACKUPS BEFORE MESSING WITH THIS TOO MUCH. IF YOU FIND BUGS PLEASE REPORT THEM.**
 
-This requires knowing your Steam ID.
+I will eventually add features for copying over save data from different saves or slots. I also plan on eventually adding support for more RE games, just takes a while to reverse capcom's save files. Loading and editing requires knowing your Steam ID.
+
+Also minor note: the exe needs to see an `rszmhwilds_packed.json` from where it's run to work, so if you move the exe around, make sure to give it an rsz file. It can also be passed in through CLI.
 
 ```
 cargo build --bin mhtame-gui --release
