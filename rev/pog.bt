@@ -20,6 +20,13 @@ struct Vec4f {
     float w;
 };
 
+struct Vec3f {
+    float x;
+    float y;
+    float z;
+    float pad;
+};
+
 struct Vec4i {
     int x;
     int y;
@@ -36,9 +43,9 @@ struct Point2 {
     Pair pairs[3];
 };
 struct Point {
-    Vec4f a;
-    Vec4f b;
-    Vec4i c;
+    Vec3f pos1;
+    Vec3f pos2;
+    int32 id1,id2,id3,attr;
 };
 
 
@@ -47,37 +54,59 @@ struct Point {
 struct POG_HEADER {
     char magic[4];     // Signature, e.g. "POG\0"
     uint32 version;
-    uint64 hash1;
-    uint32 num_unks;
+    uint32 hash1<format=hex>;
+    uint32 hash2<format=hex>;
+    uint32 num_userdata;
     uint32 num_nodes;
-    uint64 hash2;
-    uint64 unk_offset;
-    uint64 weights_offset;
+    uint32 main_object_hash<format=hex>;
+    uint32 sub_object_hash<format=hex, comment="init value always CDCDCDCD?">;
+    uint64 userdata_offset;
+    uint64 nodes_offset;
     uint64 points_offset;
-    uint64 rsz_start1;
-    uint64 rsz_end1;
-    uint64 rsz_start2;
-    uint64 rsz_end2;
+    uint64 main_rsz_start;
+    uint64 main_rsz_end;
+    uint64 sub_rsz_start;
+    uint64 sub_rsz_end;
 
-} header;
+} header<bgcolor=0x10FFDD>;
+
+struct UserDataInfos {
+    local int offset = 0;
+    local int i = 0;
+    for(i = 0; i < header.num_userdata; i++) {
+        FSeek(header.userdata_offset + offset);
+        struct UserDataInfo {
+            uint32 hash<format=hex>;
+            uint32 CRC<format=hex, comment="init value always CDCDCDCD?">;
+            uint64 path_offset;
+            FSeek(path_offset);
+            wstring userdata_path;
+            offset += 0x10;
+        } userDataInfo<bgcolor=0xAB1155>;
+    }
+} userDataInfos;
 
 struct GraphData {
     local int offset = 0;
-    local int i = 0;
+    local int i, j = 0;
     for(i = 0; i < header.num_nodes; i++) {
-        FSeek(header.weights_offset + offset);
+        FSeek(header.nodes_offset + offset);
         struct NodeData {
-            uint32 i;
-            uint32 k; // this is dumb
-            //FSeek(header.weights_offset + offset);
-            uint64 lvar5;
-            if (lvar5 != 0) {
-                FSeek(lvar5); // this might be + 8
-                uint32 v;
-                float w;
+            uint32 id;
+            uint32 num_link;
+            uint64 link_offset;
+            if (link_offset != 0) {
+                struct Links {
+                    FSeek(link_offset);
+                    for(j = 0; j < num_link; j++) {
+                        struct Link {
+                            uint32 id;
+                            uint32 pointKey<format=hex>;
+                        } link<bgcolor=0x336699>;
+                    }
+                } links;
             }
-            offset += 0x10;  
-        } node;
+        } node<bgcolor=0xCDCDCD>;
     } 
 } graph;
 
@@ -93,4 +122,18 @@ struct PointData {
             Point point;
         }
     }
-} points;
+} points<bgcolor=0x11AA66>;
+
+FSeek(header.main_rsz_start);
+struct {
+    while (FTell() != header.main_rsz_end){
+        byte data;
+    }
+} main_rsz<bgcolor=0xAA00AA, comment="Just paint some color">;
+
+FSeek(header.sub_rsz_start);
+struct {
+    while (FTell() != header.sub_rsz_end){
+        byte data<bgcolor=0x00AA00>;
+    }
+} sub_rsz<bgcolor=0xAAAA00, comment="Just paint some color">;
