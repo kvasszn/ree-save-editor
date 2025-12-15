@@ -98,7 +98,7 @@ impl RszDump {
         static HASHMAP: OnceLock<RszMap<RszMapType>> = OnceLock::new();
         HASHMAP.get_or_init(|| {
             RSZ_FILE.get_or_init(|| {
-                "rszmhwilds.json".to_string()
+                "assets/rszmhwilds.json".to_string()
             });
             let file = std::fs::read_to_string(RSZ_FILE.get().unwrap()).unwrap();
             let m: RszMapType = serde_json::from_str(&file).unwrap();
@@ -165,7 +165,7 @@ pub fn enum_map() -> &'static EnumMap {
     static HASHMAP: OnceLock<EnumMap> = OnceLock::new();
     HASHMAP.get_or_init(|| {
         ENUM_FILE.get_or_init(|| {
-            "enums.json".to_string()
+            "assets/enumsmhwilds.json".to_string()
         });
         let json_data = std::fs::read_to_string(ENUM_FILE.get().unwrap()).unwrap();
         let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();

@@ -3,9 +3,8 @@ use std::{
     io::{Cursor, Read}
 };
 use bitfield::bitfield;
-use file_macros::StructRW;
 
-use crate::{reerr::{self, FileParseError, Result}, file::StructRW};
+use crate::{reerr::Result, file::StructRW};
 #[repr(C)]
 #[derive(Debug, file_macros::StructRW)]
 pub struct TDBHeader {

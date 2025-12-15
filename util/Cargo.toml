@@ -1,0 +1,17 @@
+[package]
+name = "util"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "util"
+path = "src/lib.rs"
+crate-type = ["lib"]
+
+[dependencies]
+murmur3 = "0.5.2"
+uuid = "1.19.0"
+nalgebra-glm = { version = "0.20", features = ["serde-serialize"]}
+nalgebra = "*"
+
+

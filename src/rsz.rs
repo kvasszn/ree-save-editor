@@ -1,19 +1,21 @@
 pub mod rszserde;
+//mod types;
 pub mod object;
 pub mod dump;
-use byteorder::LittleEndian;
-use byteorder::WriteBytesExt;
+//pub use types::*;
 use dump::RszDump;
 use rszserde::DeRsz;
 use rszserde::DeRszType;
 use rszserde::RszDeserializerCtx;
 use rszserde::RszSerializerCtx;
-
-use crate::file_ext::*;
+use sdk::types::TypeDescriptor;
+use serde::Serialize;
+use util::*;
 
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
+use std::io;
 use std::io::Cursor;
 use std::io::Write;
 use std::io::{Read, Seek, SeekFrom};
@@ -25,11 +27,6 @@ pub struct Extern {
     pub path: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct TypeDescriptor {
-    pub hash: u32,
-    pub crc: u32,
-}
 
 // This is just the Rsz Header parsed, with the raw data of the rsz in bytes
 // Can be turned into an intermediate format with DeRsz
@@ -41,6 +38,20 @@ pub struct Rsz {
     pub extern_slots: HashMap<u32, Extern>,
     pub type_descriptors: Vec<TypeDescriptor>,
     pub data: Vec<u8>,
+}
+
+impl Serialize for Rsz {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer {
+            match self.deserialize_to_dersz() {
+                Ok(dersz) => dersz.serialize(serializer),
+                Err(e) => {
+                    eprintln!("Failed to deserialize Rsz to DeRsz, {e}");
+                    serializer.serialize_none()
+                }
+            }
+    }
 }
 
 impl Rsz {
@@ -68,15 +79,15 @@ impl Rsz {
             return Err(format!("Unexpected non-zero padding in RSZ: {}", padding).into());
         }
 
-        let type_descriptor_offset = file.read_u64()?;
+        let _type_descriptor_offset = file.read_u64()?;
         let data_offset = file.read_u64()?;
         let extern_offset = file.read_u64()?;
 
         let roots = (0..root_count)
             .map(|_| file.read_u32())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<io::Result<Vec<_>>>()?;
 
-        file.seek_noop(base + type_descriptor_offset)?;
+        //file.seek_noop(base + type_descriptor_offset)?;
 
         let type_descriptors = (0..type_descriptor_count)
             .map(|_| {
@@ -105,8 +116,8 @@ impl Rsz {
 
         let extern_slots = extern_slot_info
             .into_iter()
-            .map(|(slot, hash, offset)| {
-                file.seek_noop(base + offset)?;
+            .map(|(slot, hash, _offset)| {
+                //file.seek_noop(base + offset)?;
                 let path = file.read_u16str()?;
                 if !path.ends_with(".user") {
                     return Err(format!("Non-USER slot string").into());
@@ -179,10 +190,10 @@ impl Rsz {
     pub fn to_buf(&self, _start_addr: usize) -> Result<Vec<u8>> {
         let mut buf = vec![];
         buf.write_all(b"RSZ\0")?;
-        buf.write_u32::<LittleEndian>(self.version)?;
-        buf.write_u32::<LittleEndian>(self.roots.len() as u32)?;
-        buf.write_u32::<LittleEndian>(self.type_descriptors.len() as u32)?;
-        buf.write_u32::<LittleEndian>(self.extern_slots.len() as u32)?;
+        buf.write(&self.version.to_le_bytes())?;
+        buf.write(&(self.roots.len() as u32).to_le_bytes())?;
+        buf.write(&(self.type_descriptors.len() as u32).to_le_bytes())?;
+        buf.write(&(self.extern_slots.len() as u32).to_le_bytes())?;
         buf.write_all(&[0; 4])?;
         let type_descriptor_offset = buf.len() + self.roots.len() * size_of::<u32>() + 3 * size_of::<u64>();
 
@@ -192,19 +203,19 @@ impl Rsz {
         if data_offset % 16 != 0 { data_offset += 16 - data_offset % 16; }
 
         println!("{:x}, {:x}, {:x}, {:x}", type_descriptor_offset, extern_offset, data_offset, _start_addr);
-        buf.write_u64::<LittleEndian>(type_descriptor_offset as u64)?;
-        buf.write_u64::<LittleEndian>(data_offset as u64)?;
-        buf.write_u64::<LittleEndian>(extern_offset as u64)?;
+        buf.write(&(type_descriptor_offset as u64).to_le_bytes())?;
+        buf.write(&(data_offset as u64).to_le_bytes())?;
+        buf.write(&(extern_offset as u64).to_le_bytes())?;
         for root in &self.roots {
-            buf.write_u32::<LittleEndian>(*root)?;
+            buf.write(&root.to_le_bytes())?;
         }
         if buf.len() != type_descriptor_offset {
             //println!("here\n");
             buf.extend(vec![0; buf.len() - type_descriptor_offset as usize]);
         }
         for descriptor in &self.type_descriptors {
-            buf.write_u32::<LittleEndian>(descriptor.hash)?;
-            buf.write_u32::<LittleEndian>(descriptor.crc)?;
+            buf.write(&descriptor.hash.to_le_bytes())?;
+            buf.write(&descriptor.crc.to_le_bytes())?;
         }
         println!("{}", buf.len());
         if buf.len() != extern_offset {

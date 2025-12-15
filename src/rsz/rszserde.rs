@@ -10,10 +10,9 @@ use eframe::egui::{Ui};
 use indexmap::IndexMap;
 use rsz_macros::{DeRszFrom, DeRszInstance, Edit};
 use serde::{Deserialize, Serialize};
-
 use crate::edit::{Edit, RszEditCtx};
-use crate::{reerr::{self, Result, RszError}};
-use crate::file_ext::*;
+use crate::reerr::{self, Result, RszError};
+use util::*;
 use super::{dump::{enum_map, get_enum_name, get_enum_val, RszDump, RszField, RszStruct}, Extern, Rsz, TypeDescriptor};
 
 pub trait ReadSeek: Read + Seek {}
@@ -83,6 +82,7 @@ impl<'a> RszDeserializerCtx<'a> {
         registry.register::<Guid>("GameObjectRef");
         registry.register::<KeyFrame>("KeyFrame");
         registry.register::<u64>("Size");
+        registry.register::<Mandrake>("via.rds.Mandrake");
         Self {
             data: Box::new(data),
             cur_hash: Vec::new(),
@@ -122,6 +122,7 @@ impl<'a> From<&'a Rsz> for RszDeserializerCtx<'a> {
     }
 }
 
+// hash, value,
 pub type RszFieldsValue = (u32, Vec<Box<dyn DeRszInstance>>);
 
 pub struct RszJsonSerializerCtx<'a> {
@@ -130,7 +131,6 @@ pub struct RszJsonSerializerCtx<'a> {
     objects: &'a Vec<RszFieldsValue>,
     parent: Option<&'a RszStruct<RszField>>
 }
-
 
 pub struct RszEditSerializerCtx<'a> {
     root: Option<u32>,
@@ -611,6 +611,7 @@ impl DeRszRegistry {
         self.register::<u64>("Size");
         self.register::<AnimationCurve>("via.AnimationCurve");
         self.register::<AnimationCurve3D>("via.AnimationCurve3D");
+        self.register::<Mandrake>("via.rds.Mandrake");
         //self.register::<Capsule>("Capsule");
     }
     pub fn new() -> Self {
@@ -749,7 +750,7 @@ impl<'a> DeRszType<'a> for DeRsz {
                         ctx.data.seek_align_up(field.align.into())?;
                         let pos = ctx.data.tell()?;
                         //println!("pos: {}, data {:?}", ctx.data.tell()?, ctx.data.read_u8_n(32)?);
-                        ctx.data.seek(SeekFrom::Start(pos))?;
+                        ctx.data.seek(SeekFrom::Start(pos))?; // wtf am i doing here ????
                         let dersz_fn = ctx.registry.get(field.r#type.as_str())?;
                         let x: Box<dyn DeRszInstance> = dersz_fn(ctx)?;
                         if let Some(x) = x.as_any().downcast_ref::<Object>() {
@@ -1541,5 +1542,25 @@ impl<'de> Deserialize<'de> for Guid {
             let uuid = uuid::Uuid::from_str(&s).unwrap();
             Ok(Guid(uuid.into_bytes()))
 
+    }
+}
+
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
+pub struct Mandrake {
+    pub v: i64,
+    pub m: i64, // maybe change to NonZeroU64
+}
+
+impl Mandrake {
+    pub fn set(&mut self, n: i64) {
+        self.v = n * self.m 
+    }
+
+    pub fn get(&self) -> Option<i64> {
+        if self.m == 0 {
+            None
+        } else {
+            Some(self.v / self.m)
+        }
     }
 }
