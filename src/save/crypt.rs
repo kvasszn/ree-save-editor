@@ -185,8 +185,8 @@ impl Display for MandarinError {
     }
 }
 
-
-
+// Note: keys are different for pragmata, seems to not be steamid, or they just don't care because
+// its the demo, or a single player game
 
 #[derive(Debug)]
 pub struct Mandarin {}
@@ -247,11 +247,10 @@ impl Mandarin {
     }
 
     pub fn decrypt(encrypted: &[u8], decrypted_len: u64, key: u64) -> Result<Vec<u8>, MandarinError>{
-        // generate 32 bytes of randomness, first 8 bytes or the key inverted
-        // used for encrypting the key with RSA and appending it to the encrypted stuff
-        // doesn't seem to get used in decryption, maybe it does after calling decrypt from
-        // mandarin
-        // although n is a constant so it might just be for capcom save recovery (if they know p q)
+        // This is different for dif games, i think it actually just gets generated somehow before
+        // the module gets launched, but whatever values you find work for anyone
+        // pragmata: 0x3F90D767F13ABE2E
+        // wilds: 0xBFACF76C3F96
         let mut state_a: u64 = 0xBFACF76C3F96;
         let mut rands: [u8; 0x20] = [0u8; 0x20];
         for i in 0..32 {
@@ -266,7 +265,8 @@ impl Mandarin {
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
                                                                         // allocated, its on the stack
                                                                         // but like variable size
-        let mut state_p: u64 = 0x7A36955255266CED;
+         let mut state_p: u64 = 0x7A36955255266CED; // wilds
+        //let mut state_p: u64 = 0x7DA24A9E1479F3D7; // pragmata
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
             state_p = SplitMix64::next_int(&mut state_p);

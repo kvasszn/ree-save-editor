@@ -1,18 +1,8 @@
 pub mod gensdk;
-pub mod util;
-pub mod align;
 pub mod reerr;
 pub mod bitfield;
 pub mod compression;
-pub mod file_ext;
-pub mod msg;
 pub mod rsz;
-pub mod tex;
-pub mod user;
-pub mod pog;
-pub mod font;
-pub mod scn;
-pub mod mesh;
 pub mod file;
 pub mod save;
 pub mod tdb;
@@ -24,12 +14,19 @@ extern crate libdeflater;
 
 use clap::Parser;
 use file::FileReader;
+use mhtame::file::User;
+use mhtame::rsz::dump::RszDump;
 use rsz::dump::{ENUM_FILE, RSZ_FILE};
+use sdk::deserializer::RszDeserializer;
+use sdk::json_serializer::RszWithCtx;
+use sdk::type_map::TypeMap;
 
+use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{read_to_string};
+use std::fs::{File, read_to_string};
+use std::io::{BufWriter, Cursor, Read};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -58,10 +55,10 @@ struct Args {
     #[arg(short('o'), long, default_value_t = String::from("outputs"))]
     out_dir: String,
     
-    #[arg(long, default_value_t = String::from("rszmhwilds.json"))]
+    #[arg(long, default_value_t = String::from("assets/rszmhwilds.json"))]
     rsz: String,
     
-    #[arg(long, default_value_t = String::from("enums.json"))]
+    #[arg(long, default_value_t = String::from("assets/enumsmhwilds.json"))]
     enums: String,
 
     #[arg(long)]
@@ -98,6 +95,57 @@ fn find_files_with_extension(base_dir: PathBuf, extension: &str) -> Vec<PathBuf>
 fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
+
+    /*let rsz_file = File::open(&args.rsz)?;
+    let mut enums_file = File::open(&args.enums)?;
+    let mut data = Vec::new();
+    enums_file.read_to_end(&mut data)?;
+    let enums_file = File::open(&args.enums)?;
+    let type_map = TypeMap::from_reader(rsz_file, enums_file)?;*/
+    /*println!("Took {time_taken}ms to load map");
+    type_map.to_bincode("rszmhwilds.bin")?;*/
+
+    /*println!("loading from bincode");
+    let now = SystemTime::now();
+    let data = std::fs::read("./assets/types.bin")?;
+    let type_map = TypeMap::parse_bincode(&data)?;
+    let time_taken = now.elapsed().unwrap().as_millis();
+    println!("Took {time_taken}ms to load map");
+
+    let _ = RszDump::get_struct(0);
+
+    if let Some(file) = &args.file_name {
+        let now = SystemTime::now();
+        let f = File::open(file)?;
+        let user = User::new(f)?;
+        let rsz = user.rsz;
+        let data = Cursor::new(rsz.data);
+        let hash_map = HashMap::new();
+        let mut rsz_deserializer = RszDeserializer::new(data, &rsz.roots, &rsz.type_descriptors, &type_map, &hash_map);
+        let rsz = rsz_deserializer.deserialize()?;
+        let rsz_with_ctx = RszWithCtx {
+            rsz: &rsz,
+            type_map: &type_map
+        };
+        let file = File::create("outputs/tests/enum_rsz.json")?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer_pretty(writer, &rsz_with_ctx)?;
+        //println!("{:#?}", rsz);
+        println!("Enum Rsz took {}ms", now.elapsed()?.as_millis());
+    }
+    if let Some(file) = &args.file_name {
+        let now = SystemTime::now();
+        let f = File::open(file)?;
+        let user = User::new(f)?;
+        let dersz = user.rsz.deserialize_to_dersz()?;
+        let file = File::create("outputs/tests/shit_rsz.json")?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer_pretty(writer, &dersz)?;
+        //println!("{:#?}", rsz);
+        println!("Dyn Rsz took {}ms", now.elapsed()?.as_millis());
+    }*/
+
+
     // Ugly but will change later
     let rsz_file = std::env::var("RSZ_FILE").unwrap_or_else( 
         |_| {

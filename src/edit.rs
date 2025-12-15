@@ -1,11 +1,19 @@
 use std::{any::Any, collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 
-use eframe::egui::{CollapsingHeader, TextEdit, Ui};
+use eframe::egui::{self, CollapsingHeader, Color32, Label, RichText, Sense, TextEdit, Ui, WidgetText, collapsing_header::{CollapsingState, HeaderResponse}};
 use half::f16;
 
-use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{SaveFile, types::{Array, Class, FieldType}}, util::murmur3};
+use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Mandrake, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{SaveFile, types::{Array, Class, FieldType}}};
+use util::*;
 
 pub type EditableFile = dyn Edit;
+
+#[derive(Debug, Clone)]
+pub enum CopyBuffer {
+    Null,
+    Array(u32, Array),
+    Class(u32, Class),
+}
 
 type C<'a> = RszEditCtx<'a>;
 pub trait Edit: Any {
@@ -19,18 +27,131 @@ pub struct RszEditCtx<'a> {
     objects: &'a mut Vec<RszFieldsValue>,
     parent: Option<&'a RszStruct<RszField>>,
     id: u64,
+    // hash, value, is_array
+    copy_buffer: &'a mut CopyBuffer,
 }
 
 impl<'a> RszEditCtx<'a> {
-    pub fn new(root: u32, objects: &'a mut Vec<RszFieldsValue>) -> Self {
+    pub fn new(root: u32, objects: &'a mut Vec<RszFieldsValue>, copy_buffer: &'a mut CopyBuffer) -> Self {
         Self {
             root: Some(root),
             objects,
             parent: None,
             field: None,
-            id: 0
+            id: 0,
+            copy_buffer
         }
     }
+    pub fn make_new(ctx: &'a mut Self, root: Option<u32>) -> Self {
+        Self{
+            root: root,
+            objects: ctx.objects,
+            parent: ctx.parent,
+            field: ctx.field,
+            id: ctx.id + 1,
+            copy_buffer: ctx.copy_buffer
+        }
+    }
+}
+
+pub fn add_copyable_field(ui: &mut Ui, item: &mut Box<dyn DeRszInstance>, field: &RszField, ctx: &mut C) {
+    let label = format!("{}: {}", &field.name, &field.original_type);
+    let id = ui.make_persistent_id(ctx.id);
+    let state = CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let mut toggle = false;
+    let mut header_response = state.show_header(ui, |ui| {
+            let label_response = ui.add(Label::new(label).sense(Sense::click()).selectable(false));
+            if label_response.clicked() {
+                toggle = true;
+            }
+            if let Some(item) = item.as_any().downcast_ref::<Class>() {
+                if ui.button("Copy").clicked() {
+                    let hash = murmur3(&field.original_type, 0xffffffff);
+                        *ctx.copy_buffer = CopyBuffer::Class(hash, item.clone());
+                }
+            }
+            else if let Some(item) = item.as_any().downcast_ref::<Array>() {
+                if ui.button("Copy").clicked() {
+                    let hash = murmur3(&field.original_type, 0xffffffff);
+                        *ctx.copy_buffer = CopyBuffer::Array(hash, item.clone());
+                }
+            }
+            if let CopyBuffer::Class(copied_hash, copied_item) = ctx.copy_buffer {
+                let hash = murmur3(&field.original_type, 0xffffffff);
+                if *copied_hash == hash  {
+                    if ui.button("Paste").clicked() {
+                        *item = Box::new(copied_item.clone());
+                        *ctx.copy_buffer = CopyBuffer::Null
+                    }
+                }
+            } else if let CopyBuffer::Array(copied_hash, copied_item) = ctx.copy_buffer {
+                let hash = murmur3(&field.original_type, 0xffffffff);
+                if *copied_hash == hash  {
+                    if ui.button("Paste").clicked() {
+                        *item = Box::new(copied_item.clone());
+                        *ctx.copy_buffer = CopyBuffer::Null
+                    }
+                }
+            }
+            label_response
+        });
+    if toggle {
+        header_response.toggle();
+    }
+    header_response.body(|ui| {
+            item.edit(ui, ctx);
+        });
+}
+
+pub fn add_copyable_element(ui: &mut Ui, item: &mut Box<dyn DeRszInstance>, index: u64, ctx: &mut C) {
+    let label = format!("{index}: ");
+    let id = ui.make_persistent_id(ctx.id);
+    let state = CollapsingState::load_with_default_open(ui.ctx(), id, false);
+    let mut toggle = false;
+    let mut header_response = state.show_header(ui, |ui| {
+            let label_response = ui.add(Label::new(label).sense(Sense::click()).selectable(false));
+            if label_response.clicked() {
+                toggle = true;
+            }
+            if let Some(field) = ctx.field {
+                if let Some(item) = item.as_any().downcast_ref::<Class>() {
+                    if ui.button("Copy").clicked() {
+                        let hash = murmur3(&field.original_type, 0xffffffff);
+                        *ctx.copy_buffer = CopyBuffer::Class(hash, item.clone());
+                    }
+                }
+                else if let Some(item) = item.as_any().downcast_ref::<Array>() {
+                    if ui.button("Copy").clicked() {
+                        let hash = murmur3(&field.original_type, 0xffffffff);
+                        *ctx.copy_buffer = CopyBuffer::Array(hash, item.clone());
+                    }
+                }
+                if let CopyBuffer::Class(copied_hash, copied_item) = ctx.copy_buffer {
+                    let hash = murmur3(&field.original_type, 0xffffffff);
+                    if *copied_hash == hash  {
+                        if ui.button("Paste").clicked() {
+                            *item = Box::new(copied_item.clone());
+                            *ctx.copy_buffer = CopyBuffer::Null
+                        }
+                    }
+                } else if let CopyBuffer::Array(copied_hash, copied_item) = ctx.copy_buffer {
+                    let hash = murmur3(&field.original_type, 0xffffffff);
+                    if *copied_hash == hash  {
+                        if ui.button("Paste").clicked() {
+                            *item = Box::new(copied_item.clone());
+                            *ctx.copy_buffer = CopyBuffer::Null
+                        }
+                    }
+                }
+            }
+            label_response
+    });
+    if toggle {
+        header_response.toggle();
+    }
+    header_response.body(|ui| {
+        item.edit(ui, ctx);
+    });
 }
 
 // edit with no needed ctx
@@ -53,7 +174,6 @@ macro_rules! derive_edit_num {
 
 impl<'a> Edit for Vec<Box<dyn DeRszInstance>> {
     fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditCtx) {
-        //println!("before: {:?}", self);
         for (i, item) in self.iter_mut().enumerate() {
             ctx.id += 1;
             let mut new_ctx = RszEditCtx {
@@ -62,16 +182,10 @@ impl<'a> Edit for Vec<Box<dyn DeRszInstance>> {
                 objects: ctx.objects,
                 parent: ctx.parent,
                 id: ctx.id,
+                copy_buffer: ctx.copy_buffer
             };
-            //println!("{:?}", item);
-            CollapsingHeader::new(format!("{i}:"))
-                .id_salt(ctx.id)
-                .show(ui, |ui| {
-                    item.edit(ui, &mut new_ctx);
-                });
-            //println!("after {:?}", item);
+            add_copyable_element(ui, item, i as u64, &mut new_ctx);
         };
-        //println!("after: {:?}", self);
     }
 }
 
@@ -85,12 +199,11 @@ impl<'a, T: 'static + Edit + Debug + Clone> Edit for Vec<T> {
                 objects: ctx.objects,
                 parent: ctx.parent,
                 id: ctx.id,
+                copy_buffer: ctx.copy_buffer
             };
-            CollapsingHeader::new(format!("{i}:"))
-                .id_salt(ctx.id)
-                .show(ui, |ui| {
-                    item.edit(ui, &mut new_ctx);
-                });
+            CollapsingHeader::new(format!("{i}:")).show(ui, |ui| {
+                item.edit(ui, &mut new_ctx);
+            });
         };
     }
 }
@@ -105,6 +218,7 @@ impl<'a, T: 'static + Edit + Debug +  Clone, const N: usize> Edit for [T; N] {
                 field: ctx.field,
                 parent: ctx.parent,
                 id: ctx.id,
+                copy_buffer: ctx.copy_buffer
             };
             CollapsingHeader::new(format!("{i}:"))
                 .id_salt(ctx.id)
@@ -154,19 +268,21 @@ impl Edit for Object {
                         }
                     }
                 } else {
+                    ctx.id += 1;
                     let mut new_ctx = RszEditCtx {
                         root: None,
                         field: Some(&field),
                         objects: ctx.objects,
                         parent: Some(struct_desc),
                         id: ctx.id,
+                        copy_buffer: ctx.copy_buffer
                     };
-                    ctx.id += 1;
-                    CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                        .id_salt(ctx.id)
-                        .show(ui, |ui| {
-                            obj.edit(ui, &mut new_ctx);
-                        });
+                    add_copyable_field(ui, obj, field, &mut new_ctx);
+                    /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                      .id_salt(ctx.id)
+                      .show(ui, |ui| {
+                      obj.edit(ui, &mut new_ctx);
+                      });*/
                 }
             });
         }
@@ -194,19 +310,21 @@ impl Edit for Object {
                         }
                     }
                 } else {
+                    ctx.id += 1;
                     let mut new_ctx = RszEditCtx {
                         root: None,
                         field: Some(&field),
                         objects: ctx.objects,
                         parent: Some(struct_desc),
                         id: ctx.id,
+                        copy_buffer: ctx.copy_buffer
                     };
-                    ctx.id += 1;
-                    CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                        .id_salt(ctx.id)
-                        .show(ui, |ui| {
-                            obj.edit(ui, &mut new_ctx);
-                        });
+                    add_copyable_field(ui, obj, field, &mut new_ctx);
+                    /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                      .id_salt(ctx.id)
+                      .show(ui, |ui| {
+                      obj.edit(ui, &mut new_ctx);
+                      });*/
                 }
             });
         } else {
@@ -220,15 +338,17 @@ impl Edit for Object {
                     objects: ctx.objects,
                     parent: Some(struct_desc),
                     id: ctx.id,
+                    copy_buffer: ctx.copy_buffer
                 };
                 if let Some(_obj) = item.as_any().downcast_ref::<Object>() {
                     ui.horizontal(|ui| {
                         //ui.label(&field_info.name);
-                        CollapsingHeader::new(format!("{}: {}", &field_info.name, &field_info.original_type))
-                            .id_salt(ctx.id)
-                            .show(ui, |ui| {
-                                item.edit(ui, &mut new_ctx);
-                            });
+                        add_copyable_field(ui, item, field_info, &mut new_ctx);
+                        /*CollapsingHeader::new(format!("{}: {}", &field_info.name, &field_info.original_type))
+                          .id_salt(ctx.id)
+                          .show(ui, |ui| {
+                          item.edit(ui, &mut new_ctx);
+                          });*/
                     });
                 } else {
                     ui.horizontal(|ui| {
@@ -398,6 +518,7 @@ impl Edit for Nullable {
 
 impl Edit for StructData {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+        let original_type = &ctx.field.unwrap().original_type;
         let hash = *RszDump::name_map().get(&ctx.field.unwrap().original_type).unwrap();
         let data = Box::new(Cursor::new(self.0.clone()));
         let fake_extern = HashMap::new();
@@ -408,6 +529,7 @@ impl Edit for StructData {
         registry.init();
         let t = ctx.field.unwrap().r#type.clone();
         let dersz_fn = registry.get(t.as_str());
+        let dersz_fn_obj = registry.get(original_type.as_str());
 
         let mut registry = DeRszRegistry::new();
         registry.init();
@@ -421,7 +543,18 @@ impl Edit for StructData {
             cur_hash,
             field,
         };
-        if let Ok(dersz_fn) = dersz_fn {
+
+        if let Ok(dersz_fn) = dersz_fn_obj {
+            let mut x: Box<dyn DeRszInstance> = dersz_fn(&mut de_ctx).unwrap();
+            x.edit(ui, ctx);
+            let mut data = Cursor::new(Vec::<u8>::new());
+            let mut ser_ctx = RszSerializerCtx {
+                data: &mut data,
+                base_addr: 0
+            };
+            x.to_bytes(&mut ser_ctx).unwrap();
+            self.0 = data.into_inner();
+        } else if let Ok(dersz_fn) = dersz_fn {
             let mut x: Box<dyn DeRszInstance> = dersz_fn(&mut de_ctx).unwrap();
             x.edit(ui, ctx);
             let mut data = Cursor::new(Vec::<u8>::new());
@@ -464,22 +597,25 @@ impl Edit for Struct {
                     objects: ctx.objects,
                     parent: Some(struct_desc),
                     id: ctx.id,
+                    copy_buffer: ctx.copy_buffer
                 };
                 match field.r#type.as_str() {
                     "Object" | "Struct" => {
-                        CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                            .id_salt(ctx.id)
-                            .show(ui, |ui| {
-                                field_value.edit(ui, &mut new_ctx);
-                            });
+                        add_copyable_field(ui, field_value, field, &mut new_ctx);
+                        /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                          .id_salt(ctx.id)
+                          .show(ui, |ui| {
+                          field_value.edit(ui, &mut new_ctx);
+                          });*/
                     }
                     _ => {
                         if field.array {
-                            CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                                .id_salt(ctx.id)
-                                .show(ui, |ui| {
-                                    field_value.edit(ui, &mut new_ctx);
-                                });
+                            add_copyable_field(ui, field_value, field, &mut new_ctx);
+                            /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                              .id_salt(ctx.id)
+                              .show(ui, |ui| {
+                              field_value.edit(ui, &mut new_ctx);
+                              });*/
                         }
                         else {
                             ui.horizontal(|ui| {
@@ -507,15 +643,11 @@ impl Edit for Array {
                 objects: ctx.objects,
                 parent: ctx.parent,
                 id: ctx.id,
+                copy_buffer: ctx.copy_buffer
             };
             //println!("{:?}", item);
             if self.field_type == FieldType::Class || self.field_type == FieldType::Struct {
-                CollapsingHeader::new(format!("{i}:"))
-                    .id_salt(ctx.id)
-                    .show(ui, |ui| {
-                        value.edit(ui, &mut new_ctx);
-                    });
-
+                add_copyable_element(ui, value, i as u64, &mut new_ctx);
             } else {
                 ui.horizontal(|ui| {
                     ui.label(format!("  {}", &i));
@@ -537,22 +669,25 @@ impl Edit for Class {
                     field: Some(&field),
                     objects: ctx.objects, parent: Some(struct_desc),
                     id: ctx.id,
+                    copy_buffer: ctx.copy_buffer
                 };
                 match field.r#type.as_str() {
                     "Object" | "Struct" => {
-                        CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                            .id_salt(ctx.id)
-                            .show(ui, |ui| {
-                                field_value.edit(ui, &mut new_ctx);
-                            });
+                        add_copyable_field(ui, field_value, field, &mut new_ctx);
+                        /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                          .id_salt(ctx.id)
+                          .show(ui, |ui| {
+                          field_value.edit(ui, &mut new_ctx);
+                          });*/
                     }
                     _ => {
                         if field.array {
-                            CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                                .id_salt(ctx.id)
-                                .show(ui, |ui| {
-                                    field_value.edit(ui, &mut new_ctx);
-                                });
+                            add_copyable_field(ui, field_value, field, &mut new_ctx);
+                            /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                              .id_salt(ctx.id)
+                              .show(ui, |ui| {
+                              field_value.edit(ui, &mut new_ctx);
+                              });*/
                         }
                         else {
                             ui.horizontal(|ui| {
@@ -562,29 +697,32 @@ impl Edit for Class {
                         }
                     }
                 }
-            } else if let Some((k, field_value)) = self.fields.get_index_mut(_i) {
+            } else if let Some((_k, field_value)) = self.fields.get_index_mut(_i) {
                 ctx.id += 1;
                 let mut new_ctx = RszEditCtx {
                     root: None,
                     field: Some(&field),
                     objects: ctx.objects, parent: Some(struct_desc),
                     id: ctx.id,
+                    copy_buffer: ctx.copy_buffer
                 };
                 match field.r#type.as_str() {
                     "Object" | "Struct" => {
-                        CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                            .id_salt(ctx.id)
-                            .show(ui, |ui| {
-                                field_value.edit(ui, &mut new_ctx);
-                            });
+                        add_copyable_field(ui, field_value, field, &mut new_ctx);
+                        /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                          .id_salt(ctx.id)
+                          .show(ui, |ui| {
+                          field_value.edit(ui, &mut new_ctx);
+                          });*/
                     }
                     _ => {
                         if field.array {
-                            CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                                .id_salt(ctx.id)
-                                .show(ui, |ui| {
-                                    field_value.edit(ui, &mut new_ctx);
-                                });
+                            add_copyable_field(ui, field_value, field, &mut new_ctx);
+                            /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
+                              .id_salt(ctx.id)
+                              .show(ui, |ui| {
+                              field_value.edit(ui, &mut new_ctx);
+                              });*/
                         }
                         else {
                             ui.horizontal(|ui| {
@@ -604,18 +742,14 @@ impl Edit for Class {
 
 impl Edit for SaveFile {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
-        ctx.id += 1;
-        CollapsingHeader::new(format!("data"))
-            .id_salt(ctx.id)
-            .show(ui, |ui| {
-                self.data.edit(ui, ctx);
-            });
-        ctx.id += 1;
-        CollapsingHeader::new(format!("detail"))
-            .id_salt(ctx.id)
-            .show(ui, |ui| {
-                self.detail.edit(ui, ctx);
-            });
+        for field in &mut self.fields {
+            ctx.id += 1;
+            CollapsingHeader::new(format!("{:08x}", field.0))
+                .id_salt(ctx.id)
+                .show(ui, |ui| {
+                    field.1.edit(ui, ctx);
+                });
+        }
     }
 }
 
@@ -630,7 +764,7 @@ impl Edit for DeRsz {
                 (hash, field_values)
             };
             let _root_type = RszDump::get_struct(hash).unwrap();
-            let mut ctx = RszEditCtx::new(*root, &mut self.structs);
+            let mut ctx = RszEditCtx::new(*root, &mut self.structs, _ctx.copy_buffer);
             field_values.edit(ui, &mut ctx);
         }
     }
@@ -654,4 +788,26 @@ impl Edit for StringU16 {
         let encoded: Vec<u16> = disp.encode_utf16().collect();
         *self = StringU16(encoded)
     }
+}
+
+impl Edit for Mandrake {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C) {
+        if let Some(mut real_val) = self.get() {
+            ui.horizontal(|ui| {
+                ui.label("  real_value");
+                real_val.edit(ui, ctx);
+            });
+            self.set(real_val);
+        }
+        ui.horizontal(|ui| {
+            ui.label("  v");
+            ui.label(format!("{}", self.v));
+        });
+        ui.horizontal(|ui| {
+            ui.label("  m");
+            ui.label(format!("{}", self.m));
+        });
+
+    }
+
 }

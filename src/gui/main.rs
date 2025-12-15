@@ -2,7 +2,7 @@ use core::f32;
 use std::{fs::{File, create_dir_all}, path::PathBuf, sync::mpsc::{self, Receiver, Sender}};
 
 use eframe::egui::{self, Key, ScrollArea, TextEdit, Vec2};
-use mhtame::{edit::{Edit, RszEditCtx}, file::{FileReader, StructRW}, rsz::{dump::{ENUM_FILE, RSZ_FILE}, rszserde::DeRsz}, save::{SaveContext, SaveFile}};
+use mhtame::{edit::{CopyBuffer, Edit, RszEditCtx}, file::{FileReader, StructRW}, rsz::{dump::{ENUM_FILE, RSZ_FILE}, rszserde::{DeRsz, DeRszInstance}}, save::{SaveContext, SaveFile, types::{Array, Class}}};
 use clap::{Parser};
 
 #[derive(Parser, Debug)]
@@ -18,10 +18,10 @@ pub struct GuiArgs {
     #[arg(long)]
     steamid: Option<String>,
 
-    #[arg(long, default_value_t = String::from("rszmhwilds_packed.json"))]
+    #[arg(long, default_value_t = String::from("assets/rszmhwilds_packed.json"))]
     rsz_path: String,
 
-    #[arg(long, default_value_t = String::from("enums.json"))]
+    #[arg(long, default_value_t = String::from("assets/enumsmhwilds.json"))]
     enums_path: String,
 }
 
@@ -57,6 +57,7 @@ pub struct TameApp {
     output_path: PathBuf,
     show_popup: bool,
     popup_msg: String,
+    copy_buffer: CopyBuffer
 }
 
 impl TameApp {
@@ -83,7 +84,8 @@ impl TameApp {
             current_file: None,
             output_path: PathBuf::from("./outputs/saves/"),
             show_popup: false,
-            popup_msg: String::from("")
+            popup_msg: String::from(""),
+            copy_buffer: CopyBuffer::Null,
         }
 
     }
@@ -105,7 +107,8 @@ impl Default for TameApp {
             current_file: None,
             output_path: PathBuf::from("./outputs/saves/"),
             show_popup: false,
-            popup_msg: String::from("")
+            popup_msg: String::from(""),
+            copy_buffer: CopyBuffer::Null,
         }
     }
 }
@@ -189,8 +192,12 @@ impl eframe::App for TameApp {
                     if std::fs::exists(&self.file_name).unwrap_or(false) {
                         match File::open(&self.file_name) {
                             Ok(mut reader) => {if let Some(steamid) = self.steam_id {
-                                    if let Ok(save) = SaveFile::read(&mut reader, &mut SaveContext { key: steamid }) {
-                                        self.current_file = Some(save);
+                                    match SaveFile::read(&mut reader, &mut SaveContext { key: steamid }) {
+                                        Ok(save) => {
+                                            println!("Loaded Save");
+                                            self.current_file = Some(save)
+                                        },
+                                        Err(e) => eprintln!("Failed to load save: {e:?}")
                                     }
                                 }
                             }
@@ -271,7 +278,8 @@ impl eframe::App for TameApp {
                 ui.style_mut().override_font_id = Some(egui::FontId::monospace(14.0));
                 if let Some(cur_file) = self.current_file.as_mut() {
                     let mut fake_structs = Vec::new();
-                    let mut ctx = RszEditCtx::new(0, &mut fake_structs);
+
+                    let mut ctx = RszEditCtx::new(0, &mut fake_structs, &mut self.copy_buffer);
                     cur_file.edit(ui, &mut ctx);
                 }
             })

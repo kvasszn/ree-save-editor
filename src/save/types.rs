@@ -1,9 +1,10 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, io::{Read, Seek}};
+use std::{collections::{HashSet, VecDeque}, io::{Read, Seek}};
 
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
 
-use crate::{align::seek_align_up, reerr::Result, rsz::{self, dump::{RszDump, RszField, enum_map}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, RszSerializerCtx, StringU16, StructData}}, util::murmur3};
+use crate::{reerr::Result, rsz::{self, dump::{RszDump, RszField, enum_map}, rszserde::{DeRsz, DeRszInstance, Object, RszFieldsValue, StringU16, StructData}}};
+use util::*;
 use crate::file::*;
 
 #[repr(i32)]
@@ -12,11 +13,12 @@ pub enum ArrayType {
     Value = 0,
     Class = 1,
 }
-//
+// Some of this stuff comes from via.reflection.TypeKind
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, TryFromPrimitive, PartialEq, Eq)]
 pub enum FieldType {
     Array = -1,
+    //Unknown = 0, // i have no idea wtf this means
     Enum = 0x1,
     Boolean = 0x2,
     S8 = 0x3,
@@ -28,12 +30,11 @@ pub enum FieldType {
     S64 = 0x9,
     U64 = 0xa,
     F32 = 0xb,
-    //F64 = 0xc, // this is a guess
-    //C8 = 0xd, // guess, wtf even aer these lol, oh just char8 and char 16 probably, i dont think
-    //they're used at all though
-    //C16 = 0xe, // guess
+    F64 = 0xc,
+    C8 = 0xd,
+    C16 = 0xe,
     String = 0xf, // U16
-    Struct = 0x10, // this might overlap with something else or just be wrong rip
+    Struct = 0x10,
     Class = 0x11,
 }
 
@@ -46,8 +47,9 @@ impl<'a> TryFrom<&'a RszField> for FieldType {
         if enum_map().get(&value.original_type).is_some() {
            return Ok(Self::Enum)
         }
-        let s = value.r#type.clone();
+        let _s = value.r#type.clone();
         Ok(match value.r#type.as_str() {
+            //"Unknown" => Self::Unknown,
             "Bool" => Self::Boolean,
             "S8" => Self::S8,
             "U8" => Self::U8,
@@ -58,10 +60,12 @@ impl<'a> TryFrom<&'a RszField> for FieldType {
             "S64" => Self::S64,
             "U64" => Self::U64,
             "F32" => Self::F32,
-            //"F64" => Self::F64,
+            "F64" => Self::F64,
+            "C8" => Self::C8,
+            "C16" => Self::C16,
+            "Char" => Self::C8,
             "String" => Self::String,
             "Struct" | "Guid" => Self::Struct,
-            //"Guid" => Self::Guid,
             "Class" | "Object" => Self::Class,
             _ => Self::Struct,
             //_ => return Err(format!("String value not in FieldType {s}"))
@@ -262,6 +266,7 @@ pub fn read_value<R: Read + Seek>(stream: &mut R, field_type: FieldType, field_s
         }
     }
     let value: Box<dyn DeRszInstance> = match field_type {
+        //FieldType::Unknown => return Err(format!("Found Unknown Field Type").into()),
         FieldType::Boolean => Box::new(u8::read(stream, &mut ())? != 0),
         FieldType::U8 => Box::new(u8::read(stream, &mut ())?),
         FieldType::U16 => Box::new(u16::read(stream, &mut ())?),
@@ -272,7 +277,9 @@ pub fn read_value<R: Read + Seek>(stream: &mut R, field_type: FieldType, field_s
         FieldType::S32 | FieldType::Enum => Box::new(i32::read(stream, &mut ())?),
         FieldType::S64 => Box::new(i64::read(stream, &mut ())?),
         FieldType::F32 => Box::new(f32::read(stream, &mut ())?),
-        //FieldType::F64 => Box::new(i64::read(stream, &mut ())?),
+        FieldType::F64 => Box::new(i64::read(stream, &mut ())?),
+        FieldType::C8 => Box::new(u8::read(stream, &mut ())?),
+        FieldType::C16 => Box::new(u16::read(stream, &mut ())?),
         FieldType::String => {
             seek_align_up(stream, 4)?;
             let len = u32::read(stream, &mut ())? as usize;
@@ -290,7 +297,29 @@ pub fn read_value<R: Read + Seek>(stream: &mut R, field_type: FieldType, field_s
             Box::new(Class::read(stream, &mut ())?)
         },
         FieldType::Array => Box::new(Array::read(stream, &mut ())?),
-        FieldType::Struct => Box::new(StructData(<Vec<u8>>::read(stream, &mut (field_size.expect("Struct Field Type requires field size") as usize))?)),
+        FieldType::Struct => {
+            if let Some(size) = field_size {
+                // TODO: FIX THIS WHEN WRITING
+                //let pos = stream.stream_position()?;
+                // For some reason this is required for reading everything in pragmata
+                // NEED TO FIX ASDADAKLJS DLKASJD KLASJ
+                /*if size == 24 {
+                    if pos % 32 > 16 {
+                        let offset = 32 - (pos % 16);
+                        stream.seek(std::io::SeekFrom::Current(offset as i64))?;
+                    } else {
+                        stream.seek_align_up(16)?;
+                    }
+                } else if size == 32 {
+                    let offset = 32 - (pos % 16);
+                    stream.seek(std::io::SeekFrom::Current(offset as i64))?;
+                } else {
+                    stream.seek_align_up(size as u64)?;
+                }*/
+                //stream.seek_align_up(size as u64)?;
+            }
+            Box::new(StructData(<Vec<u8>>::read(stream, &mut (field_size.expect("Struct Field Type requires field size") as usize))?))
+        },
     };
     Ok(value)
 }

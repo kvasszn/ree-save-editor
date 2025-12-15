@@ -201,7 +201,7 @@ pub fn derive_struct_rw(input: TokenStream) -> TokenStream {
                             if let Some(offsets) = offsets {
                                 val_res = quote! {
                                     {
-                                        let pos = reader.tell()?;
+                                        let pos = reader.stream_position()?;
                                         let v = #offsets.iter().map(|x| {
                                             reader.seek(std::io::SeekFrom::Start((*x).into()))?;
                                             <#ty>::read(reader, ctx)
@@ -215,7 +215,7 @@ pub fn derive_struct_rw(input: TokenStream) -> TokenStream {
                                     Some(offset) =>  {
                                         val_res = quote! {
                                             {
-                                                let pos = reader.tell()?;
+                                                let pos = reader.stream_position()?;
                                                 reader.seek(std::io::SeekFrom::Start(#offset.into()))?;
                                                 let v = (0..#count).map(|x| {
                                                     <#ty>::read(reader, ctx)
@@ -241,7 +241,7 @@ pub fn derive_struct_rw(input: TokenStream) -> TokenStream {
                             if let Some(offset) = offset {
                                 val_res = quote! {
                                     {
-                                        let pos = reader.tell()?;
+                                        let pos = reader.stream_position()?;
                                         let end = reader.seek(std::io::SeekFrom::End(0))?;
                                         reader.seek(std::io::SeekFrom::Start(#offset.into()))?;
                                         let remaining = end - #offset;

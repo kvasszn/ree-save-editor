@@ -4,18 +4,15 @@ pub mod types;
 use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
 use flate2::{Compression, write::{DeflateDecoder, DeflateEncoder}};
-use crate::{util::murmur3, file::{Magic, StructRW}, rsz::rszserde::{DeRszInstance, RszSerializerCtx}, save::types::Class};
+use crate::{file::{Magic, StructRW}, rsz::rszserde::{DeRszInstance, RszSerializerCtx}, save::types::Class};
 
-use crate::file_ext::SeekExt;
+use util::*;
 
 use crypt::Mandarin;
 
 #[derive(Debug)]
 pub struct SaveFile {
-    pub data_murmur: u32,
-    pub data: Class, //Box<dyn DeRszInstance>,
-    pub detail_murmur: u32,
-    pub detail: Class,
+    pub fields: Vec<(u32, Class)>
 }
 
 pub struct SaveContext {
@@ -34,10 +31,10 @@ impl SaveFile {
         };
 
         // write some unk bytes (i forget if this is the type hash or what, might be a murmur?)
-        self.data_murmur.to_bytes(&mut ctx).unwrap();
-        self.data.to_bytes(&mut ctx).unwrap();
-        self.detail_murmur.to_bytes(&mut ctx).unwrap();
-        self.detail.to_bytes(&mut ctx).unwrap();
+        for field in &self.fields {
+            field.0.to_bytes(&mut ctx)?;
+            field.1.to_bytes(&mut ctx)?;
+        }
 
         // compression
         let decompressed_size: u64 = data.get_ref().len() as u64;
@@ -123,25 +120,13 @@ impl StructRW<SaveContext> for SaveFile {
                 } else {ctx.key};
                 let decrypted_buf = Mandarin::decrypt(&encrypted, decrypted_len as u64, key)?;
                 println!("[Decrypted]");
-                /*let encrypted_buf = Mandarin::encrypt(&decrypted_buf, key)?;
-                  println!("[Re-Encrypted]");
-                  let mut data_cursor = Cursor::new(Vec::new());
-                  data_cursor.write_all(b"DSSS")?;
-                  data_cursor.write_all(&version.to_le_bytes())?;
-                  data_cursor.write_all(&flags.to_le_bytes())?;
-                  data_cursor.write_all(&_save_or_user_i_think.to_le_bytes())?;
-                  data_cursor.write_all(&encrypted_buf)?;
-                  data_cursor.write_all(&decrypted_len.to_le_bytes())?;
-                  let data = &data_cursor.into_inner();
-                  let file_hash = murmur3::Hash32::hash_with_seed(&data, 0xffffffff);
-                  let mut f = File::create("./outputs/saves/sanity/recrypt.bin").unwrap();
-                  f.write_all(&data)?;
-                  f.write_all(&file_hash.to_le_bytes())?;
-                  let mut f = File::create("./outputs/tests/decrypted.bin").unwrap();
-                  f.write_all(&decrypted_buf)?;*/
-
+                decrypted_buf
+            } else {
+                encrypted
+            };
+            let data = if deflate {
                 // Decompression
-                let mut decrypted_buf = Cursor::new(&decrypted_buf);
+                let mut decrypted_buf = Cursor::new(&data);
                 // this is so fucking stupid
                 let _compressed_size_from_afterthis = u64::read(&mut decrypted_buf, &mut ())?;
                 let _unk = u32::read(&mut decrypted_buf, &mut ())?; // this is just 1?
@@ -155,60 +140,23 @@ impl StructRW<SaveContext> for SaveFile {
                 if decompressed_size != decompressed.len() as u64 {
                     println!("[Decompression] expected size not equal to buffer size: continuing...");
                 }
-                /*let mut f = File::create("./outputs/tests/stream.bin").unwrap();
-                  f.write_all(b"aaaaaaaaaaaaaaaa")?;
-                  f.write_all(&decompressed)?;*/
-                /*{
-                //let mut compressor = libdeflater::Compressor::new(CompressionLvl::new(4).unwrap());
-                //let mut compressed = vec![0u8; 0x100000];
-                //let compressed_size = compressor.deflate_compress(&decompressed, &mut compressed).unwrap() as u64;
-                let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(5));
-                encoder.write_all(&decompressed)?;
-                let compressed_data = encoder.finish()?;
-                let compressed_size = compressed_data.len() as u64;
-                let mut data = Cursor::new(Vec::<u8>::new());
-                data.write(&(compressed_size + 0x10).to_le_bytes())?;
-                data.write(&(1u32).to_le_bytes())?;
-                data.write(&(compressed_size as u32).to_le_bytes())?;
-                data.write(&decompressed_size.to_le_bytes())?;
-                data.write(&compressed_data[..compressed_size as usize])?;
-                let mut f = File::create("./outputs/saves/sanity/recompressed.bin").unwrap();
-                f.write_all(&data.get_ref())?;
-                let decrypted_len: u64 = data.get_ref().len() as u64;
-                println!("recompressed_buf_len={decrypted_len:x}");
-
-                let encrypted_buf = Mandarin::encrypt(&data.get_ref(), key)?;
-                println!("[Re-Encrypted]");
-                let mut data_cursor = Cursor::new(Vec::new());
-                data_cursor.write_all(b"DSSS")?;
-                data_cursor.write_all(&version.to_le_bytes())?;
-                data_cursor.write_all(&flags.to_le_bytes())?;
-                data_cursor.write_all(&_save_or_user_i_think.to_le_bytes())?;
-                data_cursor.write_all(&encrypted_buf)?;
-                data_cursor.write_all(&decrypted_len.to_le_bytes())?;
-                let data = &data_cursor.into_inner();
-                let file_hash = murmur3::Hash32::hash_with_seed(&data, 0xffffffff);
-                let mut f = File::create("./outputs/saves/sanity/recrypt_recompress.bin").unwrap();
-                f.write_all(&data)?;
-                f.write_all(&file_hash.to_le_bytes())?;
-                }*/
-
                 println!("[Decompressed]");
                 decompressed
-            } else {
-                encrypted
-            };
+            } else {data};
+
+            //std::fs::write("./outputs/tests/pragmata_decrypted.bin", &data)?;
             let data = &mut Cursor::new(&data);
-            let unk = u32::read(data, &mut ())?;
-            let savedata = types::Class::read(data, &mut ())?;
-            let unk2 = u32::read(data, &mut ())?;
-            let detail = types::Class::read(data, &mut ())?;
+            let mut fields = Vec::new();
+            while let Ok(h) = u32::read(data, &mut ()) {
+                if let Ok(field_value) = types::Class::read(data, &mut ()) {
+                    fields.push((h, field_value));
+                } else {
+                    break;
+                }
+            }
 
             Ok(SaveFile {
-                data_murmur: unk,
-                data: savedata,
-                detail_murmur: unk2,
-                detail
+                fields
             })
         }
 }
