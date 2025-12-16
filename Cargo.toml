@@ -7,16 +7,17 @@ edition = "2024"
 
 [workspace]
 members = [
-    ".", "file_macros", "rsz_macros" , "sdk", "util"
+    ".", "file_macros", "rsz_macros" , "sdk", "util", "gui"
 ]
 
-[[bin]]
-name = "mhtame-gui"
-path = "src/gui/main.rs"
-
+#[[bin]]
+#name = "mhtame-gui"
+#path = "src/gui/main.rs"
 
 [features]
 default = []
+tex = ["dep:libdeflater"]
+tdb = []
 save = []
 
 [dependencies]
@@ -40,8 +41,6 @@ syn = "2.0.100"
 proc-macro2 = "1.0.94"
 log = "0.4.27"
 env_logger = "0.11.8"
-libdeflater = {git = "https://github.com/c-ola/libdeflater.git", branch = "master", features=["freestanding"]}
-#libdeflater = {path = "../libdeflater/", features = ["freestanding"] }
 num_enum = "0.7.4"
 hex-literal = "1.0.0"
 bytemuck = {version = "1.24.0", features = ["derive"]}
@@ -56,17 +55,25 @@ half = { version = "2.7.1", features = ["serde"] }
 flate2 = {version = "1.1.5", features = ["rust_backend"], default-features = false}
 cityhasher = "0.1.0"
 murmur3 = "0.5.2"
-shellexpand = "3.1.1"
 simd-json = "0.17.0"
 bincode = {version = "2.0.1", features = ["serde"]}
 bitcode = { version = "0.6.7", features = ["serde"] }
 lz4_flex = "0.12.0"
 
 
+libdeflater = {git = "https://github.com/c-ola/libdeflater.git", branch = "master", features=["freestanding"], optional=true}
+#libdeflater = {path = "../libdeflater/", features = ["freestanding"] }
+
+
 [target.'cfg(target_os = "linux")'.dependencies]
 rug = "1.28.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+num-bigint = "0.4.6"
+num-traits = "0.2"
+num-integer = "0.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 num-bigint = "0.4.6"
 num-traits = "0.2"
 num-integer = "0.1"

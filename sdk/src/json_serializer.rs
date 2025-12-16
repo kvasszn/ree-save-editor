@@ -44,13 +44,14 @@ impl<'a> Serialize for InstanceWithCtx<'a> {
         let instances = self.instances;
         let mut state = serializer.serialize_map(Some(instance.fields.len()))?;
         let type_info = type_map.get_by_hash(instance.hash).unwrap(); // TODO should throw error if not
-                                                                  // found
+
+
         for (i, value) in instance.fields.iter().enumerate() {
             if let Some(field_info) = type_info.get_by_index(i) {
                 let wrapped = ValueWithCtx {value, instances, type_map, field_info};
                 state.serialize_entry(&field_info.name, &wrapped)?;
             } else {
-                //state.serialize_entry(format!("v{i}").as_str(), &wrapped)?;
+                eprintln!("Skipping field {i} in {}", type_info.name);
             }
         }
 

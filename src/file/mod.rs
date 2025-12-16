@@ -1,5 +1,7 @@
 pub mod msg;
 mod user;
+
+#[cfg(feature = "tex")]
 mod tex;
 mod scn;
 mod font;
@@ -8,6 +10,8 @@ mod pog;
 
 pub use msg::Msg;
 pub use user::User;
+
+#[cfg(feature = "tex")]
 pub use tex::Tex;
 pub use scn::Scn;
 pub use font::Oft;
@@ -17,7 +21,7 @@ pub use pog::*;
 
 use std::{collections::HashSet, error::Error, fs::File, io::{BufReader, Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}};
 
-use crate::tdb::*;
+
 use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext, types::to_dersz}};
 use crate::save::SaveFile;
 use serde::Serialize;
@@ -359,6 +363,7 @@ impl FileReader {
                     return Err(format!("Can only decrypt save files with steamid.\nGo here to find it https://help.steampowered.com/en/faqs/view/2816-BE67-5B69-0FEC").into())
                 }
             }
+            #[cfg(feature = "tdb")]
             "exe" => {
                 let mut file = File::open(&file_path)?;
                 TDBHeader::from_exe(&mut file)?;
@@ -387,6 +392,8 @@ impl FileReader {
                     output.write_all(&user.to_buf()?)?;
                 }
             }
+
+            #[cfg(feature = "tex")]
             "tex" => {
                 let mut file = File::open(file_path.clone())?;
                 //let mut buf = vec![];
@@ -481,6 +488,7 @@ pub fn dump_file_simple<'a>(file: &std::path::Path, ctx: Arc<Mutex<&'a mut FileR
 
     match file_ext {
 
+        #[cfg(feature = "tdb")]
         "exe" => {
             let mut file = File::open(&file_path)?;
             TDBHeader::from_exe(&mut file)?;
@@ -519,6 +527,7 @@ pub fn dump_file_simple<'a>(file: &std::path::Path, ctx: Arc<Mutex<&'a mut FileR
                 output.write_all(&user.to_buf()?)?;
             }
         }
+        #[cfg(feature = "tex")]
         "tex" => {
             let mut file = File::open(file_path.clone())?;
             //let mut buf = vec![];

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{borrow::Cow, collections::HashMap, error::Error, fmt::Display, fs::File, io::{BufWriter, Cursor, Read, Seek, Write}, result::Result, time::Instant};
+use std::{borrow::Cow, collections::HashMap, error::Error, fmt::Display, fs::File, io::{BufWriter, Cursor, Read, Seek, Write}, result::Result};
 
 use bitcode;
 use indexmap::IndexMap;
@@ -14,8 +14,8 @@ pub fn murmur3(data: impl AsRef<[u8]>, seed: u32) -> u32 {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TypeMap {
-    types: TypesWrapper,
-    enums: EnumMap,
+    pub types: TypesWrapper,
+    pub enums: EnumMap,
 }
 
 impl TypeMap {
@@ -61,6 +61,12 @@ impl TypeMap {
         Ok(TypeMap{types, enums})
     }
 
+    pub fn parse_str(type_data: &str, enum_data: &str) -> std::result::Result<Self, Box<dyn Error>> {
+        let types = serde_json::from_str(type_data)?;
+        let enums = serde_json::from_str(enum_data)?;
+        Ok(TypeMap{types, enums})
+    }
+
     pub fn to_bincode(&self, file_path: &str) -> std::result::Result<(), Box<dyn Error>> {
         let data = bitcode::serialize(self)?;// ::serde::encode_to_vec(self, bincode::config::standard().with_variable_int_encoding())?;
         let file = File::create(file_path)?;
@@ -103,6 +109,17 @@ impl TypeMap {
             x.get(n.to_string().as_str())
         }) 
     }
+
+    /*pub fn does_type_contain_string(&self, hash: u32, query: &str) -> bool {
+        let mut current_type = self.get_by_hash(hash);
+        let mut cur_field = None;
+        for part in path.split('.') {
+            let part = part.find(']').map(|x| &part[..x]).unwrap_or(part);
+            cur_field = current_type.and_then(|x| x.get_by_name(part));
+            current_type = cur_field.and_then(|f| self.get_by_name(&f.original_type));
+        }
+        cur_field
+    }*/
 }
 
 #[derive(Debug, Serialize)]

@@ -2,6 +2,7 @@ use std::{any::Any, collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 
 use eframe::egui::{self, CollapsingHeader, Color32, Label, RichText, Sense, TextEdit, Ui, WidgetText, collapsing_header::{CollapsingState, HeaderResponse}};
 use half::f16;
+use sdk::type_map::{self, TypeMap};
 
 use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Mandrake, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{SaveFile, types::{Array, Class, FieldType}}};
 use util::*;
@@ -13,6 +14,11 @@ pub enum CopyBuffer {
     Null,
     Array(u32, Array),
     Class(u32, Class),
+}
+
+pub struct Search<'a> {
+    query: &'a str,
+    found: &'a str,
 }
 
 type C<'a> = RszEditCtx<'a>;
@@ -29,17 +35,19 @@ pub struct RszEditCtx<'a> {
     id: u64,
     // hash, value, is_array
     copy_buffer: &'a mut CopyBuffer,
+    type_map: &'a TypeMap,
 }
 
 impl<'a> RszEditCtx<'a> {
-    pub fn new(root: u32, objects: &'a mut Vec<RszFieldsValue>, copy_buffer: &'a mut CopyBuffer) -> Self {
+    pub fn new(root: u32, objects: &'a mut Vec<RszFieldsValue>, copy_buffer: &'a mut CopyBuffer, type_map: &'a TypeMap) -> Self {
         Self {
             root: Some(root),
             objects,
             parent: None,
             field: None,
             id: 0,
-            copy_buffer
+            copy_buffer,
+            type_map: type_map
         }
     }
     pub fn make_new(ctx: &'a mut Self, root: Option<u32>) -> Self {
@@ -49,7 +57,8 @@ impl<'a> RszEditCtx<'a> {
             parent: ctx.parent,
             field: ctx.field,
             id: ctx.id + 1,
-            copy_buffer: ctx.copy_buffer
+            copy_buffer: ctx.copy_buffer,
+            type_map: ctx.type_map
         }
     }
 }
@@ -114,35 +123,36 @@ pub fn add_copyable_element(ui: &mut Ui, item: &mut Box<dyn DeRszInstance>, inde
                 toggle = true;
             }
             if let Some(field) = ctx.field {
-                if let Some(item) = item.as_any().downcast_ref::<Class>() {
-                    if ui.button("Copy").clicked() {
-                        let hash = murmur3(&field.original_type, 0xffffffff);
+            if let Some(item) = item.as_any().downcast_ref::<Class>() {
+                if ui.button("Copy").clicked() {
+                    let hash = murmur3(&field.original_type, 0xffffffff);
                         *ctx.copy_buffer = CopyBuffer::Class(hash, item.clone());
-                    }
                 }
-                else if let Some(item) = item.as_any().downcast_ref::<Array>() {
-                    if ui.button("Copy").clicked() {
-                        let hash = murmur3(&field.original_type, 0xffffffff);
+            }
+            else if let Some(item) = item.as_any().downcast_ref::<Array>() {
+                if ui.button("Copy").clicked() {
+                    let hash = murmur3(&field.original_type, 0xffffffff);
                         *ctx.copy_buffer = CopyBuffer::Array(hash, item.clone());
+                }
+            }
+            // TODO: add a check for class/array here
+            if let CopyBuffer::Class(copied_hash, copied_item) = ctx.copy_buffer {
+                let hash = murmur3(&field.original_type, 0xffffffff);
+                if *copied_hash == hash  {
+                    if ui.button("Paste").clicked() {
+                        *item = Box::new(copied_item.clone());
+                        *ctx.copy_buffer = CopyBuffer::Null
                     }
                 }
-                if let CopyBuffer::Class(copied_hash, copied_item) = ctx.copy_buffer {
-                    let hash = murmur3(&field.original_type, 0xffffffff);
-                    if *copied_hash == hash  {
-                        if ui.button("Paste").clicked() {
-                            *item = Box::new(copied_item.clone());
-                            *ctx.copy_buffer = CopyBuffer::Null
-                        }
-                    }
-                } else if let CopyBuffer::Array(copied_hash, copied_item) = ctx.copy_buffer {
-                    let hash = murmur3(&field.original_type, 0xffffffff);
-                    if *copied_hash == hash  {
-                        if ui.button("Paste").clicked() {
-                            *item = Box::new(copied_item.clone());
-                            *ctx.copy_buffer = CopyBuffer::Null
-                        }
+            } else if let CopyBuffer::Array(copied_hash, copied_item) = ctx.copy_buffer {
+                let hash = murmur3(&field.original_type, 0xffffffff);
+                if *copied_hash == hash  {
+                    if ui.button("Paste").clicked() {
+                        *item = Box::new(copied_item.clone());
+                        *ctx.copy_buffer = CopyBuffer::Null
                     }
                 }
+            }
             }
             label_response
     });
@@ -182,7 +192,8 @@ impl<'a> Edit for Vec<Box<dyn DeRszInstance>> {
                 objects: ctx.objects,
                 parent: ctx.parent,
                 id: ctx.id,
-                copy_buffer: ctx.copy_buffer
+                copy_buffer: ctx.copy_buffer,
+                type_map: ctx.type_map,
             };
             add_copyable_element(ui, item, i as u64, &mut new_ctx);
         };
@@ -199,7 +210,8 @@ impl<'a, T: 'static + Edit + Debug + Clone> Edit for Vec<T> {
                 objects: ctx.objects,
                 parent: ctx.parent,
                 id: ctx.id,
-                copy_buffer: ctx.copy_buffer
+                copy_buffer: ctx.copy_buffer,
+                type_map: ctx.type_map,
             };
             CollapsingHeader::new(format!("{i}:")).show(ui, |ui| {
                 item.edit(ui, &mut new_ctx);
@@ -218,7 +230,8 @@ impl<'a, T: 'static + Edit + Debug +  Clone, const N: usize> Edit for [T; N] {
                 field: ctx.field,
                 parent: ctx.parent,
                 id: ctx.id,
-                copy_buffer: ctx.copy_buffer
+                copy_buffer: ctx.copy_buffer,
+                type_map: ctx.type_map,
             };
             CollapsingHeader::new(format!("{i}:"))
                 .id_salt(ctx.id)
@@ -275,14 +288,10 @@ impl Edit for Object {
                         objects: ctx.objects,
                         parent: Some(struct_desc),
                         id: ctx.id,
-                        copy_buffer: ctx.copy_buffer
+                        copy_buffer: ctx.copy_buffer,
+                        type_map: ctx.type_map,
                     };
                     add_copyable_field(ui, obj, field, &mut new_ctx);
-                    /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                      .id_salt(ctx.id)
-                      .show(ui, |ui| {
-                      obj.edit(ui, &mut new_ctx);
-                      });*/
                 }
             });
         }
@@ -317,14 +326,10 @@ impl Edit for Object {
                         objects: ctx.objects,
                         parent: Some(struct_desc),
                         id: ctx.id,
-                        copy_buffer: ctx.copy_buffer
+                        copy_buffer: ctx.copy_buffer,
+                        type_map: ctx.type_map,
                     };
                     add_copyable_field(ui, obj, field, &mut new_ctx);
-                    /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                      .id_salt(ctx.id)
-                      .show(ui, |ui| {
-                      obj.edit(ui, &mut new_ctx);
-                      });*/
                 }
             });
         } else {
@@ -338,17 +343,13 @@ impl Edit for Object {
                     objects: ctx.objects,
                     parent: Some(struct_desc),
                     id: ctx.id,
-                    copy_buffer: ctx.copy_buffer
+                    copy_buffer: ctx.copy_buffer,
+                    type_map: ctx.type_map,
                 };
                 if let Some(_obj) = item.as_any().downcast_ref::<Object>() {
                     ui.horizontal(|ui| {
                         //ui.label(&field_info.name);
                         add_copyable_field(ui, item, field_info, &mut new_ctx);
-                        /*CollapsingHeader::new(format!("{}: {}", &field_info.name, &field_info.original_type))
-                          .id_salt(ctx.id)
-                          .show(ui, |ui| {
-                          item.edit(ui, &mut new_ctx);
-                          });*/
                     });
                 } else {
                     ui.horizontal(|ui| {
@@ -597,25 +598,16 @@ impl Edit for Struct {
                     objects: ctx.objects,
                     parent: Some(struct_desc),
                     id: ctx.id,
-                    copy_buffer: ctx.copy_buffer
+                    copy_buffer: ctx.copy_buffer,
+                    type_map: ctx.type_map,
                 };
                 match field.r#type.as_str() {
                     "Object" | "Struct" => {
                         add_copyable_field(ui, field_value, field, &mut new_ctx);
-                        /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                          .id_salt(ctx.id)
-                          .show(ui, |ui| {
-                          field_value.edit(ui, &mut new_ctx);
-                          });*/
                     }
                     _ => {
                         if field.array {
                             add_copyable_field(ui, field_value, field, &mut new_ctx);
-                            /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                              .id_salt(ctx.id)
-                              .show(ui, |ui| {
-                              field_value.edit(ui, &mut new_ctx);
-                              });*/
                         }
                         else {
                             ui.horizontal(|ui| {
@@ -643,7 +635,8 @@ impl Edit for Array {
                 objects: ctx.objects,
                 parent: ctx.parent,
                 id: ctx.id,
-                copy_buffer: ctx.copy_buffer
+                copy_buffer: ctx.copy_buffer,
+                type_map: ctx.type_map,
             };
             //println!("{:?}", item);
             if self.field_type == FieldType::Class || self.field_type == FieldType::Struct {
@@ -669,25 +662,16 @@ impl Edit for Class {
                     field: Some(&field),
                     objects: ctx.objects, parent: Some(struct_desc),
                     id: ctx.id,
-                    copy_buffer: ctx.copy_buffer
+                    copy_buffer: ctx.copy_buffer,
+                    type_map: ctx.type_map,
                 };
                 match field.r#type.as_str() {
                     "Object" | "Struct" => {
                         add_copyable_field(ui, field_value, field, &mut new_ctx);
-                        /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                          .id_salt(ctx.id)
-                          .show(ui, |ui| {
-                          field_value.edit(ui, &mut new_ctx);
-                          });*/
                     }
                     _ => {
                         if field.array {
                             add_copyable_field(ui, field_value, field, &mut new_ctx);
-                            /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                              .id_salt(ctx.id)
-                              .show(ui, |ui| {
-                              field_value.edit(ui, &mut new_ctx);
-                              });*/
                         }
                         else {
                             ui.horizontal(|ui| {
@@ -704,25 +688,16 @@ impl Edit for Class {
                     field: Some(&field),
                     objects: ctx.objects, parent: Some(struct_desc),
                     id: ctx.id,
-                    copy_buffer: ctx.copy_buffer
+                    copy_buffer: ctx.copy_buffer,
+                    type_map: ctx.type_map,
                 };
                 match field.r#type.as_str() {
                     "Object" | "Struct" => {
                         add_copyable_field(ui, field_value, field, &mut new_ctx);
-                        /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                          .id_salt(ctx.id)
-                          .show(ui, |ui| {
-                          field_value.edit(ui, &mut new_ctx);
-                          });*/
                     }
                     _ => {
                         if field.array {
                             add_copyable_field(ui, field_value, field, &mut new_ctx);
-                            /*CollapsingHeader::new(format!("{}: {}", &field.name, &field.original_type))
-                              .id_salt(ctx.id)
-                              .show(ui, |ui| {
-                              field_value.edit(ui, &mut new_ctx);
-                              });*/
                         }
                         else {
                             ui.horizontal(|ui| {
@@ -746,6 +721,7 @@ impl Edit for SaveFile {
             ctx.id += 1;
             CollapsingHeader::new(format!("{:08x}", field.0))
                 .id_salt(ctx.id)
+                .default_open(true)
                 .show(ui, |ui| {
                     field.1.edit(ui, ctx);
                 });
@@ -764,7 +740,7 @@ impl Edit for DeRsz {
                 (hash, field_values)
             };
             let _root_type = RszDump::get_struct(hash).unwrap();
-            let mut ctx = RszEditCtx::new(*root, &mut self.structs, _ctx.copy_buffer);
+            let mut ctx = RszEditCtx::new(*root, &mut self.structs, _ctx.copy_buffer, _ctx.type_map);
             field_values.edit(ui, &mut ctx);
         }
     }

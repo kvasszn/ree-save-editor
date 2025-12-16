@@ -1,5 +1,7 @@
 use libdeflater::TileStream;
 
+extern crate libdeflater;
+
 use crate::bitfield::BitField;
 use crate::reerr::FileParseError::{self, MagicError};
 use std::result::Result;
