@@ -1,8 +1,8 @@
 ### General
 [] - Rewrite Serializer/Deserializer
 [] - reorganize project structure/seperate save editor
-[] - Make it run in a browser for wasm
-[] - Github Actions Builds for Windows/Linux
+[x] - Make it run in a browser for wasm
+[] - Github Actions Builds for Windows/Linux/wasm
 [x] - Better Rsz/Enums File Loading
 
 ### Editor
