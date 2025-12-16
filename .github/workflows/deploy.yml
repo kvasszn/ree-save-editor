@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
 
 permissions:
-  contents: write # Required to push to the gh-pages branch
+  contents: write
 
 jobs:
   build-and-deploy:
@@ -24,9 +24,16 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Compress Assets
+        run: |
+          # -9 = Best compression
+          # -k = Keep original file (optional, but good for debugging)
+          # -f = Force overwrite if exists
+          gzip -9 -f assets/rszmhwilds_packed.json
+          gzip -9 -f assets/enumsmhwilds.json
+          ls -lh assets/
+
       - name: Build with Trunk
-        # 1. Point to your specific index.html inside the workspace (gui/index.html)
-        # 2. Set the public-url to /REPO_NAME/ (include slashes!)
         run: trunk build gui/index.html --release --public-url /mhtame/
 
       - name: Deploy to GitHub Pages

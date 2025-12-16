@@ -1,13 +1,21 @@
 use std::sync::OnceLock;
 use std::collections::HashMap;
 
+use flate2::read::GzDecoder;
 use sdk::rsz::Rsz;
 use serde::{Deserialize, Serialize};
-
+use std::io::Read;
 use crate::reerr::{Result, RszError::*};
 
 pub static RSZ_FILE: OnceLock<String> = OnceLock::new();
 pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
+
+fn decompress(bytes: &[u8]) -> String {
+    let mut decoder = GzDecoder::new(bytes);
+    let mut s = String::new();
+    decoder.read_to_string(&mut s).expect("Failed to decompress asset");
+    s
+}
 
 #[derive(Debug, Clone)]
 pub struct RszStruct<T> {
@@ -108,8 +116,9 @@ impl RszDump {
         });
         #[cfg(target_arch = "wasm32")]
         return HASHMAP.get_or_init(|| {
-            let file = include_str!("../../assets/rszmhwilds_packed.json");
-            let m: RszMapType = serde_json::from_str(&file).unwrap();
+            let data = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
+            let data = decompress(data);
+            let m: RszMapType = serde_json::from_str(&data).unwrap();
             RszMap(m)
         });
     }
@@ -183,8 +192,9 @@ pub fn enum_map() -> &'static EnumMap {
         };
         #[cfg(target_arch = "wasm32")]
         return {
-            let json_data = include_str!("../../assets/enumsmhwilds.json");
-            let hashmap: EnumMap = serde_json::from_str(json_data).unwrap();
+            let json_data = include_bytes!("../../assets/enumsmhwilds.json.gz");
+            let json_data = decompress(json_data);
+            let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();
             hashmap
         };
     })

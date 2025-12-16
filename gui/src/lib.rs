@@ -13,8 +13,8 @@ use mhtame::{
 };
 use sdk::type_map::TypeMap;
 
-const RSZ_JSON: &str = include_str!("../../assets/rszmhwilds_packed.json");
-const ENUMS_JSON: &str = include_str!("../../assets/enumsmhwilds.json");
+/*const RSZ_JSON: &str = include_str!("../../assets/rszmhwilds_packed.json");
+const ENUMS_JSON: &str = include_str!("../../assets/enumsmhwilds.json");*/
 
 // We need a common config struct that works for both CLI (Clap) and Web
 #[derive(Debug, Clone)]
@@ -170,7 +170,12 @@ impl TameApp{
             });
 
         #[cfg(target_arch = "wasm32")]
-        let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
+        //let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
+        let type_map = TypeMap {
+            types: sdk::type_map::TypesWrapper(HashMap::new()),
+            enums: HashMap::new(),
+        };
+
 
 
         let mut steam_id_u64 = config.steamid.as_ref().and_then(|s| {
@@ -265,12 +270,13 @@ impl TameApp{
                 }
             },
             CurrentFile::FileData { file_name, bytes } => {
-                let mut reader = Cursor::new(bytes);
+                let mut reader = Cursor::new(&bytes);
                 let save = self.read_save(&mut reader);
                 if let Some(save) = save {
-                    self.current_file = CurrentFile::Loaded {
-                        file_name: file_name,
-                        loaded: save 
+                    self.current_file = CurrentFile::LoadedWeb { 
+                        file_name,
+                        original_bytes: bytes,
+                        loaded: save
                     };
                 }
             },
