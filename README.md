@@ -26,17 +26,25 @@ It can finally support editing saves for Monster Hunter Wilds, in a GUI too. Use
 
 **ALSO PLEASE MAKE BACKUPS BEFORE MESSING WITH THIS TOO MUCH. IF YOU FIND BUGS PLEASE REPORT THEM.**
 
+THERES ALSO NOW A WEB GUI. https://kvasszn.github.io/mhtame
+
 I will eventually add features for copying over save data from different saves or slots. I also plan on eventually adding support for more RE games, just takes a while to reverse capcom's save files. Loading and editing requires knowing your Steam ID.
 
 Also minor note: the exe needs to see an `rszmhwilds_packed.json` from where it's run to work, so if you move the exe around, make sure to give it an rsz file. It can also be passed in through CLI.
 
 ```
-cargo build --bin mhtame-gui --release
+cargo build -p mhtame-gui --release
 ```
 
 You can either pass in things through CLI or use the GUI.
 ```
 ./mhtame-gui -f <path/to/save/file> --steamid <steamid>
+```
+
+#### Web UI building
+```
+trunks build gui/index.html --release
+trunks serve gui/index.html --release
 ```
 
 ### File Dumping
