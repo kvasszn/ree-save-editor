@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, time::SystemTime};
+use std::{error::Error, fmt::Display};
 
 use hex_literal::hex;
 use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
@@ -42,7 +42,7 @@ mod backend {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(not(target_os = "linux"))]
 mod backend {
     pub use num_bigint::{BigInt as Integer, Sign};
     pub use num_traits::{FromPrimitive, ToPrimitive};
@@ -208,7 +208,6 @@ impl Mandarin {
         let end = 0xffffffffu64;
         let count = end - start;
         println!("trying {} keys", count);
-        let s = SystemTime::now();
         let good_key = (start..end).into_par_iter().find_first(|i| {
             let mut buf = [0u8; 0x210];
             let auth = AuthCtx::init(!i).unwrap();
@@ -237,8 +236,8 @@ impl Mandarin {
             key_iv2[0..16] == key && key_iv2[16..32] == iv
         });
 
-        let taken = s.elapsed().unwrap().as_secs_f64();
-        println!("time taken for {} keys {}, {}k/s", count, taken, count as f64 / taken);
+        //let taken = s.elapsed().unwrap().as_secs_f64();
+        //println!("time taken for {} keys {}, {}k/s", count, taken, count as f64 / taken);
         if let Some(good_key) = good_key {
             println!("[Key/IV check] passed with key={:#x}", 0x0110000100000000 + good_key);
             return 0x0110000100000000 + good_key

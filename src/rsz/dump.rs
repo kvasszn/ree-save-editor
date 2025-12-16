@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 use std::collections::HashMap;
 
+use sdk::rsz::Rsz;
 use serde::{Deserialize, Serialize};
 
 use crate::reerr::{Result, RszError::*};
@@ -96,14 +97,21 @@ impl RszDump {
 
     pub fn rsz_map() -> &'static RszMap<RszMapType> {
         static HASHMAP: OnceLock<RszMap<RszMapType>> = OnceLock::new();
-        HASHMAP.get_or_init(|| {
+        #[cfg(not(target_arch = "wasm32"))]
+        return HASHMAP.get_or_init(|| {
             RSZ_FILE.get_or_init(|| {
                 "assets/rszmhwilds.json".to_string()
             });
             let file = std::fs::read_to_string(RSZ_FILE.get().unwrap()).unwrap();
             let m: RszMapType = serde_json::from_str(&file).unwrap();
             RszMap(m)
-        })
+        });
+        #[cfg(target_arch = "wasm32")]
+        return HASHMAP.get_or_init(|| {
+            let file = include_str!("../../assets/rszmhwilds_packed.json");
+            let m: RszMapType = serde_json::from_str(&file).unwrap();
+            RszMap(m)
+        });
     }
 
     pub fn name_map() -> &'static RszMap<RszNameMapType> {
@@ -164,12 +172,21 @@ type EnumMap = HashMap<String, HashMap<String, String>>;
 pub fn enum_map() -> &'static EnumMap {
     static HASHMAP: OnceLock<EnumMap> = OnceLock::new();
     HASHMAP.get_or_init(|| {
-        ENUM_FILE.get_or_init(|| {
-            "assets/enumsmhwilds.json".to_string()
-        });
-        let json_data = std::fs::read_to_string(ENUM_FILE.get().unwrap()).unwrap();
-        let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();
-        hashmap
+        #[cfg(not(target_arch = "wasm32"))]
+        return {
+            ENUM_FILE.get_or_init(|| {
+                "assets/enumsmhwilds.json".to_string()
+            });
+            let json_data = std::fs::read_to_string(ENUM_FILE.get().unwrap()).unwrap();
+            let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();
+            hashmap
+        };
+        #[cfg(target_arch = "wasm32")]
+        return {
+            let json_data = include_str!("../../assets/enumsmhwilds.json");
+            let hashmap: EnumMap = serde_json::from_str(json_data).unwrap();
+            hashmap
+        };
     })
 }
 

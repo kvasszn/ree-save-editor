@@ -8,6 +8,8 @@
 ### Editor
 [] - Rewrite editor
 [] - Highlight objects
+[x] - Copy objects / arrays
+[x] - Easier mandrake editing
 [] - memory of recent files/steamid
 [] - hints for Enums -> Visual Strings for stuff like items
 [] - Figure out savedata bitsets that don't have explicit types attached

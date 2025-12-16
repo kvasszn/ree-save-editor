@@ -1,3 +1,5 @@
+/dist
+gui/dist/
 /target
 rsz_macros/target
 /outputs/*

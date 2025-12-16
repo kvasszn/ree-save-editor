@@ -5,12 +5,12 @@ pub mod compression;
 pub mod rsz;
 pub mod file;
 pub mod save;
+
+#[cfg(feature = "tdb")]
 pub mod tdb;
 pub mod edit;
 
 extern crate image;
-extern crate libdeflater;
-
 
 use clap::Parser;
 use file::FileReader;

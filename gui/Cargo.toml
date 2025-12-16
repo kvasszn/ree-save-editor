@@ -1,0 +1,48 @@
+[package]
+name = "mhtame-gui"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "mhtame-gui"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sdk = { path = "../sdk" }
+util = { path = "../util" }
+mhtame = { path = "../" }
+
+eframe = "0.33.0"
+egui = "0.29"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4.27"
+shellexpand = "3.1.1"
+rfd = "0.15.4"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3.83"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+    "HtmlCanvasElement",
+	"Storage"
+] }
+reqwest = { version = "0.11", features = ["json"] }
+console_error_panic_hook = "0.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+clap = { version = "4.5.20", features = ["derive"] }
+env_logger = "0.11.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rug = { version = "1.28.0", optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+num-bigint = "0.4.6"
+num-traits = "0.2"
+num-integer = "0.1"
