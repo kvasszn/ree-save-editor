@@ -180,6 +180,12 @@ pub trait ReadExt: Read {
         Ok(arr)
     }
 
+    fn read_16_arr<const N: usize>(&mut self) -> io::Result<[u8; N]> {
+        let mut arr = [0; N];
+        for i in 0..N { arr[i] = self.read_u8()?; }
+        Ok(arr)
+    }
+
     fn read_u32_arr<const N: usize>(&mut self) -> io::Result<[u32; N]> {
         let mut arr = [0u32; N];
         for i in 0..N { arr[i] = self.read_u32()?; }

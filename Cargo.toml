@@ -18,6 +18,7 @@ members = [
 default = []
 tex = ["dep:libdeflater"]
 tdb = []
+edit = []
 save = []
 
 [dependencies]

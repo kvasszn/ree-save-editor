@@ -22,7 +22,7 @@ pub use pog::*;
 use std::{collections::HashSet, error::Error, fs::File, io::{BufReader, Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}};
 
 
-use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext, types::to_dersz}};
+use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext}};
 use crate::save::SaveFile;
 use serde::Serialize;
 use util::*;
@@ -325,7 +325,7 @@ impl FileReader {
                     let mut reader = File::open(&file)?;
                     let save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid})?;
                     //let save = SaveFile::from_file(&file)?;
-                    let dersz = to_dersz(save.fields[0].1.clone())?;
+                    /*let dersz = to_dersz(save.fields[0].1.clone())?;
                     //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);
                     let mut output_path = output_path.clone();
                     output_path.set_file_name(output_path.file_name().unwrap().to_string_lossy().to_string() + ".json");
@@ -333,7 +333,7 @@ impl FileReader {
                     std::fs::create_dir_all(output_path.parent().unwrap())?;
                     let mut f = std::fs::File::create(&output_path).expect("Error Creating File");
                     let json = serde_json::to_string_pretty(&dersz)?;
-                    f.write_all(json.as_bytes())?;
+                    f.write_all(json.as_bytes())?;*/
                 } else {
 
                     // try to brute force

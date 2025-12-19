@@ -59,6 +59,11 @@ impl<const N: bool> Debug for U16String<N> {
 }
 
 pub type StringU16 = U16String<false>;
+impl StringU16 {
+    pub fn new(data: Vec<u16>) -> Self {
+        U16String::<false>(data)
+    }
+}
 pub type StringU16C = U16String<true>;
 
 #[derive(Debug, Clone, Copy)]
