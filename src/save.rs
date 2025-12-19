@@ -4,7 +4,7 @@ pub mod types;
 use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
 use flate2::{Compression, write::{DeflateDecoder, DeflateEncoder}};
-use crate::{file::{Magic, StructRW}, rsz::rszserde::{DeRszInstance, RszSerializerCtx}, save::types::Class};
+use crate::{file::{Magic, StructRW}, rsz::rszserde::{RszSerializerCtx}, save::types::Class};
 
 use util::*;
 
@@ -33,8 +33,8 @@ impl SaveFile {
 
         // write some unk bytes (i forget if this is the type hash or what, might be a murmur?)
         for field in &self.fields {
-            field.0.to_bytes(&mut ctx)?;
-            field.1.to_bytes(&mut ctx)?;
+            //field.0.to_bytes(&mut ctx)?;
+            //field.1.to_bytes(&mut ctx)?;
         }
 
         // compression
@@ -68,6 +68,7 @@ impl SaveFile {
         f.write_all(&file_hash.to_le_bytes())?;
         Ok(f.into_inner())
     }
+
     pub fn save(&self, path: &Path, key: u64) -> crate::file::Result<()> {
         let mut data = Cursor::new(Vec::<u8>::new());
         let version: u32 = 2;
@@ -80,8 +81,8 @@ impl SaveFile {
 
         // write some unk bytes (i forget if this is the type hash or what, might be a murmur?)
         for field in &self.fields {
-            field.0.to_bytes(&mut ctx)?;
-            field.1.to_bytes(&mut ctx)?;
+            //field.0.to_bytes(&mut ctx)?;
+            //field.1.to_bytes(&mut ctx)?;
         }
 
         // compression
@@ -195,10 +196,9 @@ impl StructRW<SaveContext> for SaveFile {
             let data = &mut Cursor::new(&data);
             let mut fields = Vec::new();
             while let Ok(h) = u32::read(data, &mut ()) {
-                if let Ok(field_value) = types::Class::read(data, &mut ()) {
-                    fields.push((h, field_value));
-                } else {
-                    break;
+                match types::Class::read(data) {
+                    Ok(field_value) => fields.push((h, field_value)),
+                    Err(e) => println!("Error reading class {e}")
                 }
             }
 

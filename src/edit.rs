@@ -1,10 +1,11 @@
 use std::{any::Any, collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 
-use eframe::egui::{self, CollapsingHeader, Color32, Label, RichText, Sense, TextEdit, Ui, WidgetText, collapsing_header::{CollapsingState, HeaderResponse}};
+use eframe::egui::{self, Checkbox, CollapsingHeader, Color32, Label, RichText, Sense, TextEdit, Ui, WidgetText, collapsing_header::{CollapsingState, HeaderResponse}};
 use half::f16;
-use sdk::type_map::{self, TypeMap};
+use indexmap::IndexMap;
+use sdk::type_map::{self, TypeInfo, TypeMap};
 
-use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Mandrake, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{SaveFile, types::{Array, Class, FieldType}}};
+use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Mandrake, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::{SaveFile, types::{Array, ArrayType, Class, FieldType}}};
 use util::*;
 
 pub type EditableFile = dyn Edit;
@@ -23,19 +24,19 @@ pub struct Search<'a> {
 
 type C<'a> = RszEditCtx<'a>;
 pub trait Edit: Any {
-    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C);
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditCtx);
 }
 
 pub struct RszEditCtx<'a> {
-    root: Option<u32>,
-    field: Option<&'a RszField>,
+    pub root: Option<u32>,
+    pub field: Option<&'a RszField>,
     //objects: &'a mut Vec<RefCell<RszFieldsValue>>,
-    objects: &'a mut Vec<RszFieldsValue>,
-    parent: Option<&'a RszStruct<RszField>>,
-    id: u64,
+    pub objects: &'a mut Vec<RszFieldsValue>,
+    pub parent: Option<&'a RszStruct<RszField>>,
+    pub id: u64,
     // hash, value, is_array
-    copy_buffer: &'a mut CopyBuffer,
-    type_map: &'a TypeMap,
+    pub copy_buffer: &'a mut CopyBuffer,
+    pub type_map: &'a TypeMap,
 }
 
 impl<'a> RszEditCtx<'a> {
@@ -63,7 +64,7 @@ impl<'a> RszEditCtx<'a> {
     }
 }
 
-pub fn add_copyable_field(ui: &mut Ui, item: &mut Box<dyn DeRszInstance>, field: &RszField, ctx: &mut C) {
+/*pub fn add_copyable_field(ui: &mut Ui, item: &mut Box<dyn DeRszInstance>, field: &RszField, ctx: &mut C) {
     let label = format!("{}: {}", &field.name, &field.original_type);
     let id = ui.make_persistent_id(ctx.id);
     let state = CollapsingState::load_with_default_open(ui.ctx(), id, false);
@@ -83,7 +84,6 @@ pub fn add_copyable_field(ui: &mut Ui, item: &mut Box<dyn DeRszInstance>, field:
                 if ui.button("Copy").clicked() {
                     let hash = murmur3(&field.original_type, 0xffffffff);
                         *ctx.copy_buffer = CopyBuffer::Array(hash, item.clone());
-                }
             }
             if let CopyBuffer::Class(copied_hash, copied_item) = ctx.copy_buffer {
                 let hash = murmur3(&field.original_type, 0xffffffff);
@@ -162,7 +162,7 @@ pub fn add_copyable_element(ui: &mut Ui, item: &mut Box<dyn DeRszInstance>, inde
     header_response.body(|ui| {
         item.edit(ui, ctx);
     });
-}
+}*/
 
 // edit with no needed ctx
 #[macro_export]
@@ -195,28 +195,31 @@ impl<'a> Edit for Vec<Box<dyn DeRszInstance>> {
                 copy_buffer: ctx.copy_buffer,
                 type_map: ctx.type_map,
             };
-            add_copyable_element(ui, item, i as u64, &mut new_ctx);
+            //add_copyable_element(ui, item, i as u64, &mut new_ctx);
         };
     }
 }
 
 impl<'a, T: 'static + Edit + Debug + Clone> Edit for Vec<T> {
     fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut RszEditCtx) {
-        for (i, item) in self.iter_mut().enumerate() {
-            ctx.id += 1;
-            let mut new_ctx = RszEditCtx {
-                root: None,
-                field: ctx.field,
-                objects: ctx.objects,
-                parent: ctx.parent,
-                id: ctx.id,
-                copy_buffer: ctx.copy_buffer,
-                type_map: ctx.type_map,
+        ui.vertical(|ui| {
+            for (i, item) in self.iter_mut().enumerate() {
+                ctx.id += 1;
+                let mut new_ctx = RszEditCtx {
+                    root: None,
+                    field: ctx.field,
+                    objects: ctx.objects,
+                    parent: ctx.parent,
+                    id: ctx.id,
+                    copy_buffer: ctx.copy_buffer,
+                    type_map: ctx.type_map,
+                };
+                ui.horizontal(|ui| {
+                    ui.label(format!("{i}"));
+                    item.edit(ui, &mut new_ctx);
+                });
             };
-            CollapsingHeader::new(format!("{i}:")).show(ui, |ui| {
-                item.edit(ui, &mut new_ctx);
-            });
-        };
+        });
     }
 }
 
@@ -291,7 +294,7 @@ impl Edit for Object {
                         copy_buffer: ctx.copy_buffer,
                         type_map: ctx.type_map,
                     };
-                    add_copyable_field(ui, obj, field, &mut new_ctx);
+                    //add_copyable_field(ui, obj, field, &mut new_ctx);
                 }
             });
         }
@@ -329,7 +332,7 @@ impl Edit for Object {
                         copy_buffer: ctx.copy_buffer,
                         type_map: ctx.type_map,
                     };
-                    add_copyable_field(ui, obj, field, &mut new_ctx);
+                    //add_copyable_field(ui, obj, field, &mut new_ctx);
                 }
             });
         } else {
@@ -349,7 +352,7 @@ impl Edit for Object {
                 if let Some(_obj) = item.as_any().downcast_ref::<Object>() {
                     ui.horizontal(|ui| {
                         //ui.label(&field_info.name);
-                        add_copyable_field(ui, item, field_info, &mut new_ctx);
+                        //add_copyable_field(ui, item, field_info, &mut new_ctx);
                     });
                 } else {
                     ui.horizontal(|ui| {
@@ -512,7 +515,7 @@ impl Edit for Option<Box<dyn DeRszInstance>> {
 
 impl Edit for Nullable {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
-        self.has_value.edit(ui, ctx);
+        Edit::edit(&mut self.has_value, ui, ctx);
         self.value.edit(ui, ctx);
     }
 }
@@ -603,11 +606,11 @@ impl Edit for Struct {
                 };
                 match field.r#type.as_str() {
                     "Object" | "Struct" => {
-                        add_copyable_field(ui, field_value, field, &mut new_ctx);
+                        //add_copyable_field(ui, field_value, field, &mut new_ctx);
                     }
                     _ => {
                         if field.array {
-                            add_copyable_field(ui, field_value, field, &mut new_ctx);
+                            //add_copyable_field(ui, field_value, field, &mut new_ctx);
                         }
                         else {
                             ui.horizontal(|ui| {
@@ -625,7 +628,7 @@ impl Edit for Struct {
     }
 }
 
-impl Edit for Array {
+/*impl Edit for Array {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
         for (i,value) in self.values.iter_mut().enumerate() {
             ctx.id += 1;
@@ -649,13 +652,33 @@ impl Edit for Array {
             }
         }
     }
-}
-impl Edit for Class {
+}*/
+/*impl Edit for Class {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
         let struct_desc = RszDump::get_struct(self.hash).unwrap();
         for (_i, field) in struct_desc.fields.iter().enumerate() {
             let field_hash = murmur3(&field.name, 0xffffffff);
             if let Some(field_value) = self.fields.get_mut(&field_hash) {
+                /*if field.original_type == "ace.Bitset" {
+                    if let Some(class) = field_value.as_any().downcast_mut::<Class>(){
+                        ctx.id += 1;
+                        let mut new_ctx = RszEditCtx {
+                            root: None,
+                            field: Some(&field),
+                            objects: ctx.objects, parent: Some(struct_desc),
+                            id: ctx.id,
+                            copy_buffer: ctx.copy_buffer,
+                            type_map: ctx.type_map,
+                        };
+                        edit_bitset(class, &mut new_ctx);
+                        /*if let Ok(mut x) = Bitset::try_from(class) {
+                            x.edit(ui, &mut new_ctx);
+                            *field_value = Box::new(Class::from(x));
+                            continue;
+
+                        }*/
+                    }
+                }*/
                 ctx.id += 1;
                 let mut new_ctx = RszEditCtx {
                     root: None,
@@ -713,19 +736,24 @@ impl Edit for Class {
             }
         }
     }
-}
+}*/
 
-impl Edit for SaveFile {
-    fn edit(&mut self, ui: &mut Ui, ctx: &mut C) {
+impl Editable for SaveFile {
+    fn edit(&mut self, ui: &mut Ui, ctx: &EditContext) -> EditResponse {
         for field in &mut self.fields {
-            ctx.id += 1;
-            CollapsingHeader::new(format!("{:08x}", field.0))
-                .id_salt(ctx.id)
+            let child_id = ui.make_persistent_id(field.0);
+            let child_ctx = EditContext {
+                id: child_id.value(),
+                ..*ctx
+            };
+            CollapsingHeader::new(format!("{:08x}, {}", field.0, child_id.value()))
+                .id_salt(child_id)
                 .default_open(true)
                 .show(ui, |ui| {
-                    field.1.edit(ui, ctx);
+                    field.1.edit(ui, &child_ctx);
                 });
         }
+        EditResponse::default()
     }
 }
 
@@ -771,7 +799,7 @@ impl Edit for Mandrake {
         if let Some(mut real_val) = self.get() {
             ui.horizontal(|ui| {
                 ui.label("  real_value");
-                real_val.edit(ui, ctx);
+                Edit::edit(&mut real_val, ui, ctx);
             });
             self.set(real_val);
         }
@@ -786,4 +814,152 @@ impl Edit for Mandrake {
 
     }
 
+}
+
+/*impl TryFrom<&Class> for Bitset {
+    type Error = &'static str;
+    fn try_from(value: &Class) -> Result<Self, Self::Error> {
+        if value.num_fields != 2 {
+            return Err("Too many fields in Bitset");
+        }
+        if value.hash != murmur3("ace.Bitset", 0xffffffff) {
+            return Err("Invalid murmur3 hash for ace.Bitset in class");
+        }
+        let val = value.fields.get(&murmur3("_Value", 0xffffffff))
+            .ok_or("Could not find _Value in Bitset")?;
+        let max = value.fields.get(&murmur3("_MaxElement", 0xffffffff))
+            .ok_or("Could not find _Value in Bitset")?;
+        let max = if let Some(max) = max.as_any().downcast_ref::<i32>() {
+            max
+        } else {return Err("_MaxElement is not i32")};
+        let val = if let Some(val) = val.as_any().downcast_ref::<Array>() {
+            let mut values = vec![];
+            for e in &val.values {
+                if let Some(val) = e.as_any().downcast_ref::<u32>() {
+                    values.push(*val);
+                }
+            }
+            values
+        } else {return Err("_Value is not Vec<>")};
+        // might be better to somehow just take a mut ref and edit that
+        Ok(Self { value: val.to_vec(), max_element: *max })
+    }
+}
+
+impl From<Bitset> for Class {
+    fn from(value: Bitset) -> Self {
+        let mut fields: IndexMap<u32, Box<dyn DeRszInstance>> = IndexMap::new();
+        let values = value.value.into_iter()
+            .map(|x| Box::new(x) as Box<dyn DeRszInstance>)
+            .collect::<Vec<Box<dyn DeRszInstance>>>();
+        let array_value = Array {
+            field_type: FieldType::U32,
+            field_type_size: 4,
+            array_type: ArrayType::Value,
+            values
+        };
+        fields.insert(murmur3("_Value", 0xffffffff), Box::new(array_value));
+        fields.insert(murmur3("_MaxElement", 0xffffffff), Box::new(value.max_element));
+        Self {
+            num_fields: 2,
+            hash: murmur3("ace.Bitset", 0xffffffff),
+            fields,
+        }
+    }
+}
+
+impl Edit for Bitset {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, ctx: &mut C) {
+        ctx.id += 1;
+        CollapsingHeader::new(format!("{}: {}", ctx.field.unwrap().name, ctx.field.unwrap().original_type)).id_salt(ctx.id).show(ui, |ui| {
+            ctx.id += 1;
+            CollapsingHeader::new(format!("_Value:")).id_salt(ctx.id).show(ui, |ui| {
+                ctx.id += 1;
+                self.value.edit(ui, ctx);
+            });
+            ui.horizontal(|ui| {
+                ui.label("_MaxElement");
+                self.max_element.edit(ui, ctx);
+            });
+        });
+    }
+}
+
+pub fn edit_bitset(class: &mut Class, ctx: &mut C) {
+    // first determine the enum type to map to?
+
+}*/
+
+#[derive(Debug, Clone)]
+pub struct EditContext<'a> {
+    pub type_map: &'a TypeMap,
+    pub search_term: &'a str,
+    pub parent_hash: u64,
+    pub parent_type: Option<&'a TypeInfo>,
+    pub id: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EditResponse {
+    pub found_search: bool,
+    pub changed: bool,
+}
+
+impl Default for EditResponse {
+    fn default() -> Self {
+        Self {
+            found_search: true,
+            changed: false,
+        }
+    }
+}
+
+impl EditResponse {
+    pub fn change() -> EditResponse {
+        let mut resp = EditResponse::default();
+        resp.changed = true;
+        resp
+    }
+}
+
+pub trait Editable {
+    fn edit(&mut self, ui: &mut Ui, ctx: &EditContext) -> EditResponse;
+}
+
+macro_rules! derive_editable_num {
+    // Match a comma-separated list of types
+    ($( $ty:ty ),*) => {
+        // Repeat the implementation block for each type captured ($ty)
+        $(
+            impl Editable for $ty {
+                fn edit(&mut self, ui: &mut eframe::egui::Ui, _ctx: &EditContext) -> EditResponse {
+                    let response = ui.add(
+                        eframe::egui::DragValue::new(self)
+                            .speed(1.0)
+                            .range(<$ty>::MIN..=<$ty>::MAX)
+                    );
+                    
+                    if response.changed() {
+                        EditResponse::change()
+                    } else {
+                        EditResponse::default()
+                    }
+                }
+            }
+        )*
+    };
+}
+
+derive_editable_num!(i8, i16, i32, i64, u8, u16, u32, u64);
+derive_editable_num!(f32, f64);
+
+impl Editable for bool {
+    fn edit(&mut self, ui: &mut eframe::egui::Ui, _ctx: &EditContext) -> EditResponse {
+        let response = ui.checkbox(self, "");
+        if response.changed() {
+            EditResponse::change()
+        } else {
+            EditResponse::default()
+        }
+    }
 }

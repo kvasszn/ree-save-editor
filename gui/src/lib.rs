@@ -3,18 +3,19 @@ use std::error::Error;
 use std::io::{Cursor, Read, Seek};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
+use mhtame::edit::{EditContext, Editable};
 use mhtame::file::StructRW;
 
 use eframe::egui::{self, ScrollArea, TextEdit, Ui, Vec2};
 
 use mhtame::{
-    edit::{CopyBuffer, Edit, RszEditCtx},
+    edit::{CopyBuffer, RszEditCtx},
     save::{SaveContext, SaveFile},
 };
 use sdk::type_map::TypeMap;
 
-/*const RSZ_JSON: &str = include_str!("../../assets/rszmhwilds_packed.json");
-const ENUMS_JSON: &str = include_str!("../../assets/enumsmhwilds.json");*/
+const RSZ_JSON: &str = include_str!("../../assets/rszmhwilds_packed.json");
+const ENUMS_JSON: &str = include_str!("../../assets/enumsmhwilds.json");
 
 // We need a common config struct that works for both CLI (Clap) and Web
 #[derive(Debug, Clone)]
@@ -161,12 +162,15 @@ impl TameApp{
         // NOTE: On WASM, 'load_from_file' likely fails because it uses std::fs.
         // You eventually need a way to fetch these JSONs via HTTP or embed them.
         #[cfg(not(target_arch = "wasm32"))]
-        let type_map = TypeMap::load_from_file(&config.rsz_path, &config.enums_path)
+        /*let type_map = TypeMap::load_from_file(&config.rsz_path, &config.enums_path)
             .unwrap_or_else(|_| {
-                TypeMap {
-                    types: sdk::type_map::TypesWrapper(HashMap::new()),
-                    enums: HashMap::new(),
-                }
+                let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
+                type_map
+            });*/
+        let type_map = TypeMap::parse_bincode(include_bytes!("../../assets/types.bin"))
+            .unwrap_or_else(|_| {
+                let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
+                type_map
             });
 
         #[cfg(target_arch = "wasm32")]
@@ -358,9 +362,16 @@ impl TameApp{
         ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
             match &mut self.current_file {
                 CurrentFile::LoadedWeb { loaded, .. } | CurrentFile::Loaded { loaded, .. } => {
-                    let mut fake_structs = Vec::new();
-                    let mut rsz_ctx = RszEditCtx::new(0, &mut fake_structs, &mut self.copy_buffer, &self.type_map);
-                    loaded.edit(ui, &mut rsz_ctx);
+                    //let mut fake_structs = Vec::new();
+                    //let mut rsz_ctx = RszEditCtx::new(0, &mut fake_structs, &mut self.copy_buffer, &self.type_map);
+                    let edit_ctx = EditContext {
+                        type_map: &self.type_map,
+                        search_term: "",
+                        parent_hash: 0,
+                        parent_type: None,
+                        id: 0
+                    };
+                    loaded.edit(ui, &edit_ctx);
                 }
                 _ => {
                     ui.label("No File Loaded.");

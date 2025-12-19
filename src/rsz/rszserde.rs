@@ -1564,3 +1564,9 @@ impl Mandrake {
         }
     }
 }
+
+/*#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone)]
+pub struct Bitset {
+    pub value: Vec<u32>,
+    pub max_element: i32,
+}*/
