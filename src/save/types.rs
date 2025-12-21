@@ -216,7 +216,7 @@ fn collapsing_header_with_buttons_for_field(
 
         if let CopyBuffer::Field(copied_field) = &ctx.copy_buffer {
             if field.hash == copied_field.hash && field.field_type == copied_field.field_type {
-                if ui.add(egui::Button::new("Paste").fill(ui.visuals().selection.bg_fill)).clicked() {
+                if ui.add(egui::Button::new("Paste")).clicked() {
                     field.value = copied_field.value.clone();
                     // *ctx.copy_buffer = None; 
                 }
@@ -260,7 +260,7 @@ fn collapsing_header_with_buttons_for_array_member(
 
             if let CopyBuffer::Array(copied_class) = &ctx.copy_buffer {
                 if copied_class.hash == member_class.hash {
-                    if ui.add(egui::Button::new("Paste").fill(ui.visuals().selection.bg_fill)).clicked() {
+                    if ui.add(egui::Button::new("Paste")).clicked() {
                         *member_class = Box::new(copied_class.clone());
                         // *ctx.copy_buffer = None;
                     }
@@ -277,7 +277,8 @@ fn collapsing_header_with_buttons_for_array_member(
     header_resp.body(|ui| member.edit(ui, ctx));
 }
 
-fn edit_enum(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+
+fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
     let enum_type = ctx.field_info.and_then(|field_info| ctx.type_map.enums.get(&field_info.original_type));
     let enum_str = enum_type.and_then(|e| e.get(&value.to_string()));
     match enum_str {
@@ -305,10 +306,83 @@ fn edit_enum(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> EditRespons
     EditResponse::default()
 }
 
+fn edit_enum_from_type(value: &mut i32, enum_type: &str, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+    let enum_type = ctx.type_map.enums.get(enum_type);
+    let enum_str = enum_type.and_then(|e| e.get(&value.to_string()));
+    match enum_str {
+        Some(mut enum_str) => {
+            let enum_type = enum_type.unwrap();
+            let mut enum_list = enum_type.iter()
+                .filter_map(|x| if x.0.parse::<i32>().is_ok() {Some(x.1)} else {None})
+                .collect::<Vec<_>>();
+            enum_list.sort();
+            ComboBox::from_id_salt(ctx.id)
+                .selected_text(enum_str)
+                .show_ui(ui, |ui|{
+                    for option in enum_list {
+                        ui.selectable_value(&mut enum_str, &option, option);
+                    }
+                    if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
+                        *value = x;
+                    }
+                });
+        }
+        None => {
+            value.edit(ui, ctx);
+        }
+    }
+    EditResponse::default()
+}
+
+impl FieldValue {
+    pub fn get_preview(&self, ctx: &mut EditContext) -> Option<String> {
+        match self {
+            FieldValue::Enum(v) => {
+                ctx.field_info.and_then(|f| {
+                    ctx.type_map.get_enum_str(v, &f.original_type).map(|s| s.clone())
+                })
+            },
+            FieldValue::S8(v) => Some(v.to_string()),
+            FieldValue::U8(v) => Some(v.to_string()),
+            FieldValue::S16(v) => Some(v.to_string()),
+            FieldValue::U16(v) => Some(v.to_string()),
+            FieldValue::S32(v) => Some(v.to_string()),
+            FieldValue::U32(v) => Some(v.to_string()),
+            FieldValue::S64(v) => Some(v.to_string()),
+            FieldValue::U64(v) => Some(v.to_string()),
+            FieldValue::F32(v) => Some(v.to_string()),
+            FieldValue::F64(v) => Some(v.to_string()),
+            FieldValue::C8(v) => Some(v.to_string()),
+            FieldValue::C16(v) => Some(v.to_string()),
+            FieldValue::Class(c) => c.get_preview(ctx),
+            FieldValue::Array(a) => {
+                a.values[0].get_preview(ctx).map(|s| {
+                    format!("[0]={}", s)
+                })
+            }
+            FieldValue::String(v) => Some(v.to_string()),
+            FieldValue::Struct(v) => {
+                match ctx.field_info.map(|s| s.name.as_str()).unwrap_or("") {
+                    "via.rds.Mandrake" => {
+                        if let Ok(v) = Mandrake::try_from(v.as_ref()) {
+                            return Some(v.get().map(|x| x.to_string()).unwrap_or("Invalid".to_string()))
+                        }
+                    }
+                    _ => { }
+                }
+                None
+            },
+            _ => {
+                None
+            }
+        }
+    }
+}
+
 impl Editable for FieldValue {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         match self {
-            FieldValue::Enum(v) => edit_enum(v, ui, ctx),
+            FieldValue::Enum(v) => edit_enum_from_field(v, ui, ctx),
             FieldValue::S8(v) => v.edit(ui, ctx),
             FieldValue::U8(v) => v.edit(ui, ctx),
             FieldValue::S16(v) => v.edit(ui, ctx),
@@ -415,9 +489,6 @@ impl Array {
         w.seek_align_up(4)?;
         Ok(())
     }
-    pub fn get_preview() {
-
-    }
 }
 
 
@@ -505,27 +576,31 @@ impl Editable for Array {
                                         break; 
                                     }
 
-                                    let child_id = ui.make_persistent_id(i);
-                                    let mut child_ctx = EditContext { 
-                                        id: child_id.value(), 
-                                        array_index: Some(i), 
-                                        depth: ctx.depth + 1,
-                                        copy_buffer: ctx.copy_buffer,
-                                        ..*ctx 
-                                    };
 
                                     let start_pos = ui.cursor().min;
 
                                     if open == true || !is_search_active {
+                                        let label = member.get_preview(ctx).unwrap_or("".to_string());
+                                        let label = format!("{i}: {label}");
+
+                                        let child_id = ui.make_persistent_id(i);
+                                        let mut child_ctx = EditContext { 
+                                            id: child_id.value(), 
+                                            array_index: Some(i), 
+                                            depth: ctx.depth + 1,
+                                            copy_buffer: ctx.copy_buffer,
+                                            ..*ctx 
+                                        };
+
                                         match array_type {
                                             ArrayType::Class => {
                                                 let id_salt = if is_search_active { (i, "search_mode") } else { (i, "normal") };
                                                 let header_id = ui.make_persistent_id(id_salt);
-                                                collapsing_header_with_buttons_for_array_member(ui, header_id, Some(open), format!("{i}:"), member, &mut child_ctx);
+                                                collapsing_header_with_buttons_for_array_member(ui, header_id, Some(open), label, member, &mut child_ctx);
                                             }
                                             ArrayType::Value => {
                                                 ui.horizontal(|ui| {
-                                                    ui.label(format!("{i}: "));
+                                                    ui.label(label);
                                                     member.edit(ui, &mut child_ctx);
                                                 });
                                             }
@@ -588,7 +663,9 @@ impl Editable for Field {
             .unwrap_or(format!("{:08x}", self.hash));
         let og_type = field_info.map(|f| f.original_type.clone())
             .unwrap_or(format!("{:?}", self.field_type));
-        let name_contained = format!("{name}: {og_type}");
+        let array_brackets = field_info.map(|f| f.array).unwrap_or(false);
+        let array_brackets = if array_brackets {"[]"} else {""};
+
         let cur_type = field_info.and_then(|f| f.get_original_type(ctx.type_map));
         let mut child_ctx = EditContext {
             copy_buffer: ctx.copy_buffer,
@@ -597,6 +674,14 @@ impl Editable for Field {
             depth: ctx.depth + 1,
             ..*ctx
         };
+        
+        /*let preview = self.value.get_preview(&mut child_ctx).unwrap_or("".to_string());
+        let name_contained = if preview.is_empty() {
+            format!("{name}: {og_type}{array_brackets}")
+        } else {
+            format!("{name}: {og_type}{array_brackets}({preview})")
+        };*/
+        let name_contained = format!("{name}: {og_type}{array_brackets}");
 
 
         let is_search_active = !ctx.search_paths.is_empty();
@@ -682,21 +767,100 @@ impl Class {
     }
 }
 
+impl Class {
+    fn edit_as_bitset(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        todo!()
+    }
+    fn edit_as_item_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        if self.fields.len() > 2 {
+            return EditResponse::default();
+        }
+        let item_id_fixed_field = if let Some(i) = self.fields
+            .get_mut(&murmur3("ItemIdFixed", 0xffffffff)) { i } else {return EditResponse::default()};
+        if let FieldValue::U16(item_id_fixed) = item_id_fixed_field.value {
+            ui.horizontal(|ui| {
+                let mut val = item_id_fixed as i32;
+                ui.label("ItemIdFixed: ");
+                edit_enum_from_type(&mut val, "app.ItemDef.ID_Fixed", ui, ctx);
+                item_id_fixed_field.value = FieldValue::U16(val as u16);
+            });
+        }
+
+        let num = self.fields.get_mut(&murmur3("Num", 0xffffffff));
+        if let Some(num) = num {
+            ui.horizontal(|ui| {
+                ui.label("Num: ");
+                num.value.edit(ui, ctx);
+            });
+        }
+        EditResponse::default()
+    }
+
+    // this could potentially return the name of the type for arrays
+    pub fn get_preview(&self, ctx: &mut EditContext) -> Option<String> {
+        let type_info = ctx.type_map.get_by_hash(self.hash);
+        type_info.and_then(|type_info| {
+            match type_info.name.as_str() {
+                "app.savedata.cItemWork" => {
+                    let item_id_fixed_field = if let Some(i) = self.fields
+                        .get(&murmur3("ItemIdFixed", 0xffffffff)) { i }
+                    else {
+                        return None
+                    };
+                    if let FieldValue::U16(item_id_fixed) = item_id_fixed_field.value {
+                        let enum_str = ctx.type_map.get_enum_str(item_id_fixed, "app.ItemDef.ID_Fixed");
+                        return enum_str.map(|s| s.clone())
+                    }
+                    return None
+                }
+                _ => {
+                    return None
+                }
+            }
+
+        })
+    }
+}
+
 impl Editable for Class {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         let type_info = ctx.type_map.get_by_hash(self.hash);
         ui.push_id(ctx.id, |ui| {
-            for (field_hash, field) in &mut self.fields {
-                let child_id = ui.make_persistent_id(field_hash);
-                let mut child_ctx = EditContext {
-                    copy_buffer: ctx.copy_buffer,
-                    id: child_id.value(),
-                    parent_type: type_info,
-                    depth: ctx.depth + 1,
-                    ..*ctx
-                };
-                // need to make a get field name helper for TypeInfo
-                field.edit(ui, &mut child_ctx);
+            if let Some(ti) = type_info {
+                match ti.name.as_str() {
+                    "app.savedata.cItemWork" => {
+                        self.edit_as_item_work(ui, ctx);
+                    }
+                    _ => {
+                        for (field_hash, field) in &mut self.fields {
+                            let child_id = ui.make_persistent_id(field_hash);
+                            let mut child_ctx = EditContext {
+                                copy_buffer: ctx.copy_buffer,
+                                id: child_id.value(),
+                                parent_type: type_info,
+                                depth: ctx.depth + 1,
+                                ..*ctx
+                            };
+                            // need to make a get field name helper for TypeInfo
+                            field.edit(ui, &mut child_ctx);
+                        }
+
+                    }
+                }
+            } else {
+                for (field_hash, field) in &mut self.fields {
+                    let child_id = ui.make_persistent_id(field_hash);
+                    let mut child_ctx = EditContext {
+                        copy_buffer: ctx.copy_buffer,
+                        id: child_id.value(),
+                        parent_type: type_info,
+                        depth: ctx.depth + 1,
+                        ..*ctx
+                    };
+                    // need to make a get field name helper for TypeInfo
+                    field.edit(ui, &mut child_ctx);
+                }
+
             }
             EditResponse::default()
         }).inner
