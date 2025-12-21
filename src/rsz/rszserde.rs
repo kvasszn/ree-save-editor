@@ -1552,6 +1552,13 @@ pub struct Mandrake {
 }
 
 impl Mandrake {
+    pub fn to_buf(self) -> [u8; size_of::<Self>()] {
+        let mut buf = [0u8; size_of::<Self>()]; 
+        buf[0..8].copy_from_slice(&self.v.to_le_bytes());
+        buf[8..16].copy_from_slice(&self.m.to_le_bytes());
+        buf
+    }
+
     pub fn set(&mut self, n: i64) {
         self.v = n * self.m 
     }
