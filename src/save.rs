@@ -4,7 +4,7 @@ pub mod types;
 use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
 use flate2::{Compression, write::{DeflateDecoder, DeflateEncoder}};
-use crate::{file::{Magic, StructRW}, rsz::rszserde::{RszSerializerCtx}, save::types::Class};
+use crate::{file::{Magic, StructRW}, save::types::Class};
 
 use util::*;
 
@@ -26,15 +26,11 @@ impl SaveFile {
         let version: u32 = 2;
         let flags: u32 = 0x10 | 0x8; // mandarin | deflate
         let null: u32 = 0;
-        let mut ctx = RszSerializerCtx {
-            data: &mut data,
-            base_addr: 0,
-        };
 
         // write some unk bytes (i forget if this is the type hash or what, might be a murmur?)
         for field in &self.fields {
-            //field.0.to_bytes(&mut ctx)?;
-            //field.1.to_bytes(&mut ctx)?;
+            data.write(&field.0.to_le_bytes())?;
+            field.1.write(&mut data)?;
         }
 
         // compression
@@ -74,15 +70,11 @@ impl SaveFile {
         let version: u32 = 2;
         let flags: u32 = 0x10 | 0x8; // mandarin | deflate
         let null: u32 = 0;
-        let mut ctx = RszSerializerCtx {
-            data: &mut data,
-            base_addr: 0,
-        };
 
         // write some unk bytes (i forget if this is the type hash or what, might be a murmur?)
         for field in &self.fields {
-            //field.0.to_bytes(&mut ctx)?;
-            //field.1.to_bytes(&mut ctx)?;
+            data.write(&field.0.to_le_bytes())?;
+            field.1.write(&mut data)?;
         }
 
         // compression

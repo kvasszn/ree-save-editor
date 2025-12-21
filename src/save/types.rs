@@ -1,17 +1,18 @@
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek, Write};
 use std::error::Error;
+use std::str::FromStr;
 
-use eframe::egui::{CollapsingHeader, Ui};
+use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, TextStyle, Ui};
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
-use sdk::type_map;
-use sdk::types::StringU16;
+use sdk::types::{Guid, StringU16};
 
 use util::*;
 
-use crate::edit::{EditContext, EditResponse, Editable, RszEditCtx};
+use crate::edit::{CopyBuffer, EditContext, EditResponse, Editable};
 #[allow(unused_imports)]
 use crate::rsz::dump::RszDump;
+use crate::rsz::rszserde::Mandrake;
 
 // Some of this stuff comes from via.reflection.TypeKind
 #[repr(i32)]
@@ -120,14 +121,194 @@ impl FieldValue {
         };
         return Ok(value)
     }
+
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+        match self {
+            FieldValue::Unknown => { panic!("Unknown Field Type found") }
+            FieldValue::Array(v) => v.write(w),
+            FieldValue::Class(v) => v.write(w),
+            FieldValue::String(v) => { 
+                w.seek_align_up(4)?;
+                w.write(&(v.0.len() as u32).to_le_bytes())?;
+                for e in &v.0 {
+                    w.write(&e.to_le_bytes())?;
+                }
+                Ok(())
+            }
+            // These values actually need a size/len
+            _ => {
+                w.seek_align_up(4)?;
+                let size = self.get_size();
+                w.write(&size.to_le_bytes())?;
+                self.write_sized(w)?;
+                Ok(())
+            }
+        }
+    }
+
+
+    pub fn write_sized<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+        w.seek_align_up(self.get_size() as u64)?;
+        let _ = match self {
+            FieldValue::Enum(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::Boolean(v) => w.write(&[*v as u8])?,
+            FieldValue::S8(v) => w.write(&[*v as u8])?,
+            FieldValue::U8(v) => w.write(&[*v])?,
+            FieldValue::C8(v) => w.write(&[*v])?,
+            FieldValue::S16(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::U16(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::C16(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::S32(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::U32(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::F32(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::S64(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::U64(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::F64(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::Array(v) => {v.write(w)?; 0},
+            FieldValue::Struct(v) => {
+                for e in &v.data {
+                    w.write(&e.to_le_bytes())?;
+                }
+                v.data.len()
+            }
+            _ => 0
+        };
+        Ok(())
+    }
+
+    pub fn get_size(&self) -> u32 {
+        match self {
+            FieldValue::Boolean(_) | FieldValue::U8(_) | FieldValue::S8(_) | FieldValue::C8(_) => 1,
+            FieldValue::U16(_) | FieldValue::S16(_) | FieldValue::C16(_)  => 2,
+            FieldValue::Enum(_) | FieldValue::U32(_) | FieldValue::S32(_) | FieldValue::F32(_) => 4,
+            FieldValue::U64(_) | FieldValue::S64(_) | FieldValue::F64(_) => 8,
+            FieldValue::Struct(v) => v.data.len() as u32,
+            _ => 0
+        }
+
+    }
+}
+
+fn collapsing_header_with_buttons_for_field(
+    ui: &mut Ui,
+    id: egui::Id,
+    default_open: Option<bool>,
+    label: impl Into<eframe::egui::WidgetText>,
+    field: &mut Field,
+    ctx: &mut EditContext,
+) {
+    let state = egui::collapsing_header::CollapsingState::load_with_default_open(
+        ui.ctx(), 
+        id, 
+        default_open.unwrap_or(false)
+    );
+    let is_open = state.is_open();
+    let mut label_clicked = false;
+    let mut header_resp = state.show_header(ui, |ui| {
+        let label_res = ui.add(egui::Button::new(label).frame(false));
+        label_clicked = label_res.clicked();
+
+        ui.add_space(10.0);
+
+        if ui.small_button("Copy").clicked() {
+            *ctx.copy_buffer = CopyBuffer::Field(field.clone())
+        }
+
+        if let CopyBuffer::Field(copied_field) = &ctx.copy_buffer {
+            if field.hash == copied_field.hash && field.field_type == copied_field.field_type {
+                if ui.add(egui::Button::new("Paste").fill(ui.visuals().selection.bg_fill)).clicked() {
+                    field.value = copied_field.value.clone();
+                    // *ctx.copy_buffer = None; 
+                }
+            }
+        }
+    });
+    if label_clicked {
+        let next = !is_open;
+        //ui.data_mut(|d| d.insert_temp(id, next));
+        header_resp.set_open(next);
+    }
+
+    header_resp.body(|ui| field.value.edit(ui, ctx));
+}
+
+
+fn collapsing_header_with_buttons_for_array_member(
+    ui: &mut Ui,
+    id: egui::Id,
+    default_open: Option<bool>,
+    label: impl Into<eframe::egui::WidgetText>,
+    member: &mut FieldValue,
+    ctx: &mut EditContext,
+) {
+    let state = egui::collapsing_header::CollapsingState::load_with_default_open(
+        ui.ctx(), 
+        id, 
+        default_open.unwrap_or(false),
+    );
+    let is_open = state.is_open();
+    let mut label_clicked = false;
+    let mut header_resp = state.show_header(ui, |ui| {
+        let label_res = ui.add(egui::Button::new(label).frame(false));
+        label_clicked = label_res.clicked();
+
+        ui.add_space(10.0);
+        if let FieldValue::Class(member_class) = member {
+            if ui.small_button("Copy").clicked() {
+                *ctx.copy_buffer = CopyBuffer::Array(*member_class.clone());
+            }
+
+            if let CopyBuffer::Array(copied_class) = &ctx.copy_buffer {
+                if copied_class.hash == member_class.hash {
+                    if ui.add(egui::Button::new("Paste").fill(ui.visuals().selection.bg_fill)).clicked() {
+                        *member_class = Box::new(copied_class.clone());
+                        // *ctx.copy_buffer = None;
+                    }
+                }
+            }
+        }
+        label_clicked
+    });
+
+    if label_clicked {
+        let next = !is_open;
+        header_resp.set_open(next);
+    }
+    header_resp.body(|ui| member.edit(ui, ctx));
+}
+
+fn edit_enum(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+    let enum_type = ctx.field_info.and_then(|field_info| ctx.type_map.enums.get(&field_info.original_type));
+    let enum_str = enum_type.and_then(|e| e.get(&value.to_string()));
+    match enum_str {
+        Some(mut enum_str) => {
+            let enum_type = enum_type.unwrap();
+            let mut enum_list = enum_type.iter()
+                .filter_map(|x| if x.0.parse::<i32>().is_ok() {Some(x.1)} else {None})
+                .collect::<Vec<_>>();
+            enum_list.sort();
+            ComboBox::from_id_salt(ctx.id)
+                .selected_text(enum_str)
+                .show_ui(ui, |ui|{
+                    for option in enum_list {
+                        ui.selectable_value(&mut enum_str, &option, option);
+                    }
+                    if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
+                        *value = x;
+                    }
+                });
+        }
+        None => {
+            value.edit(ui, ctx);
+        }
+    }
+    EditResponse::default()
 }
 
 impl Editable for FieldValue {
-    fn edit(&mut self, ui: &mut Ui, ctx: &EditContext) -> EditResponse {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         match self {
-            FieldValue::Enum(v) => {
-                v.edit(ui, ctx)
-            },
+            FieldValue::Enum(v) => edit_enum(v, ui, ctx),
             FieldValue::S8(v) => v.edit(ui, ctx),
             FieldValue::U8(v) => v.edit(ui, ctx),
             FieldValue::S16(v) => v.edit(ui, ctx),
@@ -138,13 +319,13 @@ impl Editable for FieldValue {
             FieldValue::U64(v) => v.edit(ui, ctx),
             FieldValue::F32(v) => v.edit(ui, ctx),
             FieldValue::F64(v) => v.edit(ui, ctx),
+            FieldValue::C8(v) => v.edit(ui, ctx),
+            FieldValue::C16(v) => v.edit(ui, ctx),
             FieldValue::Class(c) => c.edit(ui, ctx),
             FieldValue::Array(a) => a.edit(ui, ctx),
-            FieldValue::String(v) => {
-                ui.label(format!("{}", v));
-                EditResponse::default()
-            },
-            _ => { 
+            FieldValue::String(v) => v.edit(ui, ctx),
+            FieldValue::Struct(v) => v.edit(ui, ctx),
+            _ => {
                 ui.label(format!("{:?}", self));
                 EditResponse::default()
             }
@@ -201,24 +382,172 @@ impl Array {
             values
         })
     }
+
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+        w.seek_align_up(4)?;
+        w.write(&(self.member_type as i32).to_le_bytes())?;
+        w.write(&self.member_size.to_le_bytes())?;
+        w.write(&(self.values.len() as u32).to_le_bytes())?;
+        w.write(&(self.array_type as i32).to_le_bytes())?;
+        for e in &self.values {
+            match self.array_type {
+                ArrayType::Value => {
+                    if self.member_type == FieldType::String {
+                        if let FieldValue::String(s) = e {
+                            w.seek_align_up(4)?;
+                            let size = s.0.len() as u32;
+                            w.write(&size.to_le_bytes())?;
+                            for v in &s.0 {
+                                w.write(&v.to_le_bytes())?;
+                            }
+                        } else {
+                            return Err("Expected Array of Strings i think hopefully".into())
+                        }
+                    } else {
+                        e.write_sized(w)?;
+                    }
+                }
+                ArrayType::Class => {
+                    e.write(w)?;
+                }
+            }
+        }
+        w.seek_align_up(4)?;
+        Ok(())
+    }
+    pub fn get_preview() {
+
+    }
 }
 
+
+// This is the most digusting code i might've written
+// actually no that's not true
+// there's other stuff that's worse
+// this is just a mix of me and gemini cooking stupid shit up
+// but it works kinda decent so its chill
+// TODO: Fix the stupid thing where subsequent scroll areas are smaller than the first
 impl Editable for Array {
-    fn edit(&mut self, ui: &mut Ui, ctx: &EditContext) -> EditResponse {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         ui.push_id(ctx.id, |ui| {
-            for (i, member) in self.values.iter_mut().enumerate() {
-                let child_id = ui.make_persistent_id(i);
-                let child_ctx = EditContext {
-                    id: child_id.value(),
-                    ..*ctx
+            let is_search_active = !ctx.search_paths.is_empty();
+            let matches = ctx.field_info.map(|f| ctx.search_paths.contains(&(f.type_hash, f.hash))).unwrap_or(false);
+            let matches_search = is_search_active && matches;
+            let open = matches_search && is_search_active;
+            let array_type = self.array_type;
+
+            ui.scope(|ui| {
+                let target_height = 22.0;
+                ui.style_mut().spacing.item_spacing.y = 6.0;
+                ui.style_mut().spacing.interact_size.y = target_height;
+                let spacing = ui.style().spacing.item_spacing.y;
+
+                let state_id = ui.make_persistent_id("row_heights");
+                let mut row_heights = ui.data_mut(|d| {
+                    d.get_temp::<Vec<f32>>(state_id).unwrap_or_default()
+                });
+
+                if row_heights.len() != self.values.len() {
+                    row_heights.resize(self.values.len(), target_height);
+                }
+                let (visible_sum, visible_count): (_, u32) = row_heights.iter().enumerate()
+                                                   .filter(|(i, _)| ctx.search_range.contains(i))
+                                                   .fold((0.0, 0), |(acc_h, acc_c), (_, h)| (acc_h + h, acc_c + 1));
+
+                let total_content_height = visible_sum + (visible_count.saturating_sub(1) as f32 * spacing);
+
+                let max_height = if ctx.depth == 0 {
+                    let h = ui.available_height();
+                    if h.is_infinite() { 800.0 } else { h - 10.0 }
+                } else {
+                    400.0 
                 };
-                // need to make a get member name helper for TypeInfo
-                member.edit(ui, &child_ctx);
-            }
+
+                // Clamp: Be at least 40px, but no taller than max_height
+                let view_height = total_content_height.clamp(40.0, max_height);
+
+                eframe::egui::Frame::new()
+                    .fill(ui.visuals().faint_bg_color)
+                    .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+                    .inner_margin(4.0)
+                    .show(ui, |ui| {
+                        ScrollArea::vertical()
+                            // Snap window height to content, but respect max_height
+                            .auto_shrink([false, true])
+                            .min_scrolled_height(view_height)
+                            .max_width(ui.available_width() * 0.9)
+                            .show(ui, |ui| {
+                                let clip_rect = ui.clip_rect();
+                                let mut current_y = ui.cursor().min.y;
+                                // Determine the last index in our filter slice so we don't add extra spacing at the end
+                                let last_visible_index = ctx.search_range.clone().last()
+                                    .unwrap_or(0)
+                                    .min(self.values.len().saturating_sub(1));
+
+                                for (i, member) in self.values.iter_mut().enumerate() {
+                                    if !ctx.search_range.contains(&i) { continue; }
+
+                                    let cached_h = row_heights[i];
+                                    let add_spacing = if i < last_visible_index { spacing } else { 0.0 };
+                                    if current_y + cached_h < clip_rect.min.y {
+                                        ui.add_space(cached_h + add_spacing);
+                                        current_y += cached_h + add_spacing;
+                                        continue;
+                                    }
+
+                                    if current_y > clip_rect.max.y + 200.0 {
+                                        let (rem_h, rem_c): (_, u32) = row_heights[i..].iter().enumerate()
+                                                             .filter(|(offset, _)| ctx.search_range.contains(&(i + offset)))
+                                                             .fold((0.0, 0), |(acc_h, acc_c), (_, h)| (acc_h + h, acc_c + 1));
+
+                                        let rem_spacing = rem_c.saturating_sub(1) as f32 * spacing;
+                                        ui.add_space(rem_h + rem_spacing);
+                                        break; 
+                                    }
+
+                                    let child_id = ui.make_persistent_id(i);
+                                    let mut child_ctx = EditContext { 
+                                        id: child_id.value(), 
+                                        array_index: Some(i), 
+                                        depth: ctx.depth + 1,
+                                        copy_buffer: ctx.copy_buffer,
+                                        ..*ctx 
+                                    };
+
+                                    let start_pos = ui.cursor().min;
+
+                                    if open == true || !is_search_active {
+                                        match array_type {
+                                            ArrayType::Class => {
+                                                let id_salt = if is_search_active { (i, "search_mode") } else { (i, "normal") };
+                                                let header_id = ui.make_persistent_id(id_salt);
+                                                collapsing_header_with_buttons_for_array_member(ui, header_id, Some(open), format!("{i}:"), member, &mut child_ctx);
+                                            }
+                                            ArrayType::Value => {
+                                                ui.horizontal(|ui| {
+                                                    ui.label(format!("{i}: "));
+                                                    member.edit(ui, &mut child_ctx);
+                                                });
+                                            }
+                                        }
+                                    }
+
+                                    // Update Cache
+                                    let actual_height = ui.cursor().min.y - start_pos.y;
+                                    if (row_heights[i] - actual_height).abs() > 0.1 {
+                                        row_heights[i] = actual_height;
+                                    }
+                                    current_y += actual_height + add_spacing;
+                                }
+                            });
+                    });
+                ui.data_mut(|d| d.insert_temp(state_id, row_heights));
+            });
             EditResponse::default()
         }).inner
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct Field {
@@ -241,10 +570,18 @@ impl Field {
             value
         })
     }
+
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+        w.write(&self.hash.to_le_bytes())?;
+        w.write(&(self.field_type as i32).to_le_bytes())?;
+        self.value.write(w)?;
+        w.seek_align_up(4)?;
+        Ok(())
+    }
 }
 
 impl Editable for Field {
-    fn edit(&mut self, ui: &mut Ui, ctx: &EditContext) -> EditResponse {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         //let type_info = ctx.type_map.get_by_hash(self.hash);
         let field_info = ctx.parent_type.and_then(|x| x.get_by_hash(self.hash));
         let name: String = field_info.map(|x| x.name.clone())
@@ -252,23 +589,55 @@ impl Editable for Field {
         let og_type = field_info.map(|f| f.original_type.clone())
             .unwrap_or(format!("{:?}", self.field_type));
         let name_contained = format!("{name}: {og_type}");
+        let cur_type = field_info.and_then(|f| f.get_original_type(ctx.type_map));
+        let mut child_ctx = EditContext {
+            copy_buffer: ctx.copy_buffer,
+            cur_type,
+            field_info,
+            depth: ctx.depth + 1,
+            ..*ctx
+        };
 
-        match self.field_type {
-            FieldType::Array | FieldType::Class | FieldType::Struct => {
-                CollapsingHeader::new(name_contained)
-                    .id_salt(self.hash)
-                    .default_open(!ctx.search_term.is_empty())
-                    .show(ui, |ui| {
-                        let child_resp = self.value.edit(ui, ctx);
+
+        let is_search_active = !ctx.search_paths.is_empty();
+        //let matches = field_info.map(|field_info| ctx.search_paths.contains(&(field_info.original_type.clone(), field_info.name.clone()))).unwrap_or(false);
+        //let matches = field_info.map(|field_info| ctx.search_paths.contains(&(murmur3(&field_info.original_type, 0xffffffff), self.hash))).unwrap_or(false);
+        let matches = field_info.map(|field_info| ctx.search_paths.contains(&(field_info.type_hash, self.hash))).unwrap_or(false);
+        let open = is_search_active && matches;
+        let id_salt = if is_search_active { (self.hash, "search_mode") } else { (self.hash, "normal") };
+
+        if open == true || !is_search_active {
+            match &self.field_type {
+                FieldType::Array | FieldType::Class => {
+                    let header_id = ui.make_persistent_id(id_salt);
+                    collapsing_header_with_buttons_for_field(ui, header_id, Some(open), name_contained, self, &mut child_ctx);
+                }
+                FieldType::Struct => {
+                    match og_type.as_str() {
+                        "via.rds.Mandrake" => {
+                            let header = CollapsingHeader::new(name_contained)
+                                .id_salt(id_salt);
+                            header.default_open(open).show(ui, |ui| {
+                                self.value.edit(ui, &mut child_ctx);
+                            });
+                        },
+                        _ => {
+                            ui.horizontal(|ui| {
+                                ui.label(name);
+                                self.value.edit(ui, &mut child_ctx);
+                                ui.label(format!("{og_type}"));
+                            });
+                        }
+                    }
+                }
+                _ => {
+                    ui.horizontal(|ui| {
+                        ui.label(name);
+                        self.value.edit(ui, &mut child_ctx);
+                        ui.label(format!("{og_type}"));
+                        //response.unite(child_resp);
                     });
-            }
-            _ => {
-                ui.horizontal(|ui| {
-                    ui.label(name);
-                    let child_resp = self.value.edit(ui, ctx);
-                    ui.label(format!(" :{og_type}"));
-                    //response.unite(child_resp);
-                });
+                }
             }
         }
         EditResponse::default()
@@ -302,25 +671,172 @@ impl Class {
             fields
         })
     }
+
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+        w.write(&self.num_fields.to_le_bytes())?;
+        w.write(&self.hash.to_le_bytes())?;
+        for (_, field) in &self.fields {
+            field.write(w)?;
+        }
+        Ok(())
+    }
 }
 
 impl Editable for Class {
-    fn edit(&mut self, ui: &mut Ui, ctx: &EditContext) -> EditResponse {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         let type_info = ctx.type_map.get_by_hash(self.hash);
         ui.push_id(ctx.id, |ui| {
             for (field_hash, field) in &mut self.fields {
                 let child_id = ui.make_persistent_id(field_hash);
-                let child_ctx = EditContext {
+                let mut child_ctx = EditContext {
+                    copy_buffer: ctx.copy_buffer,
                     id: child_id.value(),
                     parent_type: type_info,
+                    depth: ctx.depth + 1,
                     ..*ctx
                 };
                 // need to make a get field name helper for TypeInfo
-                field.edit(ui, &child_ctx);
+                field.edit(ui, &mut child_ctx);
             }
-
             EditResponse::default()
         }).inner
     }
 }
 
+
+impl Editable for StringU16 {
+    fn edit(&mut self, ui: &mut Ui, _: &mut EditContext) -> EditResponse {
+        let mut s = String::from_utf16_lossy(&self.0);
+        let response = ui.add(TextEdit::singleline(&mut s).clip_text(false));
+        let encoded: Vec<u16> = s.encode_utf16().collect();
+        *self = Self(encoded);
+        EditResponse::from(response)
+    }
+}
+
+impl Editable for String {
+    fn edit(&mut self, ui: &mut Ui, _: &mut EditContext) -> EditResponse {
+        let response = ui.add(TextEdit::singleline(self).clip_text(false));
+        EditResponse::from(response)
+    }
+}
+
+impl<T: Editable> Editable for Vec<T> {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        for e in self {
+            e.edit(ui, ctx);
+        }
+        EditResponse::default()
+    }
+}
+
+
+pub trait TryEdit<T>: Editable {
+    fn try_edit(value: &mut T, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse;
+}
+
+impl TryEdit<Struct> for Mandrake {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let s = Mandrake::try_from(&*value);
+        if let Ok(mut s) = s {
+            let r = s.edit(ui, ctx);
+            value.data = s.to_buf().to_vec();
+            r
+        } else {
+            value.edit(ui, ctx)
+        }
+    }
+}
+
+impl Editable for Guid {
+    fn edit(&mut self, ui: &mut Ui, _: &mut EditContext) -> EditResponse {
+        let mut disp = uuid::Uuid::from_bytes_le(self.0).to_string();
+        let resp = ui.add(TextEdit::singleline(&mut disp).clip_text(false));
+        if let Ok(edited) = uuid::Uuid::from_str(&disp) {
+            self.0 = edited.to_bytes_le()
+        } else {
+            println!("Invalid Value for Guid");
+        }
+        let mut r = EditResponse::default();
+        r.changed = resp.changed();
+        r
+    }
+}
+
+impl TryEdit<Struct> for Guid {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        if value.data.len() > 16 {
+            return value.edit(ui, ctx)
+        }
+        let mut buf = [0u8; 16];
+        buf[0..].copy_from_slice(&value.data);
+        let mut guid = Guid(buf);
+        let resp = guid.edit(ui, ctx);
+        if resp.changed {
+            value.data = guid.0.to_vec();
+        }
+        resp
+    }
+}
+
+impl Editable for Struct {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        match ctx.cur_type {
+            Some(t) => {
+                let r = match t.name.as_str() {
+                    "via.rds.Mandrake" => { 
+                        Mandrake::try_edit(self, ui, ctx)
+                    },
+                    "System.Guid" => { 
+                        Guid::try_edit(self, ui, ctx)
+                    },
+                    _ => {
+                        self.data.edit(ui, ctx)
+                    }
+                };
+                r
+            }
+            None => {
+                self.data.edit(ui, ctx)
+            }
+        }
+    }
+}
+
+impl TryFrom<&Struct> for Mandrake {
+    type Error = Box<dyn Error>;
+    fn try_from(value: &Struct) -> Result<Self, Self::Error> {
+        if value.data.len() > 16 {
+            return Err("Data Length > 16 for Mandrake".into())
+        }
+        let mut d = Cursor::new(&value.data);
+        let v = d.read_i64()?;
+        let m = d.read_i64()?;
+        Ok(Mandrake {
+            v, m
+        })
+    }
+}
+
+impl Editable for Mandrake {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let mut resp = EditResponse::default();
+        if let Some(mut real_val) = self.get() {
+            ui.horizontal(|ui| {
+                ui.label("  real_value");
+                let r = real_val.edit(ui, ctx);
+                resp.changed = r.changed;
+            });
+            self.set(real_val);
+        }
+        ui.horizontal(|ui| {
+            ui.label("  v");
+            ui.label(format!("{}", self.v));
+        });
+        ui.horizontal(|ui| {
+            ui.label("  m");
+            ui.label(format!("{}", self.m));
+        });
+        resp
+    }
+}

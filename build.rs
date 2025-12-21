@@ -5,7 +5,7 @@ use std::io::{BufReader, BufWriter};
 use sdk::type_map::TypeMap; 
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=PACK_FILES");
+    /*println!("cargo:rerun-if-env-changed=PACK_FILES");
     let do_pack_sdk = std::env::var("PACK_FILES").unwrap_or_default();
     let should_pack = do_pack_sdk == "1" || do_pack_sdk.eq_ignore_ascii_case("true");
     if should_pack {
@@ -23,6 +23,6 @@ fn main() {
         let dest_path = "./assets/types.bin";
         println!("Building TypeMap to {:?}", dest_path);
         map.to_bincode(dest_path).unwrap();
-    }
+    }*/
 }
 

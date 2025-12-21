@@ -1,15 +1,16 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::error::Error;
 use std::io::{Cursor, Read, Seek};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 use mhtame::edit::{EditContext, Editable};
 use mhtame::file::StructRW;
 
 use eframe::egui::{self, ScrollArea, TextEdit, Ui, Vec2};
 
 use mhtame::{
-    edit::{CopyBuffer, RszEditCtx},
+    edit::{CopyBuffer},
     save::{SaveContext, SaveFile},
 };
 use sdk::type_map::TypeMap;
@@ -147,6 +148,11 @@ pub struct TameApp {
     popup_msg: String,
     copy_buffer: CopyBuffer,
     type_map: TypeMap,
+    search_buffer: String,
+    search_fields: HashSet<(u32, u32)>,
+    search_range: core::ops::Range<usize>,
+    max_search_depth: u32,
+    search_time: Option<Duration>,
 
     // THIS IS SO DIsGUSTING AHHHHHHHHHHHH
     // I need to just put this in something like struct FilePicker
@@ -158,27 +164,22 @@ pub struct TameApp {
 
 impl TameApp{
     pub fn new(config: Config, _cc: &eframe::CreationContext<'_>) -> Self {
-        // Load TypeMap
-        // NOTE: On WASM, 'load_from_file' likely fails because it uses std::fs.
-        // You eventually need a way to fetch these JSONs via HTTP or embed them.
-        #[cfg(not(target_arch = "wasm32"))]
+        //#[cfg(not(target_arch = "wasm32"))]
         /*let type_map = TypeMap::load_from_file(&config.rsz_path, &config.enums_path)
             .unwrap_or_else(|_| {
                 let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
                 type_map
             });*/
-        let type_map = TypeMap::parse_bincode(include_bytes!("../../assets/types.bin"))
+        #[cfg(not(target_arch = "wasm32"))]
+        /*let type_map = TypeMap::parse_bincode(include_bytes!("../../assets/types.bin"))
             .unwrap_or_else(|_| {
                 let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
                 type_map
-            });
+            });*/
+        let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
 
         #[cfg(target_arch = "wasm32")]
-        //let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
-        let type_map = TypeMap {
-            types: sdk::type_map::TypesWrapper(HashMap::new()),
-            enums: HashMap::new(),
-        };
+        let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
 
 
 
@@ -205,7 +206,19 @@ impl TameApp{
         }
         let steam_id_text = steam_id_u64.map(|x| x.to_string()).unwrap_or("".to_string());
 
-        let input_file_picker = FilePicker::<false>::new("File");
+        let mut input_file_picker = FilePicker::<false>::new("File");
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(f) = config.file_name {
+                use std::path::Path;
+
+                let p = Path::new(&f);
+                if std::fs::exists(p).is_ok() {
+                    input_file_picker.pending_result = Some(FilePickResult::Native(f.clone()));
+                    input_file_picker.text = f.clone();
+                }
+            }
+        }
 
         #[cfg(not(target_arch = "wasm32"))]
         let mut output_picker = FilePicker::<true>::new("Output Path");
@@ -221,8 +234,15 @@ impl TameApp{
             current_file: CurrentFile::Null,
             input_file: String::from(""),
             input_file_picker,
+
             #[cfg(not(target_arch = "wasm32"))]
             output_picker,
+
+            search_buffer: String::default(),
+            search_fields: HashSet::new(),
+            search_range: 0..usize::MAX,
+            max_search_depth: 100,
+            search_time: None,
 
             show_popup: false,
             popup_msg: String::new(),
@@ -293,7 +313,6 @@ impl TameApp{
 
     pub fn reload(&mut self) -> bool {
         let current_file = std::mem::replace(&mut self.current_file, CurrentFile::Null);
-        println!("{:?}", current_file);
         match current_file {
             CurrentFile::Path(path) => {
                 // do this on wasm too?
@@ -346,7 +365,6 @@ impl TameApp{
                 }
             },
             CurrentFile::Loaded { .. } | CurrentFile::Null => {
-                println!("{}", self.input_file);
                 self.current_file = CurrentFile::Path(self.input_file.clone());
                 if self.reload() == false {
                     self.popup_msg = format!("Could not open file {:?}", self.input_file);
@@ -362,16 +380,8 @@ impl TameApp{
         ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
             match &mut self.current_file {
                 CurrentFile::LoadedWeb { loaded, .. } | CurrentFile::Loaded { loaded, .. } => {
-                    //let mut fake_structs = Vec::new();
-                    //let mut rsz_ctx = RszEditCtx::new(0, &mut fake_structs, &mut self.copy_buffer, &self.type_map);
-                    let edit_ctx = EditContext {
-                        type_map: &self.type_map,
-                        search_term: "",
-                        parent_hash: 0,
-                        parent_type: None,
-                        id: 0
-                    };
-                    loaded.edit(ui, &edit_ctx);
+                    let mut edit_ctx = EditContext::new(&self.type_map, &self.search_fields, &self.search_range, &mut self.copy_buffer);
+                    loaded.edit(ui, &mut edit_ctx);
                 }
                 _ => {
                     ui.label("No File Loaded.");
@@ -399,6 +409,37 @@ impl TameApp{
                     self.load(file);
                 }
             }
+        }
+    }
+}
+
+
+// Thanks Gemini :D
+fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
+    let Some(start_bracket) = input.find('[') else {
+        return (input.to_string(), 0..usize::MAX);
+    };
+    
+    let Some(end_bracket) = input.find(']') else {
+         return (input.to_string(), 0..usize::MAX);
+    };
+
+    let name = input[0..start_bracket].to_string();
+    let content = &input[start_bracket+1..end_bracket];
+
+    if let Some(colon_pos) = content.find(':') {
+        let start_str = &content[0..colon_pos];
+        let end_str = &content[colon_pos+1..];
+
+        let start = start_str.parse::<usize>().unwrap_or(0);
+        let end = end_str.parse::<usize>().unwrap_or(usize::MAX);
+        
+        (name, start..end)
+    } else {
+        if let Ok(idx) = content.parse::<usize>() {
+            (name, idx..idx+1)
+        } else {
+            (name, 0..usize::MAX)
         }
     }
 }
@@ -483,7 +524,6 @@ impl eframe::App for TameApp {
         }
 
         self.update_input_file();
-
         // Main UI
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.style_mut().spacing.item_spacing *= 1.5;
@@ -544,7 +584,6 @@ impl eframe::App for TameApp {
                     }
                 }
 
-
                 if ui.button("Refresh / Load").clicked() {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
@@ -553,6 +592,7 @@ impl eframe::App for TameApp {
 
                     self.reload();
                 }
+
 
             });
 
@@ -583,6 +623,37 @@ impl eframe::App for TameApp {
             ui.horizontal(|ui| {
                 self.output_picker.ui(ui);
                 self.output_picker.update();
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Search: ");
+                let resp = ui.add(TextEdit::singleline(&mut self.search_buffer));
+                if resp.changed() {
+                    let (search_buffer, range) = parse_query(&self.search_buffer);
+                    self.search_range = range;
+                    self.search_fields.clear();
+                    if !search_buffer.is_empty() {
+                        let start = web_time::Instant::now();
+                        match &self.current_file {
+                            CurrentFile::Loaded { loaded, .. } | CurrentFile::LoadedWeb { loaded, .. }  => {
+                                for field in &loaded.fields {
+                                    if let Some(type_info) = self.type_map.get_by_hash(field.1.hash) {
+                                        //let (_ts, fs) = self.type_map.searchv2(type_info, &search_buffer, self.max_search_depth as usize);
+                                        let fs = self.type_map.search(type_info, &search_buffer, self.max_search_depth as usize);
+                                        self.search_fields.extend(fs);
+                                    }
+                                }
+                            }
+                            _ => {();}
+                        }
+                        self.search_time = Some(start.elapsed());
+                    } else {
+                        self.search_time = None;
+                    }
+                }
+                if let Some(search_time) = self.search_time {
+                    ui.label(format!("{}s", search_time.as_secs_f64()));
+                }
             });
 
             ui.separator();
