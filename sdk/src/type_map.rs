@@ -16,6 +16,9 @@ pub fn murmur3(data: impl AsRef<[u8]>, seed: u32) -> u32 {
 pub struct TypeMap {
     pub types: TypesWrapper,
     pub enums: EnumMap,
+    pub msgs: MsgCombined,
+    // enum_type -> (enum_str -> guid)
+    pub enum_mappings: HashMap<String, HashMap<String, String>>
 }
 
 impl TypeMap {
@@ -120,6 +123,19 @@ impl TypeMap {
         (matching_types, fields_to_expand)
     }
 
+    pub fn load_with_msgs(rsz_path: &str, enum_path: &str, msg_path: &str, mappings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
+        let mut type_map =  TypeMap::load_from_file(rsz_path, enum_path)?;
+        let mut file = File::open(msg_path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        type_map.msgs = serde_json::from_slice(&mut data)?;
+        let mut file = File::open(mappings_path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        type_map.enum_mappings = serde_json::from_slice(&mut data)?;
+        Ok(type_map)
+    }
+
     pub fn load_from_file(rsz_path: &str, enum_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let mut file = File::open(rsz_path)?;
         let mut data = Vec::new();
@@ -129,25 +145,36 @@ impl TypeMap {
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
         let enums = serde_json::from_slice(&mut data)?;
-        Ok(TypeMap{types, enums})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default()})
     }
 
     pub fn from_reader<R: Read + Seek>(rsz_reader: R, enum_reader: R) -> std::result::Result<Self, Box<dyn Error>> {
         let types: TypesWrapper = simd_json::from_reader(rsz_reader)?;
         let enums: HashMap<String, HashMap<String, String>> = simd_json::from_reader(enum_reader)?;
-        Ok(TypeMap{types, enums})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
     }
 
     pub fn parse(type_data: &mut [u8], enum_data: &mut [u8]) -> std::result::Result<Self, Box<dyn Error>> {
         let types = simd_json::from_slice(type_data)?;
         let enums = simd_json::from_slice(enum_data)?;
-        Ok(TypeMap{types, enums})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
     }
 
     pub fn parse_str(type_data: &str, enum_data: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let types = serde_json::from_str(type_data)?;
         let enums = serde_json::from_str(enum_data)?;
-        Ok(TypeMap{types, enums})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
+    }
+    pub fn parse_str_compressed(type_data: &str, enum_data: &str) -> std::result::Result<Self, Box<dyn Error>> {
+        let types = serde_json::from_str(type_data)?;
+        let enums = serde_json::from_str(enum_data)?;
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
+    }
+
+    pub fn load_msg(mut self, msg_data: &str, enum_mappings: &str) -> Self {
+        self.msgs = serde_json::from_str(msg_data).unwrap_or_default();
+        self.enum_mappings = serde_json::from_str(enum_mappings).unwrap_or_default();
+        self
     }
 
     pub fn to_bincode(&self, file_path: &str) -> std::result::Result<(), Box<dyn Error>> {
@@ -203,6 +230,18 @@ impl TypeMap {
       }
       cur_field
       }*/
+
+    pub fn get_enum_text(&self, enum_str: &str, original_type: &str, language: ContentLanguage) -> Option<String> {
+        let enum_guid_map = self.enum_mappings.get(original_type);
+        let guid = enum_guid_map.and_then(|x| {
+            x.get(enum_str)
+        });
+        let res = guid.and_then(|guid| {
+            self.msgs.get_content(guid, language)
+        });
+        //println!("{enum_str:?} {original_type:?} {guid:?} {res:?}");
+        res
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -405,4 +444,66 @@ impl FieldInfo {
         map.get_by_hash(self.type_hash)
             //map.get_by_name(&self.original_type)
     }
+}
+
+#[repr(usize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentLanguage {
+    Japanese = 0,
+    English = 1,
+    French = 2,
+    Italian = 3,
+    German = 4,
+    Spanish = 5,
+    Russian = 6,
+    Polish = 7,
+    Dutch = 8,
+    Portuguese = 9,
+    PortugueseBr = 10,
+    Korean = 11,
+    TransitionalChinese = 12,
+    SimplelifiedChinese = 13,
+    Finnish = 14,
+    Swedish = 15,
+    Danish = 16,
+    Norwegian = 17,
+    Czech = 18,
+    Hungarian = 19,
+    Slovak = 20,
+    Arabic = 21,
+    Turkish = 22,
+    Bulgarian = 23,
+    Greek = 24,
+    Romanian = 25,
+    Thai = 26,
+    Ukrainian = 27,
+    Vietnamese = 28,
+    Indonesian = 29,
+    Fiction = 30,
+    Hindi = 31,
+    LatinAmericanSpanish = 32,
+    Unknown = 33,
+}
+
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct MsgCombined {
+    msgs: HashMap<String, MsgEntry>,
+    name_to_guid: HashMap<String, String>
+}
+
+impl MsgCombined {
+    pub fn get_content(&self, guid: &str, language: ContentLanguage) -> Option<String> {
+        self.msgs.get(guid).map(|e| e.content[language as usize].clone())
+    }
+    pub fn get_from_enum(&self, name: &str, language: ContentLanguage) -> Option<String> {
+        None
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+struct MsgEntry {
+    guid: String,
+    name: String,
+    content: Vec<String>
 }

@@ -6,7 +6,6 @@ edition = "2024"
 [lib]
 name = "sdk"
 path = "src/lib.rs"
-crate-type = ["lib"]
 
 [dependencies]
 util = {path = "../util/"}

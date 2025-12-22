@@ -10,9 +10,8 @@ members = [
     ".", "file_macros", "rsz_macros" , "sdk", "util", "gui"
 ]
 
-#[[bin]]
-#name = "mhtame-gui"
-#path = "src/gui/main.rs"
+[lib]
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
