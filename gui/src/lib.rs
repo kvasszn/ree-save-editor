@@ -7,16 +7,20 @@ use std::time::Duration;
 use mhtame::edit::{EditContext, Editable};
 use mhtame::file::StructRW;
 
-use eframe::egui::{self, ScrollArea, TextEdit, Ui, Vec2};
+use eframe::egui::{self, ComboBox, ScrollArea, TextEdit, Ui, Vec2};
 
+#[cfg(not(target_arch = "wasm32"))]
+use mhtame::rsz::dump::decompress;
 use mhtame::{
     edit::{CopyBuffer},
     save::{SaveContext, SaveFile},
 };
-use sdk::type_map::TypeMap;
+use sdk::type_map::{ContentLanguage, TypeMap};
 
-const RSZ_JSON: &str = include_str!("../../assets/rszmhwilds_packed.json");
-const ENUMS_JSON: &str = include_str!("../../assets/enumsmhwilds.json");
+const RSZ_JSON: &[u8] = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
+const ENUMS_JSON: &[u8] = include_bytes!("../../assets/enumsmhwilds.json.gz");
+const MSGS_JSON: &[u8] = include_bytes!("../../assets/combined_msgs.json.gz");
+const ENUM_MAPPINGS_JSON : &str = include_str!("../../assets/enum_text_mappings.json");
 
 // We need a common config struct that works for both CLI (Clap) and Web
 #[derive(Debug, Clone)]
@@ -138,6 +142,73 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
     }
 }
 
+
+const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
+    ("Japanese", ContentLanguage::Japanese),
+    ("English", ContentLanguage::English),
+    ("French", ContentLanguage::French),
+    ("Italian", ContentLanguage::Italian),
+    ("German", ContentLanguage::German),
+    ("Spanish", ContentLanguage::Spanish),
+    ("Russian", ContentLanguage::Russian),
+    ("Polish", ContentLanguage::Polish),
+    ("Dutch", ContentLanguage::Dutch),
+    ("Portuguese", ContentLanguage::Portuguese),
+    ("Portuguese (Brazil)", ContentLanguage::PortugueseBr),
+    ("Korean", ContentLanguage::Korean),
+    ("Traditional Chinese", ContentLanguage::TransitionalChinese),
+    ("Simplified Chinese", ContentLanguage::SimplelifiedChinese),
+    ("Finnish", ContentLanguage::Finnish),
+    ("Swedish", ContentLanguage::Swedish),
+    ("Danish", ContentLanguage::Danish),
+    ("Norwegian", ContentLanguage::Norwegian),
+    ("Czech", ContentLanguage::Czech),
+    ("Hungarian", ContentLanguage::Hungarian),
+    ("Slovak", ContentLanguage::Slovak),
+    ("Arabic", ContentLanguage::Arabic),
+    ("Turkish", ContentLanguage::Turkish),
+    ("Bulgarian", ContentLanguage::Bulgarian),
+    ("Greek", ContentLanguage::Greek),
+    ("Romanian", ContentLanguage::Romanian),
+    ("Thai", ContentLanguage::Thai),
+    ("Ukrainian", ContentLanguage::Ukrainian),
+    ("Vietnamese", ContentLanguage::Vietnamese),
+    ("Indonesian", ContentLanguage::Indonesian),
+    ("Fiction", ContentLanguage::Fiction),
+    ("Hindi", ContentLanguage::Hindi),
+    ("Spanish (Latin America)", ContentLanguage::LatinAmericanSpanish),
+    ("Unknown", ContentLanguage::Unknown),
+];
+
+fn configure_fonts(ctx: &egui::Context) {
+    // 1. Create a new FontDefinitions object
+    let mut fonts = egui::FontDefinitions::default();
+
+    // 2. Install the Japanese font
+    // supports .ttf and .otf
+    fonts.font_data.insert(
+        "my_font".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../assets/NotoSansCJK-Regular.ttc")).into(),
+    );
+
+    // 3. Put my_font first (highest priority) for Proportional text:
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "my_font".to_owned());
+
+    // 4. Put my_font as last fallback for Monospace:
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .push("my_font".to_owned());
+
+    // 5. Apply the settings
+    ctx.set_fonts(fonts);
+}
+
 pub struct TameApp {
     steam_id: Option<u64>,
     steam_id_text: String,
@@ -154,6 +225,8 @@ pub struct TameApp {
     max_search_depth: u32,
     search_time: Option<Duration>,
 
+    language: ContentLanguage,
+
     // THIS IS SO DIsGUSTING AHHHHHHHHHHHH
     // I need to just put this in something like struct FilePicker
     // that has some #[cfg] shit
@@ -163,20 +236,27 @@ pub struct TameApp {
 }
 
 impl TameApp{
-    pub fn new(config: Config, _cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(config: Config, cc: &eframe::CreationContext<'_>) -> Self {
         //#[cfg(not(target_arch = "wasm32"))]
         /*let type_map = TypeMap::load_from_file(&config.rsz_path, &config.enums_path)
-            .unwrap_or_else(|_| {
-                let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
-                type_map
-            });*/
+          .unwrap_or_else(|_| {
+          let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
+          type_map
+          });*/
         #[cfg(not(target_arch = "wasm32"))]
         /*let type_map = TypeMap::parse_bincode(include_bytes!("../../assets/types.bin"))
-            .unwrap_or_else(|_| {
-                let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
-                type_map
-            });*/
-        let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
+          .unwrap_or_else(|_| {
+          let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
+          type_map
+          });*/
+        let type_map = {
+            let rsz = decompress(RSZ_JSON);
+            let enums = decompress(ENUMS_JSON);
+            let msgs = decompress(MSGS_JSON);
+            TypeMap::parse_str(&rsz, &enums)
+                .expect("Could not load type map")
+                .load_msg(&msgs, ENUM_MAPPINGS_JSON)
+        };
 
         #[cfg(target_arch = "wasm32")]
         let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
@@ -228,6 +308,8 @@ impl TameApp{
             output_picker.text = "./outputs/saves/".to_string();
         }
 
+        configure_fonts(&cc.egui_ctx);
+
         Self {
             steam_id: steam_id_u64,
             steam_id_text,
@@ -243,6 +325,8 @@ impl TameApp{
             search_range: 0..usize::MAX,
             max_search_depth: 100,
             search_time: None,
+
+            language: ContentLanguage::English,
 
             show_popup: false,
             popup_msg: String::new(),
@@ -380,7 +464,7 @@ impl TameApp{
         ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
             match &mut self.current_file {
                 CurrentFile::LoadedWeb { loaded, .. } | CurrentFile::Loaded { loaded, .. } => {
-                    let mut edit_ctx = EditContext::new(&self.type_map, &self.search_fields, &self.search_range, &mut self.copy_buffer);
+                    let mut edit_ctx = EditContext::new(&self.type_map, &self.search_fields, &self.search_range, &mut self.copy_buffer, self.language);
                     loaded.edit(ui, &mut edit_ctx);
                 }
                 _ => {
@@ -419,9 +503,9 @@ fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
     let Some(start_bracket) = input.find('[') else {
         return (input.to_string(), 0..usize::MAX);
     };
-    
+
     let Some(end_bracket) = input.find(']') else {
-         return (input.to_string(), 0..usize::MAX);
+        return (input.to_string(), 0..usize::MAX);
     };
 
     let name = input[0..start_bracket].to_string();
@@ -433,7 +517,7 @@ fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
 
         let start = start_str.parse::<usize>().unwrap_or(0);
         let end = end_str.parse::<usize>().unwrap_or(usize::MAX);
-        
+
         (name, start..end)
     } else {
         if let Ok(idx) = content.parse::<usize>() {
@@ -453,7 +537,7 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
             // 1. Open System Dialog
             if let Some(path) = rfd::FileDialog::new()
                 .set_file_name(&name)
-                .save_file() 
+                    .save_file() 
             {
                 // 2. Write to Disk
                 if let Err(e) = std::fs::write(&path, &data) {
@@ -468,12 +552,12 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
     #[cfg(target_arch = "wasm32")]
     {
         use wasm_bindgen::JsCast;
-        
+
         // 1. Create a Blob (File in memory)
         let array = js_sys::Array::new();
         let uint8_array = unsafe { js_sys::Uint8Array::view(&data) };
         array.push(&uint8_array);
-        
+
         let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(
             &array, 
             web_sys::BlobPropertyBag::new().type_("application/octet-stream")
@@ -481,16 +565,16 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
 
         // 2. Create a URL for that Blob
         let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
-        
+
         // 3. Create a hidden <a> tag and click it
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
         let a = document.create_element("a").unwrap().dyn_into::<web_sys::HtmlAnchorElement>().unwrap();
-        
+
         a.set_href(&url);
         a.set_download(&name);
         a.click();
-        
+
         // 4. Clean up
         web_sys::Url::revoke_object_url(&url).ok();
     }
@@ -592,8 +676,6 @@ impl eframe::App for TameApp {
 
                     self.reload();
                 }
-
-
             });
 
             ui.horizontal(|ui| {
@@ -617,6 +699,7 @@ impl eframe::App for TameApp {
                         ui.label("Invalid ID");
                     }
                 }
+
             });
 
             #[cfg(not(target_arch = "wasm32"))]
@@ -654,6 +737,15 @@ impl eframe::App for TameApp {
                 if let Some(search_time) = self.search_time {
                     ui.label(format!("{}s", search_time.as_secs_f64()));
                 }
+
+                ui.label("Language");
+                ComboBox::from_id_salt("LanguagePicker")
+                    .selected_text(LANGUAGE_OPTIONS[self.language as usize].0)
+                    .show_ui(ui, |ui| {
+                        for option in LANGUAGE_OPTIONS {
+                            ui.selectable_value(&mut self.language, option.1, option.0);
+                        }
+                    });
             });
 
             ui.separator();

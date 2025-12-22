@@ -10,7 +10,7 @@ use crate::reerr::{Result, RszError::*};
 pub static RSZ_FILE: OnceLock<String> = OnceLock::new();
 pub static ENUM_FILE: OnceLock<String> = OnceLock::new();
 
-fn decompress(bytes: &[u8]) -> String {
+pub fn decompress(bytes: &[u8]) -> String {
     let mut decoder = GzDecoder::new(bytes);
     let mut s = String::new();
     decoder.read_to_string(&mut s).expect("Failed to decompress asset");

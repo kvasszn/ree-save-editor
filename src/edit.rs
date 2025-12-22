@@ -3,7 +3,7 @@ use std::{any::Any, collections::HashMap, fmt::Debug, io::Cursor, str::FromStr};
 use std::collections::HashSet;
 use eframe::egui::{CollapsingHeader,  Response,  TextEdit, Ui};
 use half::f16;
-use sdk::type_map::{FieldInfo, TypeInfo, TypeMap};
+use sdk::type_map::{ContentLanguage, FieldInfo, TypeInfo, TypeMap};
 
 use crate::save::types::{Class, Field, FieldType, FieldValue};
 use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Mandrake, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::SaveFile};
@@ -718,10 +718,11 @@ pub struct EditContext<'a> {
     pub id: u64,
     pub depth: usize,
     pub copy_buffer: &'a mut CopyBuffer,
+    pub language: ContentLanguage,
 }
 
 impl<'a> EditContext<'a> {
-    pub fn new(type_map: &'a TypeMap, search_paths: &'a HashSet<(u32, u32)>, search_range: &'a core::ops::Range<usize>, copy_buffer: &'a mut CopyBuffer) -> Self {
+    pub fn new(type_map: &'a TypeMap, search_paths: &'a HashSet<(u32, u32)>, search_range: &'a core::ops::Range<usize>, copy_buffer: &'a mut CopyBuffer, language: ContentLanguage) -> Self {
         Self {
             type_map,
             search_paths,
@@ -734,6 +735,7 @@ impl<'a> EditContext<'a> {
             id: 0,
             depth: 0,
             copy_buffer,
+            language,
         }
     }
 }

@@ -3,7 +3,7 @@ import os
 import sys
 
 def combine_json_files(input_folder, output_file, extension):
-    combined_data = {"msgs": {}, "name_to_uuid": {}}
+    combined_data = {"msgs": {}, "name_to_guid": {}}
     #combined_data = {}
     for root, dirs, files in os.walk(input_folder):
         for name in files:
@@ -15,11 +15,19 @@ def combine_json_files(input_folder, output_file, extension):
                         data = json.load(f)
                         # Merge JSON content
                         #print(data)
-                        #for uuid, msg in data['msgs'].items():
-                            #print(uuid, msg['content']['English'])
-                        #    combined_data[uuid] = msg['content']['English']
-                        combined_data['msgs'].update(data['msgs'])
-                        #combined_data['name_to_uuid'].update(data['name_to_uuid'])
+                        good_data = {}
+                        good_name_to_guid = {}
+
+                        for entry in data['entries']:
+                            good_data[entry["guid"]] = {
+                                    "guid": entry["guid"],
+                                    "name": entry["name"],
+                                    "content": entry["content"],
+                                    }
+                            good_name_to_guid = {entry["name"]: entry["guid"]}
+                        combined_data['msgs'].update(good_data)
+                        combined_data['name_to_guid'].update(good_name_to_guid)
+                        print(f"Added File: {filepath}")
                 except Exception as e:
                     print(f"Error processing file {filepath}: {e}")
 

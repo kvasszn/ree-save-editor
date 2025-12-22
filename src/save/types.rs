@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::fmt::Display;
 use std::io::{Cursor, Read, Seek, Write};
 use std::error::Error;
 use std::str::FromStr;
@@ -5,6 +7,7 @@ use std::str::FromStr;
 use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, TextStyle, Ui};
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
+use sdk::type_map::TypeInfo;
 use sdk::types::{Guid, StringU16};
 
 use util::*;
@@ -12,7 +15,7 @@ use util::*;
 use crate::edit::{CopyBuffer, EditContext, EditResponse, Editable};
 #[allow(unused_imports)]
 use crate::rsz::dump::RszDump;
-use crate::rsz::rszserde::Mandrake;
+use crate::rsz::rszserde::{Mandrake, capitalize};
 
 // Some of this stuff comes from via.reflection.TypeKind
 #[repr(i32)]
@@ -281,18 +284,32 @@ fn collapsing_header_with_buttons_for_array_member(
 fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
     let enum_type = ctx.field_info.and_then(|field_info| ctx.type_map.enums.get(&field_info.original_type));
     let enum_str = enum_type.and_then(|e| e.get(&value.to_string()));
+    let enum_text = ctx.field_info.and_then(|field_info| {
+        let x = enum_str.and_then(|enum_str| ctx.type_map.get_enum_text(enum_str, &field_info.original_type, ctx.language));
+        x
+    });
     match enum_str {
         Some(mut enum_str) => {
             let enum_type = enum_type.unwrap();
             let mut enum_list = enum_type.iter()
                 .filter_map(|x| if x.0.parse::<i32>().is_ok() {Some(x.1)} else {None})
                 .collect::<Vec<_>>();
+            let preview = if let Some(enum_text) = enum_text {
+                format!("{enum_str}:\"{enum_text}\"")
+            } else { enum_str.to_string() };
             enum_list.sort();
             ComboBox::from_id_salt(ctx.id)
-                .selected_text(enum_str)
+                .selected_text(preview)
                 .show_ui(ui, |ui|{
                     for option in enum_list {
-                        ui.selectable_value(&mut enum_str, &option, option);
+                        let enum_text = ctx.field_info.and_then(|field_info| {
+                            ctx.type_map.get_enum_text(&option, &field_info.original_type, ctx.language)
+                        });
+
+                        let preview = if let Some(enum_text) = enum_text {
+                            format!("{option}:\"{enum_text}\"")
+                        } else { option.to_string() };
+                        ui.selectable_value(&mut enum_str, &option, preview);
                     }
                     if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
                         *value = x;
@@ -306,9 +323,10 @@ fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> 
     EditResponse::default()
 }
 
-fn edit_enum_from_type(value: &mut i32, enum_type: &str, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
-    let enum_type = ctx.type_map.enums.get(enum_type);
+fn edit_enum_from_type(value: &mut i32, enum_type_str: &str, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+    let enum_type = ctx.type_map.enums.get(enum_type_str);
     let enum_str = enum_type.and_then(|e| e.get(&value.to_string()));
+    let enum_text = enum_str.and_then(|enum_str| ctx.type_map.get_enum_text(enum_str, enum_type_str, ctx.language));
     match enum_str {
         Some(mut enum_str) => {
             let enum_type = enum_type.unwrap();
@@ -316,11 +334,19 @@ fn edit_enum_from_type(value: &mut i32, enum_type: &str, ui: &mut Ui, ctx: &mut 
                 .filter_map(|x| if x.0.parse::<i32>().is_ok() {Some(x.1)} else {None})
                 .collect::<Vec<_>>();
             enum_list.sort();
+
+            let preview = if let Some(ref enum_text) = enum_text {
+                format!("{enum_str}:\"{enum_text}\"")
+            } else { enum_str.to_string() };
             ComboBox::from_id_salt(ctx.id)
-                .selected_text(enum_str)
+                .selected_text(preview)
                 .show_ui(ui, |ui|{
                     for option in enum_list {
-                        ui.selectable_value(&mut enum_str, &option, option);
+                        let enum_text = ctx.type_map.get_enum_text(option, enum_type_str, ctx.language);
+                        let preview = if let Some(ref enum_text) = enum_text {
+                            format!("{option}:\"{enum_text}\"")
+                        } else { option.to_string() };
+                        ui.selectable_value(&mut enum_str, &option, preview);
                     }
                     if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
                         *value = x;
@@ -332,14 +358,28 @@ fn edit_enum_from_type(value: &mut i32, enum_type: &str, ui: &mut Ui, ctx: &mut 
         }
     }
     EditResponse::default()
+}
+
+pub fn get_enum_preview<T: Display>(v: T, enum_type_str: &str, ctx: &mut EditContext) -> Option<String> {
+    let enum_str = ctx.type_map.get_enum_str(v, enum_type_str)?;
+    let enum_text = ctx.type_map.get_enum_text(enum_str, enum_type_str, ctx.language);
+    Some(match enum_text {
+        Some(text) => format!("{enum_str}:{text}"),
+        None => enum_str.to_string(),
+    })
 }
 
 impl FieldValue {
     pub fn get_preview(&self, ctx: &mut EditContext) -> Option<String> {
         match self {
             FieldValue::Enum(v) => {
-                ctx.field_info.and_then(|f| {
-                    ctx.type_map.get_enum_str(v, &f.original_type).map(|s| s.clone())
+                ctx.field_info.and_then(|field_info| {
+                    let enum_str = ctx.type_map.get_enum_str(v, &field_info.original_type)?;
+                    let enum_text = ctx.type_map.get_enum_text(enum_str, &field_info.original_type, ctx.language);
+                    Some(match enum_text {
+                        Some(text) => format!("{enum_str}:{text}"),
+                        None => enum_str.to_string(),
+                    })
                 })
             },
             FieldValue::S8(v) => Some(v.to_string()),
@@ -674,13 +714,13 @@ impl Editable for Field {
             depth: ctx.depth + 1,
             ..*ctx
         };
-        
+
         /*let preview = self.value.get_preview(&mut child_ctx).unwrap_or("".to_string());
-        let name_contained = if preview.is_empty() {
-            format!("{name}: {og_type}{array_brackets}")
-        } else {
-            format!("{name}: {og_type}{array_brackets}({preview})")
-        };*/
+          let name_contained = if preview.is_empty() {
+          format!("{name}: {og_type}{array_brackets}")
+          } else {
+          format!("{name}: {og_type}{array_brackets}({preview})")
+          };*/
         let name_contained = format!("{name}: {og_type}{array_brackets}");
 
 
@@ -795,6 +835,148 @@ impl Class {
         }
         EditResponse::default()
     }
+    
+    fn udpate_ctx<'a>(type_info: Option<&'a TypeInfo>, id: u64, ctx: &'a mut EditContext) -> EditContext<'a> {
+        let child_ctx = EditContext {
+            copy_buffer: ctx.copy_buffer,
+            id,
+            parent_type: type_info,
+            depth: ctx.depth + 1,
+            ..*ctx
+        };
+        child_ctx
+    }
+    
+
+    fn add_enum_edit(&mut self, type_info: Option<&TypeInfo>, field_name: &str, enum_type_str: &str, ui: &mut Ui, ctx: &mut EditContext, left: &mut HashSet<u32>) -> EditResponse {
+        self.add_enum_edit_ex(type_info, field_name, field_name, enum_type_str, ui, ctx, left)
+    }
+
+    fn add_enum_edit_ex(&mut self, type_info: Option<&TypeInfo>, field_name: &str, label: &str, enum_type_str: &str, ui: &mut Ui, ctx: &mut EditContext, left: &mut HashSet<u32>) -> EditResponse {
+        let hash = &murmur3(field_name, 0xffffffff);
+        if let Some(field) = self.fields.get_mut(hash) {
+            if let FieldValue::S32(mut val) = field.value {
+                ui.horizontal(|ui| {
+                    ui.label(label);
+                    let child_id = ui.make_persistent_id(hash).value();
+                    let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                    edit_enum_from_type(&mut val, enum_type_str, ui, &mut ctx);
+                    field.value = FieldValue::S32(val);
+                });
+                left.remove(hash);
+            }
+        };
+        EditResponse::default()
+    }
+
+    fn get_enum_str_from_field(&self, field_name: &str, enum_type_str: &str, ctx: &mut EditContext) -> Option<String>{
+        let hash = &murmur3(field_name, 0xffffffff);
+        if let Some(field) = self.fields.get(hash) {
+            if let FieldValue::S32(val) = field.value {
+                return ctx.type_map.get_enum_str(val, enum_type_str).cloned();
+            }
+        };
+        None
+    }
+    fn get_enum_preview_from_field(&self, field_name: &str, enum_type_str: &str, ctx: &mut EditContext) -> Option<String>{
+        let hash = &murmur3(field_name, 0xffffffff);
+        if let Some(field) = self.fields.get(hash) {
+            if let FieldValue::S32(val) = field.value {
+                return ctx.type_map.get_enum_str(val, enum_type_str)
+                    .map(|s| {
+                        match get_enum_preview(val, enum_type_str, ctx) {
+                            Some(text) => text,
+                            None => s.clone(),
+                        }
+                    });
+            }
+        };
+        None
+    }
+    // Category_Gender is a bitset of app.EquipDef.CATEGORY and some kinda gender thing i think, as
+    // well as an empty flag in bit 8
+    fn edit_as_equip_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let mut left = HashSet::new();
+        for i in self.fields.keys() {
+            left.insert(*i);
+        }
+
+        let type_info = ctx.type_map.get_by_hash(self.hash);
+        let hash = &murmur3("Category_Gender", 0xffffffff);
+        let mut category = 141;
+        if let Some(cat_gen) = self.fields.get_mut(hash) {
+            if let FieldValue::U8(mut cat_gen_val) = cat_gen.value {
+                ui.horizontal(|ui| {
+                    ui.label("Category_Gender: ");
+                    cat_gen_val.edit(ui, ctx);
+                    category = cat_gen_val
+                });
+                left.remove(hash);
+            }
+        };
+
+        // No _Fixed here?
+        match category {
+            // armor ?, lsb is gender
+            0b0000_0000 | 0b0000_0001 => {
+                self.add_enum_edit_ex(type_info, "FreeVal0", "FreeVal0(SeriesID)", "app.ArmorDef.SERIES", ui, ctx, &mut left);
+                self.add_enum_edit_ex(type_info, "FreeVal1", "FreeVal1(ArmorPart)", "app.ArmorDef.ARMOR_PARTS", ui, ctx, &mut left);
+            },
+            // Weapon 13
+            0b0000_1101 => {
+                self.add_enum_edit_ex(type_info, "FreeVal0", "FreeVal0(WeaponType)", "app.WeaponDef.TYPE", ui, ctx, &mut left);
+                let val = self.get_enum_str_from_field("FreeVal0", "app.WeaponDef.TYPE", ctx);
+                if let Some(val) = val {
+                    let enum_type = format!("app.WeaponDef.{}Id", util::to_pascal_case(val.as_str()).replace("_", ""));
+                    self.add_enum_edit_ex(type_info, "FreeVal1", "FreeVal1(WeaponID)", &enum_type, ui, ctx, &mut left);
+                }
+            }
+            // idfk 21
+            0b0001_0101 => {
+
+            }
+            // idfk again 37
+            0b0010_0101 => {
+
+            }
+            _ => {
+
+            }
+        };
+
+        for (h, field) in self.fields.iter_mut() {
+            if left.contains(h) {
+                let child_id = ui.make_persistent_id(h).value();
+                let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                field.edit(ui, &mut ctx);
+            }
+        }
+
+        EditResponse::default()
+    }
+    fn edit_as_artian_parts_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let mut left = HashSet::new();
+        for i in self.fields.keys() {
+            left.insert(*i);
+        }
+
+        let type_info = ctx.type_map.get_by_hash(self.hash);
+
+        self.add_enum_edit(type_info, "Type_FixedId", "app.ArtianDef.PARTS_TYPE_Fixed", ui, ctx, &mut left);
+        self.add_enum_edit(type_info, "Performance_FixedId", "app.ArtianDef.PERFORMANCE_TYPE_Fixed", ui, ctx, &mut left);
+        self.add_enum_edit(type_info, "Rare_FixedId", "app.ItemDef.RARE_Fixed", ui, ctx, &mut left);
+        self.add_enum_edit(type_info, "Bonus_FixedId", "app.ArtianDef.BONUS_ID_Fixed", ui, ctx, &mut left);
+
+        for (h, field) in self.fields.iter_mut() {
+            if left.contains(h) {
+                let child_id = ui.make_persistent_id(h).value();
+                let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                field.edit(ui, &mut ctx);
+            }
+        }
+
+        EditResponse::default()
+    }
 
     // this could potentially return the name of the type for arrays
     pub fn get_preview(&self, ctx: &mut EditContext) -> Option<String> {
@@ -802,16 +984,69 @@ impl Class {
         type_info.and_then(|type_info| {
             match type_info.name.as_str() {
                 "app.savedata.cItemWork" => {
-                    let item_id_fixed_field = if let Some(i) = self.fields
-                        .get(&murmur3("ItemIdFixed", 0xffffffff)) { i }
-                    else {
-                        return None
-                    };
-                    if let FieldValue::U16(item_id_fixed) = item_id_fixed_field.value {
-                        let enum_str = ctx.type_map.get_enum_str(item_id_fixed, "app.ItemDef.ID_Fixed");
-                        return enum_str.map(|s| s.clone())
+                    return self.get_enum_preview_from_field("ItemIdFixed", "app.ItemDef.ID_Fixed", ctx);
+                }
+                "app.savedata.cArtianPartsWork" => {
+                    return self.get_enum_preview_from_field("Type_FixedId", "app.ArtianDef.PARTS_TYPE_Fixed", ctx);
+                }
+                "app.savedata.cEquipWork" => {
+                    let hash = &murmur3("Category_Gender", 0xffffffff);
+                    if let Some(cat_gen) = self.fields.get(hash) {
+                        if let FieldValue::U8(cat_gen_val) = cat_gen.value {
+                            let is_empty = cat_gen_val & 0x80 != 0;
+                            if is_empty {
+                                return Some("Empty".to_string())
+                            }
+                            let gender = cat_gen_val & 0b1;
+                            match cat_gen_val {
+                                // armor ?, lsb is gender
+                                0b0000_0000 | 0b0000_0001 => {
+                                    let gender = if gender == 1 {"female"} else {"male"};
+                                    let preview_series = self.get_enum_str_from_field("FreeVal0", "app.ArmorDef.SERIES", ctx);
+                                    let preview_type = self.get_enum_str_from_field("FreeVal1", "app.ArmorDef.ARMOR_PARTS", ctx);
+                                    let preview = preview_series.and_then(|ser| {
+                                        if let Some(ty) = preview_type {
+                                            Some(ctx.type_map.get_enum_text(format!("{ser}{ty}").as_str(), "app.ArmorDef.SpecificPiece", ctx.language)
+                                                .unwrap_or(format!("{ser}:{ty}")))
+                                        } else {
+                                            Some(ser)
+                                        }
+                                    });
+                                    if let Some(preview) = preview {
+                                        return Some(format!("Armor({gender}): {preview}"))
+                                    } else {
+                                        return Some(format!("Armor({gender})"))
+                                    }
+                                },
+                                // Weapon 13
+                                0b0000_1101 => {
+                                    let preview_type = self.get_enum_str_from_field("FreeVal0", "app.WeaponDef.TYPE", ctx);
+                                    let preview = preview_type.and_then(|ty| {
+                                        let enum_type = format!("app.WeaponDef.{}Id", util::to_pascal_case(ty.as_str()).replace("_", ""));
+                                        let preview_id = self.get_enum_str_from_field("FreeVal1", &enum_type, ctx);
+                                        if let Some(id) = preview_id {
+                                            Some(ctx.type_map.get_enum_text(&id, &enum_type, ctx.language).map(|x| format!("{id}:{x}"))
+                                                .unwrap_or(format!("{id}:{ty}")))
+                                        } else {
+                                            Some(ty)
+                                        }
+                                    });
+                                    if let Some(preview) = preview {
+                                        return Some(format!("Weapon: {preview}"))
+                                    } else {
+                                        return Some(format!("Weapon"))
+                                    }
+                                },
+                                // idfk 21
+                                0b0001_0101 => return Some("Amulet?".to_string()),
+                                // idfk again 37
+                                0b0010_0101 => return Some("Bug?".to_string()),
+                                _ => return Some(cat_gen_val.to_string())
+                            };
+                        };
+                        return None;
                     }
-                    return None
+                    None
                 }
                 _ => {
                     return None
@@ -831,6 +1066,12 @@ impl Editable for Class {
                     "app.savedata.cItemWork" => {
                         self.edit_as_item_work(ui, ctx);
                     }
+                    "app.savedata.cArtianPartsWork" => {
+                        self.edit_as_artian_parts_work(ui, ctx);
+                    },
+                    "app.savedata.cEquipWork" => {
+                        self.edit_as_equip_work(ui, ctx);
+                    },
                     _ => {
                         for (field_hash, field) in &mut self.fields {
                             let child_id = ui.make_persistent_id(field_hash);
