@@ -24,6 +24,12 @@ mod native {
 
         #[arg(long, default_value_t = String::from("assets/enumsmhwilds.json"))]
         enums_path: String,
+        
+        #[arg(long, default_value_t = String::from("assets/combined_msgs.json"))]
+        msgs_path: String,
+
+        #[arg(long, default_value_t = String::from("assets/enum_text_mappings.json"))]
+        mappings_path: String,
     }
 
 
@@ -42,7 +48,9 @@ mod native {
             out_dir: args.out_dir,
             steamid: args.steamid,
             rsz_path: args.rsz_path,
-            enums_path: args.enums_path 
+            enums_path: args.enums_path,
+            msgs_path: args.msgs_path,
+            mappings_path: args.mappings_path,
         };
 
         eframe::run_native("mhtame",

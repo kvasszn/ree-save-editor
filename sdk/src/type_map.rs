@@ -12,6 +12,8 @@ pub fn murmur3(data: impl AsRef<[u8]>, seed: u32) -> u32 {
 }
 
 
+
+// This can probably get optimized alot (msgs + enum_mappings)
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TypeMap {
     pub types: TypesWrapper,
@@ -148,6 +150,26 @@ impl TypeMap {
         Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default()})
     }
 
+    /*pub fn load_from_file_compressed(rsz_path: &str, enum_path: &str, combined_msgs: &str, mappings: &str) -> std::result::Result<Self, Box<dyn Error>> {
+        let mut file = File::open(rsz_path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let types = serde_json::from_slice(&mut data)?;
+        let mut file = File::open(enum_path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let enums = serde_json::from_slice(&mut data)?;
+        let mut file = File::open(combined_msgs)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let msgs = serde_json::from_slice(&mut data)?;
+        let mut file = File::open(mappings)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let enum_mappings = serde_json::from_slice(&mut data)?;
+        Ok(TypeMap{types, enums, msgs, enum_mappings})
+    }*/
+
     pub fn from_reader<R: Read + Seek>(rsz_reader: R, enum_reader: R) -> std::result::Result<Self, Box<dyn Error>> {
         let types: TypesWrapper = simd_json::from_reader(rsz_reader)?;
         let enums: HashMap<String, HashMap<String, String>> = simd_json::from_reader(enum_reader)?;
@@ -232,6 +254,21 @@ impl TypeMap {
       }*/
 
     pub fn get_enum_text(&self, enum_str: &str, original_type: &str, language: ContentLanguage) -> Option<String> {
+        if original_type == "app.ArtianDef.ArtianSkillType_Fixed" {
+            let enum_guid_map = self.enum_mappings.get(original_type);
+            let guid = enum_guid_map.and_then(|x| {
+                x.get(enum_str)
+            });
+            let res = guid.map(|guid| {
+                let guid: Vec<&str> = guid.split(',').collect();
+                let text = guid.iter().filter_map(|guid| self.msgs.get_content(guid, language))
+                    .collect::<Vec<_>>().join("+");
+                text
+            });
+            //println!("{enum_str:?} {original_type:?} {guid:?} {res:?}");
+            return res
+        }
+
         let enum_guid_map = self.enum_mappings.get(original_type);
         let guid = enum_guid_map.and_then(|x| {
             x.get(enum_str)

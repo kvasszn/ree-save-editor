@@ -190,6 +190,19 @@ impl FieldValue {
         }
 
     }
+
+}
+
+impl FieldValue {
+    fn udpate_ctx<'a>(id: u64, ctx: &'a mut EditContext) -> EditContext<'a> {
+        let child_ctx = EditContext {
+            copy_buffer: ctx.copy_buffer,
+            id,
+            ..*ctx
+        };
+        child_ctx
+    }
+    
 }
 
 fn collapsing_header_with_buttons_for_field(
@@ -307,6 +320,43 @@ fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> 
                         });
 
                         let preview = if let Some(enum_text) = enum_text {
+                            format!("{option}:\"{enum_text}\"")
+                        } else { option.to_string() };
+                        ui.selectable_value(&mut enum_str, &option, preview);
+                    }
+                    if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
+                        *value = x;
+                    }
+                });
+        }
+        None => {
+            value.edit(ui, ctx);
+        }
+    }
+    EditResponse::default()
+}
+
+fn edit_artian_skill_type(value: &mut i32, enum_type_str: &str, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+    let enum_type = ctx.type_map.enums.get(enum_type_str);
+    let enum_str = enum_type.and_then(|e| e.get(&value.to_string()));
+    let enum_text = enum_str.and_then(|enum_str| ctx.type_map.get_enum_text(enum_str, enum_type_str, ctx.language));
+    match enum_str {
+        Some(mut enum_str) => {
+            let enum_type = enum_type.unwrap();
+            let mut enum_list = enum_type.iter()
+                .filter_map(|x| if x.0.parse::<i32>().is_ok() {Some(x.1)} else {None})
+                .collect::<Vec<_>>();
+            enum_list.sort();
+
+            let preview = if let Some(ref enum_text) = enum_text {
+                format!("{enum_str}:\"{enum_text}\"")
+            } else { enum_str.to_string() };
+            ComboBox::from_id_salt(ctx.id)
+                .selected_text(preview)
+                .show_ui(ui, |ui|{
+                    for option in enum_list {
+                        let enum_text = ctx.type_map.get_enum_text(option, enum_type_str, ctx.language);
+                        let preview = if let Some(ref enum_text) = enum_text {
                             format!("{option}:\"{enum_text}\"")
                         } else { option.to_string() };
                         ui.selectable_value(&mut enum_str, &option, preview);
@@ -846,7 +896,6 @@ impl Class {
         };
         child_ctx
     }
-    
 
     fn add_enum_edit(&mut self, type_info: Option<&TypeInfo>, field_name: &str, enum_type_str: &str, ui: &mut Ui, ctx: &mut EditContext, left: &mut HashSet<u32>) -> EditResponse {
         self.add_enum_edit_ex(type_info, field_name, field_name, enum_type_str, ui, ctx, left)
@@ -881,20 +930,37 @@ impl Class {
     fn get_enum_preview_from_field(&self, field_name: &str, enum_type_str: &str, ctx: &mut EditContext) -> Option<String>{
         let hash = &murmur3(field_name, 0xffffffff);
         if let Some(field) = self.fields.get(hash) {
-            if let FieldValue::S32(val) = field.value {
-                return ctx.type_map.get_enum_str(val, enum_type_str)
-                    .map(|s| {
-                        match get_enum_preview(val, enum_type_str, ctx) {
-                            Some(text) => text,
-                            None => s.clone(),
-                        }
-                    });
+            match field.value {
+                FieldValue::S32(val) => {
+                    return ctx.type_map.get_enum_str(val, enum_type_str)
+                        .map(|s| {
+                            match get_enum_preview(val, enum_type_str, ctx) {
+                                Some(text) => text,
+                                None => s.clone(),
+                            }
+                        });
+                }
+                FieldValue::U16(val) => {
+                    return ctx.type_map.get_enum_str(val, enum_type_str)
+                        .map(|s| {
+                            match get_enum_preview(val, enum_type_str, ctx) {
+                                Some(text) => text,
+                                None => s.clone(),
+                            }
+                        });
+                }
+                _ => {
+
+                }
             }
         };
         None
     }
     // Category_Gender is a bitset of app.EquipDef.CATEGORY and some kinda gender thing i think, as
     // well as an empty flag in bit 8
+    // What the fuck is this function holy shit it works but wtf is this commplete garbage, and
+    // whhy does crapcom use a mix of fixed and not fixed and wtf is up with that stupid decimal
+    // encoding, do they not know what numbers are?
     fn edit_as_equip_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         let mut left = HashSet::new();
         for i in self.fields.keys() {
@@ -929,11 +995,83 @@ impl Class {
                 if let Some(val) = val {
                     let enum_type = format!("app.WeaponDef.{}Id", util::to_pascal_case(val.as_str()).replace("_", ""));
                     self.add_enum_edit_ex(type_info, "FreeVal1", "FreeVal1(WeaponID)", &enum_type, ui, ctx, &mut left);
+                    let artian_perf_type = self.get_enum_str_from_field("FreeVal2", "app.ArtianDef.PERFORMANCE_TYPE_Fixed", ctx);
+                    self.add_enum_edit_ex(type_info, "FreeVal2", "FreeVal2(PerformanceType)", "app.ArtianDef.PERFORMANCE_TYPE_Fixed", ui, ctx, &mut left);
+                    if Some("INVALID".to_string()) != artian_perf_type {
+                        let hash = &murmur3("BonusByCreating", 0xffffffff);
+                        if let Some(field) = self.fields.get_mut(hash) {
+                            if let FieldValue::U32(bonus_by_creating) = field.value {
+                                let skill_digit_1 = (bonus_by_creating / 10_000_000) % 10;
+                                let skill_digit_2 = (bonus_by_creating / 10_000) % 10;
+                                let skill_digit_3 = (bonus_by_creating / 10) % 10;
+                                let mut artian_skill_fixed = ((skill_digit_1 * 100) + (skill_digit_2 * 10) + skill_digit_3) as i32;
+                                let mut bonus_type_1 = (bonus_by_creating / 1_000_000) % 10;
+                                let mut bonus_type_2 = (bonus_by_creating / 1_000) % 10;
+                                let mut bonus_type_3 = bonus_by_creating % 10;
+                                ui.horizontal(|ui| {
+                                    ui.label("Skills");
+                                    let child_id = ui.make_persistent_id((ctx.id, "Skills", hash)).value();
+                                    let mut child_ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                                    edit_enum_from_type(&mut artian_skill_fixed, "app.ArtianDef.ArtianSkillType_Fixed", ui, &mut child_ctx);
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.label("Bonuses(Atk=1/Aff=2/Elem=3(ithink))");
+                                    bonus_type_1.edit(ui, ctx);
+                                    bonus_type_2.edit(ui, ctx);
+                                    bonus_type_3.edit(ui, ctx);
+                                });
+                                let bonus_by_creating = (artian_skill_fixed / 100)  as u32* 10_000_000
+                                    + bonus_type_1 * 1_000_000
+                                    + ((artian_skill_fixed / 10) % 10) as u32 * 10_000
+                                    + bonus_type_2 * 1_000
+                                    + (artian_skill_fixed % 10) as u32 * 10
+                                    + bonus_type_3;
+                                field.value = FieldValue::U32(bonus_by_creating);
+                                left.remove(hash);
+                            }
+                        }
+                        let hash = &murmur3("BonusByGrinding", 0xffffffff);
+                        if let Some(field) = self.fields.get_mut(hash) {
+                            if let FieldValue::U64(bonus_by_grinding) = field.value {
+                                let mut bonus_1 = ((bonus_by_grinding / 1_000_000_000_000)  % 1000) as i32;
+                                let mut bonus_2 = ((bonus_by_grinding / 1_000_000_000)  % 1000) as i32;
+                                let mut bonus_3 = ((bonus_by_grinding / 1_000_000)  % 1000) as i32;
+                                let mut bonus_4 = ((bonus_by_grinding / 1_000)  % 1000) as i32;
+                                let mut bonus_5 = (bonus_by_grinding  % 1000) as i32;
+                                ui.label("BonusesByGrinding");
+                                // SO GROSS BUT IT WORKS HAHA HA
+                                ui.indent((hash, ctx.id), |ui| {
+                                    let child_id = ui.make_persistent_id((hash, ctx.id, "Bonus1")).value();
+                                    let mut child_ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                                    edit_enum_from_type(&mut bonus_1, "app.ArtianDef.BONUS_ID_Fixed", ui, &mut child_ctx);
+                                    let child_id = ui.make_persistent_id((hash, ctx.id, "Bonus2")).value();
+                                    let mut child_ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                                    edit_enum_from_type(&mut bonus_2, "app.ArtianDef.BONUS_ID_Fixed", ui, &mut child_ctx);
+                                    let child_id = ui.make_persistent_id((hash, ctx.id, "Bonus3")).value();
+                                    let mut child_ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                                    edit_enum_from_type(&mut bonus_3, "app.ArtianDef.BONUS_ID_Fixed", ui, &mut child_ctx);
+                                    let child_id = ui.make_persistent_id((hash, ctx.id, "Bonus4")).value();
+                                    let mut child_ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                                    edit_enum_from_type(&mut bonus_4, "app.ArtianDef.BONUS_ID_Fixed", ui, &mut child_ctx);
+                                    let child_id = ui.make_persistent_id((hash, ctx.id, "Bonus5")).value();
+                                    let mut child_ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                                    edit_enum_from_type(&mut bonus_5, "app.ArtianDef.BONUS_ID_Fixed", ui, &mut child_ctx);
+                                });
+                                let bonus_by_grind: u64 = bonus_1 as u64 * 1_000_000_000_000
+                                    + bonus_2 as u64 * 1_000_000_000
+                                    + bonus_3 as u64 * 1_000_000
+                                    + bonus_4 as u64 * 1_000
+                                    + bonus_5 as u64;
+                                field.value = FieldValue::U64(bonus_by_grind);
+                                left.remove(hash);
+                            }
+                        }
+                    }
                 }
             }
             // idfk 21
             0b0001_0101 => {
-
+                self.add_enum_edit_ex(type_info, "FreeVal0", "FreeVal0(AmuletType)", "app.ArmorDef.AmuletType", ui, ctx, &mut left);
             }
             // idfk again 37
             0b0010_0101 => {
@@ -954,6 +1092,7 @@ impl Class {
 
         EditResponse::default()
     }
+
     fn edit_as_artian_parts_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         let mut left = HashSet::new();
         for i in self.fields.keys() {
@@ -979,10 +1118,21 @@ impl Class {
     }
 
     // this could potentially return the name of the type for arrays
+    pub fn get_preview_from_field(&self, field_name: &str, ctx: &mut EditContext) -> Option<String> {
+        self.fields.get(&murmur3(field_name, 0xffffffff)).and_then(|x| {
+            x.value.get_preview(ctx)
+        })
+    }
     pub fn get_preview(&self, ctx: &mut EditContext) -> Option<String> {
         let type_info = ctx.type_map.get_by_hash(self.hash);
         type_info.and_then(|type_info| {
             match type_info.name.as_str() {
+                "app.savedata.cUserSaveParam" => {
+                    return self.get_preview_from_field("_BasicData", ctx)
+                }
+                "app.savedata.cBasicParam" => {
+                    return self.get_preview_from_field("CharName", ctx)
+                }
                 "app.savedata.cItemWork" => {
                     return self.get_enum_preview_from_field("ItemIdFixed", "app.ItemDef.ID_Fixed", ctx);
                 }
@@ -1038,7 +1188,18 @@ impl Class {
                                     }
                                 },
                                 // idfk 21
-                                0b0001_0101 => return Some("Amulet?".to_string()),
+                                0b0001_0101 => {
+                                    let preview_id = self.get_enum_str_from_field("FreeVal0", "app.ArmorDef.AmuletType", ctx);
+                                    let preview = preview_id.and_then(|preview_id| {
+                                        Some(ctx.type_map.get_enum_text(&preview_id, "app.ArmorDef.AmuletType", ctx.language).map(|x| format!("{preview_id}:{x}"))
+                                            .unwrap_or(format!("{preview_id}")))
+                                    });
+                                    if let Some(preview) = preview {
+                                        return Some(format!("Amulet: {preview}"))
+                                    } else {
+                                        return Some(format!("Amulet"))
+                                    }
+                                },
                                 // idfk again 37
                                 0b0010_0101 => return Some("Bug?".to_string()),
                                 _ => return Some(cat_gen_val.to_string())

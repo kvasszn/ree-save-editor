@@ -9,18 +9,11 @@ use mhtame::file::StructRW;
 
 use eframe::egui::{self, ComboBox, ScrollArea, TextEdit, Ui, Vec2};
 
-#[cfg(not(target_arch = "wasm32"))]
-use mhtame::rsz::dump::decompress;
 use mhtame::{
     edit::{CopyBuffer},
     save::{SaveContext, SaveFile},
 };
 use sdk::type_map::{ContentLanguage, TypeMap};
-
-const RSZ_JSON: &[u8] = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
-const ENUMS_JSON: &[u8] = include_bytes!("../../assets/enumsmhwilds.json.gz");
-const MSGS_JSON: &[u8] = include_bytes!("../../assets/combined_msgs.json.gz");
-const ENUM_MAPPINGS_JSON : &str = include_str!("../../assets/enum_text_mappings.json");
 
 // We need a common config struct that works for both CLI (Clap) and Web
 #[derive(Debug, Clone)]
@@ -30,6 +23,8 @@ pub struct Config {
     pub steamid: Option<String>,
     pub rsz_path: String,
     pub enums_path: String,
+    pub msgs_path: String,
+    pub mappings_path: String,
 }
 
 impl Default for Config {
@@ -40,6 +35,8 @@ impl Default for Config {
             steamid: None,
             rsz_path: "assets/rszmhwilds_packed.json".to_string(),
             enums_path: "assets/enumsmhwilds.json".to_string(),
+            msgs_path: "assets/combined_msgs.json".to_string(),
+            mappings_path: "assets/enum_text_mappings.json".to_string(),
         }
     }
 }
@@ -181,31 +178,24 @@ const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
 ];
 
 fn configure_fonts(ctx: &egui::Context) {
-    // 1. Create a new FontDefinitions object
     let mut fonts = egui::FontDefinitions::default();
 
-    // 2. Install the Japanese font
-    // supports .ttf and .otf
     fonts.font_data.insert(
         "my_font".to_owned(),
         egui::FontData::from_static(include_bytes!("../../assets/NotoSansCJK-Regular.ttc")).into(),
     );
-
-    // 3. Put my_font first (highest priority) for Proportional text:
     fonts
         .families
         .entry(egui::FontFamily::Proportional)
         .or_default()
         .insert(0, "my_font".to_owned());
 
-    // 4. Put my_font as last fallback for Monospace:
     fonts
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default()
         .push("my_font".to_owned());
 
-    // 5. Apply the settings
     ctx.set_fonts(fonts);
 }
 
@@ -237,19 +227,20 @@ pub struct TameApp {
 
 impl TameApp{
     pub fn new(config: Config, cc: &eframe::CreationContext<'_>) -> Self {
-        //#[cfg(not(target_arch = "wasm32"))]
-        /*let type_map = TypeMap::load_from_file(&config.rsz_path, &config.enums_path)
-          .unwrap_or_else(|_| {
-          let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
-          type_map
-          });*/
+        // on native, use assets in assets/
         #[cfg(not(target_arch = "wasm32"))]
-        /*let type_map = TypeMap::parse_bincode(include_bytes!("../../assets/types.bin"))
-          .unwrap_or_else(|_| {
-          let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
-          type_map
-          });*/
+        let type_map = TypeMap::load_with_msgs(&config.rsz_path, &config.enums_path, &config.msgs_path, &config.mappings_path)
+            .expect("Could not load assets for the editor, make sure your assets are in the right place");
+
+
+        // on wasm load from included stuff
+        #[cfg(target_arch = "wasm32")]
         let type_map = {
+            use mhtame::rsz::dump::decompress;
+            const RSZ_JSON: &[u8] = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
+            const ENUMS_JSON: &[u8] = include_bytes!("../../assets/enumsmhwilds.json.gz");
+            const MSGS_JSON: &[u8] = include_bytes!("../../assets/combined_msgs.json.gz");
+            const ENUM_MAPPINGS_JSON : &str = include_str!("../../assets/enum_text_mappings.json");
             let rsz = decompress(RSZ_JSON);
             let enums = decompress(ENUMS_JSON);
             let msgs = decompress(MSGS_JSON);
@@ -257,10 +248,6 @@ impl TameApp{
                 .expect("Could not load type map")
                 .load_msg(&msgs, ENUM_MAPPINGS_JSON)
         };
-
-        #[cfg(target_arch = "wasm32")]
-        let type_map = TypeMap::parse_str(RSZ_JSON, ENUMS_JSON).expect("Could not load type map");
-
 
 
         let mut steam_id_u64 = config.steamid.as_ref().and_then(|s| {
@@ -385,6 +372,11 @@ impl TameApp{
                         file_name,
                         original_bytes: bytes,
                         loaded: save
+                    };
+                } else {
+                    self.current_file = CurrentFile::FileData { 
+                        file_name,
+                        bytes: bytes,
                     };
                 }
             },
