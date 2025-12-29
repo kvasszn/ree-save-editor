@@ -29,7 +29,7 @@ impl User {
         let magic = file.read_magic()?;
         let ext = core::str::from_utf8(&magic)?; if ext != "USR\0" {
             return Err(Box::new(MagicError { 
-                real_magic: String::from("USR💖"), 
+                real_magic: String::from("USR\0"), 
                 read_magic: ext.to_string()
             }))
         }

@@ -59,10 +59,14 @@ weapons = [
 for weapon in weapons:
     weapon_path = f"natives/STM/GameDesign/Common/Weapon/{weapon}.user.3.json"
     mappings.update(gen_mapping_for_excel_data(f"app.WeaponDef.{weapon}Id_Fixed", f"_{weapon}", "_Name", weapon_path))
+    weapon_path = f"natives/STM/GameDesign/Common/Weapon/Outer{weapon}Data.user.3.json"
+    mappings.update(gen_mapping_for_excel_data(f"app.WeaponDef.OuterWeaponId_Fixed<app.WeaponDef.{weapon}Id_Fixed>", f"_Id", "_Name", weapon_path))
 
 for weapon in weapons:
     weapon_path = f"natives/STM/GameDesign/Common/Weapon/{weapon}.user.3.json"
     mappings.update(gen_mapping_for_excel_data(f"app.WeaponDef.{weapon}Id", f"_{weapon}", "_Name", weapon_path))
+    weapon_path = f"natives/STM/GameDesign/Common/Weapon/Outer{weapon}Data.user.3.json"
+    mappings.update(gen_mapping_for_excel_data(f"app.WeaponDef.OuterWeaponId<app.WeaponDef.{weapon}Id>", f"_Id", "_Name", weapon_path))
 
 armor_path = "natives/STM/GameDesign/Common/Equip/ArmorSeriesData.user.3.json"
 mappings.update(gen_mapping_for_excel_data_v2(f"app.ArmorDef.SERIES_Fixed", f"_Series", "_Name", armor_path))

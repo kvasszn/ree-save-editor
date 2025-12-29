@@ -1,5 +1,6 @@
 pub mod crypt;
 pub mod types;
+pub mod remap;
 
 use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
@@ -116,11 +117,11 @@ impl StructRW<SaveContext> for SaveFile {
         Self: Sized {
             let magic = Magic::<4>::read(reader, &mut ())?;
             if &magic != b"DSSS" {
-                return Err(format!("Magic {}, != DSSS", String::from_utf8(magic.0.to_vec())?).into())
+                return Err(format!("Magic {:#04X?}, != DSSS", &magic.0).into())
             }
             let version = u32::read(reader, &mut ())?;
             if version != 2 {
-                return Err(format!("Save file version incorrect I hope: {version}").into())
+                return Err(format!("Save file version incorrect I think: {version}").into())
             }
             let flags = u32::read(reader, &mut ())?;
             log::info!("Version={version}, Save Flags: {:034b}", flags); // theres flags for encryption type, compression,

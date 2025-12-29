@@ -5,6 +5,7 @@ use eframe::egui::{CollapsingHeader,  Response,  TextEdit, Ui};
 use half::f16;
 use sdk::type_map::{ContentLanguage, FieldInfo, TypeInfo, TypeMap};
 
+use crate::save::remap::Remap;
 use crate::save::types::{Class, Field, FieldType, FieldValue};
 use crate::{rsz::{dump::{RszDump, RszField, RszStruct, get_enum_list, get_enum_val}, rszserde::{DeRsz, DeRszInstance, DeRszRegistry, DeRszType, Enummable, ExternObject, Guid, Mandrake, Nullable, Object, RszDeserializerCtx, RszFieldsValue, RszSerializerCtx, StringU16, Struct, StructData}}, save::SaveFile};
 use util::*;
@@ -709,6 +710,8 @@ impl Edit for Mandrake {
 pub struct EditContext<'a> {
     pub type_map: &'a TypeMap,
     pub search_paths: &'a HashSet<(u32, u32)>,
+    pub search_leaf_nodes: &'a HashSet<(u32, u32)>,
+    pub search_found_leaf: bool,
     pub search_range: &'a core::ops::Range<usize>,
     pub parent_hash: u64,
     pub parent_type: Option<&'a TypeInfo>,
@@ -719,13 +722,16 @@ pub struct EditContext<'a> {
     pub depth: usize,
     pub copy_buffer: &'a mut CopyBuffer,
     pub language: ContentLanguage,
+    pub remaps: &'a HashMap<String, Remap>,
 }
 
 impl<'a> EditContext<'a> {
-    pub fn new(type_map: &'a TypeMap, search_paths: &'a HashSet<(u32, u32)>, search_range: &'a core::ops::Range<usize>, copy_buffer: &'a mut CopyBuffer, language: ContentLanguage) -> Self {
+    pub fn new(type_map: &'a TypeMap, search_paths: &'a HashSet<(u32, u32)>, search_leaf_nodes: &'a HashSet<(u32, u32)>, search_range: &'a core::ops::Range<usize>, copy_buffer: &'a mut CopyBuffer, language: ContentLanguage, remaps: &'a HashMap<String, Remap>) -> Self {
         Self {
             type_map,
             search_paths,
+            search_leaf_nodes,
+            search_found_leaf: false,
             search_range,
             parent_type: None,
             parent_hash: 0,
@@ -736,6 +742,7 @@ impl<'a> EditContext<'a> {
             depth: 0,
             copy_buffer,
             language,
+            remaps,
         }
     }
 }

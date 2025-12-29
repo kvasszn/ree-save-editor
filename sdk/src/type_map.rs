@@ -42,10 +42,16 @@ impl TypeMap {
         cur_field
     }
 
-    pub fn search(&self, start_type: &TypeInfo, search_term: &str, max_depth: usize) -> HashSet<(u32, u32)> {
+    // returns all nodes along the path as well as end nodes (field_paths, leaf_nodes)
+    // filtering in the editor should stop after a leaf node is reached so that the user is able to
+    // expand/close things after that point, otherwise they will be permanently shut on
+    // classes/structs
+    // search ranges should also only act on leaf nodes!?!
+    pub fn search(&self, start_type: &TypeInfo, search_term: &str, max_depth: usize) -> (HashSet<(u32, u32)>, HashSet<(u32, u32)>) {
         let search_lower = search_term.to_lowercase();
 
-        let mut fields_to_expand: HashSet<(u32, u32)> = HashSet::new();
+        let mut path_nodes: HashSet<(u32, u32)> = HashSet::new();
+        let mut leaf_nodes: HashSet<(u32, u32)> = HashSet::new();
 
         let mut q = VecDeque::new();
         q.push_back((start_type, Vec::<(u32, u32)>::new()));
@@ -56,29 +62,33 @@ impl TypeMap {
             }
 
             for (field_hash, field) in &curr_type.fields {
+                let current_id = (field.type_hash, *field_hash);
+                let mut is_match = false;
+
                 if field.name.to_lowercase().contains(&search_lower) {
-                    fields_to_expand.insert((field.type_hash, *field_hash));
-                    for ancestor in &path {
-                        fields_to_expand.insert(ancestor.clone());
-                    }
+                    is_match = true;
                 }
 
                 if let Some(next_type) = field.get_original_type(self) {
                     if next_type.name.to_lowercase().contains(&search_lower) {
-                        fields_to_expand.insert((field.type_hash, *field_hash));
-                        for ancestor in &path {
-                            fields_to_expand.insert(ancestor.clone());
-                        }
+                        is_match = true;
                     }
 
                     let mut new_path = path.clone();
-                    new_path.push((field.type_hash, *field_hash));
+                    new_path.push(current_id);
                     q.push_back((next_type, new_path));
+                }
+
+                if is_match {
+                    leaf_nodes.insert(current_id);
+                    for ancestor in &path {
+                        path_nodes.insert(ancestor.clone());
+                    }
                 }
             }
         }
 
-        fields_to_expand
+        (path_nodes, leaf_nodes)
     }
 
     // TODO: add something that returns a HashSet of leaf nodes as well, this could be in the first
@@ -172,7 +182,7 @@ impl TypeMap {
 
     pub fn from_reader<R: Read + Seek>(rsz_reader: R, enum_reader: R) -> std::result::Result<Self, Box<dyn Error>> {
         let types: TypesWrapper = simd_json::from_reader(rsz_reader)?;
-        let enums: HashMap<String, HashMap<String, String>> = simd_json::from_reader(enum_reader)?;
+        let enums: HashMap<String, IndexMap<String, String>> = simd_json::from_reader(enum_reader)?;
         Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
     }
 
@@ -253,6 +263,7 @@ impl TypeMap {
       cur_field
       }*/
 
+
     pub fn get_enum_text(&self, enum_str: &str, original_type: &str, language: ContentLanguage) -> Option<String> {
         if original_type == "app.ArtianDef.ArtianSkillType_Fixed" {
             let enum_guid_map = self.enum_mappings.get(original_type);
@@ -325,7 +336,7 @@ impl<'de> Deserialize<'de> for TypesWrapper {
 }
 
 
-pub type EnumMap = HashMap<String, HashMap<String, String>>;
+pub type EnumMap = HashMap<String, IndexMap<String, String>>;
 
 // having functions for getting things like generics could be really useful
 #[derive(Debug, Serialize)]
