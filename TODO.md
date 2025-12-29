@@ -13,24 +13,22 @@
     - I'm not sure how safe this is to do
 - [x] Easier mandrake editing
 - [x] Color Editing
-- [] Better Display for arrays, maybe some kinda grid
+- [x] Better Display for arrays
 - [x] Rewrite editor
 - [] Highlight objects
 - [] memory of recent files/steamid
     - only in web atm
 - [x] hints for Enums -> Visual Strings for stuff like items
     - need more
-- [] Figure out savedata bitsets that don't have explicit types attached
+- [x] Figure out savedata bitsets that don't have explicit types attached
+    - use a remap.json file to give types
 - [] make the editor generic for files
 - [] make a backup system for editor files
 - [] Custom handlers for
     - [] Color
-    - [] Artian Parts
-    - [] Armor probably
-    - [] Weapons probably
-    - [] ace.Bitset
-    - [] app.savedata.cArmorFlagParam
-- [] add enum text
-    - [] app.EquipDef.ACCESSORY_ID
-    - [] app.WeaponCharmDef.TYPE
-
+    - [x] Artian Parts
+    - [x] Armor probably
+    - [x] Weapons probably
+    - [x] ace.Bitset
+- [x] add enum text
+    - this kinda has to be done manually mostly (add to script to generate)

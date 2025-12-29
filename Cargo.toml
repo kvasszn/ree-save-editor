@@ -63,6 +63,8 @@ lz4_flex = "0.12.0"
 
 libdeflater = {git = "https://github.com/c-ola/libdeflater.git", branch = "master", features=["freestanding"], optional=true}
 dotenvy = "0.15.7"
+keyvalues-serde = "0.2.3"
+keyvalues-parser = "0.2.2"
 #libdeflater = {path = "../libdeflater/", features = ["freestanding"] }
 
 

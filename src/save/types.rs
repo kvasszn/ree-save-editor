@@ -1,9 +1,11 @@
 use std::collections::HashSet;
+use std::default;
 use std::fmt::Display;
 use std::io::{Cursor, Read, Seek, Write};
 use std::error::Error;
 use std::str::FromStr;
 
+use bitfield::BitMut;
 use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, TextStyle, Ui};
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
@@ -16,6 +18,7 @@ use crate::edit::{CopyBuffer, EditContext, EditResponse, Editable};
 #[allow(unused_imports)]
 use crate::rsz::dump::RszDump;
 use crate::rsz::rszserde::{Mandrake, capitalize};
+use crate::save::remap::Remap;
 
 // Some of this stuff comes from via.reflection.TypeKind
 #[repr(i32)]
@@ -191,18 +194,6 @@ impl FieldValue {
 
     }
 
-}
-
-impl FieldValue {
-    fn udpate_ctx<'a>(id: u64, ctx: &'a mut EditContext) -> EditContext<'a> {
-        let child_ctx = EditContext {
-            copy_buffer: ctx.copy_buffer,
-            id,
-            ..*ctx
-        };
-        child_ctx
-    }
-    
 }
 
 fn collapsing_header_with_buttons_for_field(
@@ -591,10 +582,11 @@ impl Array {
 impl Editable for Array {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         ui.push_id(ctx.id, |ui| {
-            let is_search_active = !ctx.search_paths.is_empty();
-            let matches = ctx.field_info.map(|f| ctx.search_paths.contains(&(f.type_hash, f.hash))).unwrap_or(false);
-            let matches_search = is_search_active && matches;
-            let open = matches_search && is_search_active;
+            let is_search_active = (!ctx.search_paths.is_empty() || !ctx.search_leaf_nodes.is_empty()) && !ctx.search_found_leaf;
+            let is_path = ctx.field_info.map(|f| ctx.search_paths.contains(&(f.type_hash, f.hash))).unwrap_or(false);
+            let expand = is_search_active && is_path;
+            let default_open = if expand { Some(true) } else { None };
+
             let array_type = self.array_type;
 
             ui.scope(|ui| {
@@ -633,7 +625,6 @@ impl Editable for Array {
                     .inner_margin(4.0)
                     .show(ui, |ui| {
                         ScrollArea::vertical()
-                            // Snap window height to content, but respect max_height
                             .auto_shrink([false, true])
                             .min_scrolled_height(view_height)
                             .max_width(ui.available_width() * 0.9)
@@ -669,11 +660,11 @@ impl Editable for Array {
 
                                     let start_pos = ui.cursor().min;
 
-                                    if open == true || !is_search_active {
+                                    if default_open.is_some() || !is_search_active {
                                         let label = member.get_preview(ctx).unwrap_or("".to_string());
                                         let label = format!("{i}: {label}");
 
-                                        let child_id = ui.make_persistent_id(i);
+                                        let child_id = ui.make_persistent_id((i, ctx.id));
                                         let mut child_ctx = EditContext { 
                                             id: child_id.value(), 
                                             array_index: Some(i), 
@@ -684,9 +675,9 @@ impl Editable for Array {
 
                                         match array_type {
                                             ArrayType::Class => {
-                                                let id_salt = if is_search_active { (i, "search_mode") } else { (i, "normal") };
+                                                let id_salt = if expand { (i, "search_mode", ctx.id) } else { (i, "normal", ctx.id) };
                                                 let header_id = ui.make_persistent_id(id_salt);
-                                                collapsing_header_with_buttons_for_array_member(ui, header_id, Some(open), label, member, &mut child_ctx);
+                                                collapsing_header_with_buttons_for_array_member(ui, header_id, default_open, label, member, &mut child_ctx);
                                             }
                                             ArrayType::Value => {
                                                 ui.horizontal(|ui| {
@@ -757,62 +748,63 @@ impl Editable for Field {
         let array_brackets = if array_brackets {"[]"} else {""};
 
         let cur_type = field_info.and_then(|f| f.get_original_type(ctx.type_map));
+        let name_contained = format!("{name}: {og_type}{array_brackets}");
+
+        let is_leaf = field_info.map(|field_info| ctx.search_leaf_nodes.contains(&(field_info.type_hash, self.hash))).unwrap_or(false);
+        let is_path = field_info.map(|field_info| ctx.search_paths.contains(&(field_info.type_hash, self.hash))).unwrap_or(false);
+        let has_search = !ctx.search_paths.is_empty() || !ctx.search_leaf_nodes.is_empty();
+
+        let show = !has_search || ctx.search_found_leaf || is_leaf || is_path;
+        if !show {
+            return EditResponse::default();
+        }
+
+        let expand = has_search && !ctx.search_found_leaf && is_path;
+        let id_salt = if has_search && !ctx.search_found_leaf { (self.hash, "search_mode", ctx.id) } else { (self.hash, "normal", ctx.id) };
+        let default_open = if expand { Some(true) } else { None };
+
+        let child_id = ui.make_persistent_id((self.hash, ctx.id));
         let mut child_ctx = EditContext {
             copy_buffer: ctx.copy_buffer,
             cur_type,
             field_info,
+            id: child_id.value(),
             depth: ctx.depth + 1,
+            search_found_leaf: ctx.search_found_leaf || is_leaf,
             ..*ctx
         };
 
-        /*let preview = self.value.get_preview(&mut child_ctx).unwrap_or("".to_string());
-          let name_contained = if preview.is_empty() {
-          format!("{name}: {og_type}{array_brackets}")
-          } else {
-          format!("{name}: {og_type}{array_brackets}({preview})")
-          };*/
-        let name_contained = format!("{name}: {og_type}{array_brackets}");
-
-
-        let is_search_active = !ctx.search_paths.is_empty();
-        //let matches = field_info.map(|field_info| ctx.search_paths.contains(&(field_info.original_type.clone(), field_info.name.clone()))).unwrap_or(false);
-        //let matches = field_info.map(|field_info| ctx.search_paths.contains(&(murmur3(&field_info.original_type, 0xffffffff), self.hash))).unwrap_or(false);
-        let matches = field_info.map(|field_info| ctx.search_paths.contains(&(field_info.type_hash, self.hash))).unwrap_or(false);
-        let open = is_search_active && matches;
-        let id_salt = if is_search_active { (self.hash, "search_mode") } else { (self.hash, "normal") };
-
-        if open == true || !is_search_active {
-            match &self.field_type {
-                FieldType::Array | FieldType::Class => {
-                    let header_id = ui.make_persistent_id(id_salt);
-                    collapsing_header_with_buttons_for_field(ui, header_id, Some(open), name_contained, self, &mut child_ctx);
-                }
-                FieldType::Struct => {
-                    match og_type.as_str() {
-                        "via.rds.Mandrake" => {
-                            let header = CollapsingHeader::new(name_contained)
-                                .id_salt(id_salt);
-                            header.default_open(open).show(ui, |ui| {
-                                self.value.edit(ui, &mut child_ctx);
-                            });
-                        },
-                        _ => {
-                            ui.horizontal(|ui| {
-                                ui.label(name);
-                                self.value.edit(ui, &mut child_ctx);
-                                ui.label(format!("{og_type}"));
-                            });
-                        }
+        match &self.field_type {
+            FieldType::Array | FieldType::Class => {
+                let header_id = ui.make_persistent_id(id_salt);
+                collapsing_header_with_buttons_for_field(ui, header_id, default_open, name_contained, self, &mut child_ctx);
+            }
+            FieldType::Struct => {
+                match og_type.as_str() {
+                    "via.rds.Mandrake" => {
+                        let header = CollapsingHeader::new(name_contained)
+                            .id_salt(id_salt);
+                        let header = if let Some(state) = default_open { header.default_open(state) } else { header };
+                        header.show(ui, |ui| {
+                            self.value.edit(ui, &mut child_ctx);
+                        });
+                    },
+                    _ => {
+                        ui.horizontal(|ui| {
+                            ui.label(name);
+                            self.value.edit(ui, &mut child_ctx);
+                            ui.label(format!("{og_type}"));
+                        });
                     }
                 }
-                _ => {
-                    ui.horizontal(|ui| {
-                        ui.label(name);
-                        self.value.edit(ui, &mut child_ctx);
-                        ui.label(format!("{og_type}"));
-                        //response.unite(child_resp);
-                    });
-                }
+            }
+            _ => {
+                ui.horizontal(|ui| {
+                    ui.label(name);
+                    self.value.edit(ui, &mut child_ctx);
+                    ui.label(format!("{og_type}"));
+                    //response.unite(child_resp);
+                });
             }
         }
         EditResponse::default()
@@ -858,34 +850,159 @@ impl Class {
 }
 
 impl Class {
-    fn edit_as_bitset(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
-        todo!()
-    }
-    fn edit_as_item_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
-        if self.fields.len() > 2 {
-            return EditResponse::default();
-        }
-        let item_id_fixed_field = if let Some(i) = self.fields
-            .get_mut(&murmur3("ItemIdFixed", 0xffffffff)) { i } else {return EditResponse::default()};
-        if let FieldValue::U16(item_id_fixed) = item_id_fixed_field.value {
-            ui.horizontal(|ui| {
-                let mut val = item_id_fixed as i32;
-                ui.label("ItemIdFixed: ");
-                edit_enum_from_type(&mut val, "app.ItemDef.ID_Fixed", ui, ctx);
-                item_id_fixed_field.value = FieldValue::U16(val as u16);
-            });
-        }
+    fn edit_as_bitset(&mut self, generic: Option<&str>, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
 
-        let num = self.fields.get_mut(&murmur3("Num", 0xffffffff));
-        if let Some(num) = num {
+        let max_element = if let Some(field) = self.fields.get_mut(&murmur3("_MaxElement", 0xffffffff)) {
             ui.horizontal(|ui| {
-                ui.label("Num: ");
-                num.value.edit(ui, ctx);
+                ui.label("_MaxElement");
+                field.value.edit(ui, ctx);
             });
-        }
+            field
+        } else {
+            return EditResponse::default()
+        };
+
+        let max_element = if let FieldValue::S32(v) = &max_element.value {
+            *v as usize
+        } else { return EditResponse::default() };
+
+        let values = if let Some(i) = self.fields
+            .get_mut(&murmur3("_Value", 0xffffffff)) { i } 
+        else {return EditResponse::default()};
+
+        let edit_bitset = |ui: &mut Ui, a: &mut Array, generic: Option<&str>| {
+            let enums = generic.and_then(|g| {
+                if let Some((base_type, _)) = g.split_once("<") {
+                    ctx.type_map.enums.get(base_type)
+                } else {
+                    ctx.type_map.enums.get(g)
+                }
+            });
+            let mut count = 0usize;
+            for v in &mut a.values {
+                if let FieldValue::U32(x) = v {
+                    if count >= max_element { break; }
+                    for i in 0..32 {
+                        if count + i >= max_element { break; }
+                        let mut bit_val = *x & (1 << i) != 0;
+                        if let Some(e) = enums.as_ref().and_then(|x| x.get(&(count + i).to_string())) {
+                            let enum_text = generic.and_then(|generic| {
+                                ctx.type_map.get_enum_text(e, generic, ctx.language)
+                            });
+                            if let Some(et) = enum_text {
+                                ui.checkbox(&mut bit_val, format!("idx={}({e}:{et})", count + i));
+                            } else {
+                                ui.checkbox(&mut bit_val, format!("idx={}({e})", count + i));
+                            }
+                        } else {
+                            ui.checkbox(&mut bit_val, format!("{}", count + i));
+                        }
+                        x.set_bit(i as usize, bit_val);
+                    }
+                    count += 32;
+                }
+            }
+        };
+
+
+        let edit_outer_armor_flags = |ui: &mut Ui, a: &mut Array| {
+            let mut count = 0usize;
+            let (gender_enum, series_enum, part_enum) = {
+                (
+                    ctx.type_map.enums.get("app.CharacterDef.GENDER"),
+                    ctx.type_map.enums.get("app.ArmorDef.SERIES"),
+                    ctx.type_map.enums.get("app.ArmorDef.ARMOR_PARTS"),
+                )
+            };
+            for v in &mut a.values {
+                if let FieldValue::U32(x) = v {
+                    if count >= max_element { break; }
+                    for i in 0..32 {
+                        let idx = count + i;
+                        if idx >= max_element { break; }
+                        let mut bit_val = *x & (1 << i) != 0;
+                        let part = idx % 5;
+                        let series = (idx/5) % (0x4b5/5);
+                        let gender = idx / 0x4b5;
+                        let gender = gender_enum.map(|gender_enum| {
+                            let enum_str = gender_enum.get(&gender.to_string());
+                            match enum_str {
+                                None => gender.to_string(),
+                                Some(enum_str) => ctx.type_map.get_enum_text(enum_str, "app.CharacterDef.GENDER", ctx.language)
+                                    .unwrap_or(enum_str.clone())
+                            }
+                        }).unwrap_or(gender.to_string());
+
+                        let mut specific = None;
+                        if let Some(series_enum) = series_enum {
+                            if let Some(series) = series_enum.get(&series.to_string()) {
+                                if let Some(part_enum) = part_enum {
+                                    if let Some(part) = part_enum.get(&part.to_string()) {
+                                        specific = ctx.type_map.get_enum_text(&format!("{series}{part}"), "app.ArmorDef.SpecificPiece", ctx.language);
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(specific) = specific {
+                            ui.checkbox(&mut bit_val, format!("idx={idx}:({gender}:\"{specific}\")"));
+                            x.set_bit(i as usize, bit_val);
+
+                        } else {
+                            let series = series_enum.map(|series_enum| {
+                                let enum_str = series_enum.get(&series.to_string());
+                                match enum_str {
+                                    None => series.to_string(),
+                                    Some(enum_str) => ctx.type_map.get_enum_text(enum_str, "app.ArmorDef.SERIES", ctx.language)
+                                        .unwrap_or(enum_str.clone())
+                                }
+                            }).unwrap_or(series.to_string());
+
+                            let part = part_enum.map(|part_enum| {
+                                let enum_str = part_enum.get(&part.to_string());
+                                match enum_str {
+                                    None => part.to_string(),
+                                    Some(enum_str) => ctx.type_map.get_enum_text(enum_str, "app.ArmorDef.ARMOR_PARTS", ctx.language)
+                                        .unwrap_or(enum_str.clone())
+                                }
+                            }).unwrap_or(part.to_string());
+                            ui.checkbox(&mut bit_val, format!("idx={idx}:({gender}:\"{series}\":{part})"));
+                            x.set_bit(i as usize, bit_val);
+                        }
+                    }
+                    count += 32;
+                }
+            }
+        };
+
+
+        // hopefully this scrollable area works alright?
+        if let FieldValue::Array(a) = &mut values.value {
+            CollapsingHeader::new("_Value")
+                .show(ui, |ui| {
+                    eframe::egui::Frame::new()
+                        .fill(ui.visuals().faint_bg_color)
+                        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+                        .inner_margin(4.0)
+                        .show(ui, |ui| {
+                            ScrollArea::vertical()
+                                .auto_shrink([false, true])
+                                .max_width(ui.available_width() * 0.9)
+                                .min_scrolled_height(300.0)
+                                .show(ui, |ui| {
+                                    match generic {
+                                        Some("Custom.OuterArmorFlags") => edit_outer_armor_flags(ui, a),
+                                        Some(_) | None => edit_bitset(ui, a, generic)
+                                    }
+                                });
+                        });
+                });
+        } else {
+            return EditResponse::default() 
+        };
         EditResponse::default()
     }
-    
+
+
     fn udpate_ctx<'a>(type_info: Option<&'a TypeInfo>, id: u64, ctx: &'a mut EditContext) -> EditContext<'a> {
         let child_ctx = EditContext {
             copy_buffer: ctx.copy_buffer,
@@ -1093,18 +1210,34 @@ impl Class {
         EditResponse::default()
     }
 
-    fn edit_as_artian_parts_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+    // this could potentially return the name of the type for arrays
+    pub fn get_preview_from_field(&self, field_name: &str, ctx: &mut EditContext) -> Option<String> {
+        self.fields.get(&murmur3(field_name, 0xffffffff)).and_then(|x| {
+            x.value.get_preview(ctx)
+        })
+    }
+
+    pub fn get_preview_from_remap(&self, remap: &Remap, ctx: &mut EditContext) -> Option<String> {
+        let hash = murmur3(&remap.preview, 0xffffffff);
+        if let Some(field) = self.fields.get(&hash) {
+            return match remap.remap.get(&remap.preview) {
+                Some(enum_type) => self.get_enum_preview_from_field(&remap.preview, enum_type, ctx),
+                None => field.value.get_preview(ctx)
+            }
+        }
+        None
+    }
+
+    fn edit_as_remapped(&mut self, remap: &Remap, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         let mut left = HashSet::new();
         for i in self.fields.keys() {
             left.insert(*i);
         }
 
         let type_info = ctx.type_map.get_by_hash(self.hash);
-
-        self.add_enum_edit(type_info, "Type_FixedId", "app.ArtianDef.PARTS_TYPE_Fixed", ui, ctx, &mut left);
-        self.add_enum_edit(type_info, "Performance_FixedId", "app.ArtianDef.PERFORMANCE_TYPE_Fixed", ui, ctx, &mut left);
-        self.add_enum_edit(type_info, "Rare_FixedId", "app.ItemDef.RARE_Fixed", ui, ctx, &mut left);
-        self.add_enum_edit(type_info, "Bonus_FixedId", "app.ArtianDef.BONUS_ID_Fixed", ui, ctx, &mut left);
+        for (k, v) in &remap.remap {
+            self.add_enum_edit(type_info, k, v, ui, ctx, &mut left);
+        }
 
         for (h, field) in self.fields.iter_mut() {
             if left.contains(h) {
@@ -1117,28 +1250,13 @@ impl Class {
         EditResponse::default()
     }
 
-    // this could potentially return the name of the type for arrays
-    pub fn get_preview_from_field(&self, field_name: &str, ctx: &mut EditContext) -> Option<String> {
-        self.fields.get(&murmur3(field_name, 0xffffffff)).and_then(|x| {
-            x.value.get_preview(ctx)
-        })
-    }
     pub fn get_preview(&self, ctx: &mut EditContext) -> Option<String> {
         let type_info = ctx.type_map.get_by_hash(self.hash);
         type_info.and_then(|type_info| {
+            if let Some(v) = ctx.remaps.get(&type_info.name) {
+                return self.get_preview_from_remap(v, ctx);
+            }
             match type_info.name.as_str() {
-                "app.savedata.cUserSaveParam" => {
-                    return self.get_preview_from_field("_BasicData", ctx)
-                }
-                "app.savedata.cBasicParam" => {
-                    return self.get_preview_from_field("CharName", ctx)
-                }
-                "app.savedata.cItemWork" => {
-                    return self.get_enum_preview_from_field("ItemIdFixed", "app.ItemDef.ID_Fixed", ctx);
-                }
-                "app.savedata.cArtianPartsWork" => {
-                    return self.get_enum_preview_from_field("Type_FixedId", "app.ArtianDef.PARTS_TYPE_Fixed", ctx);
-                }
                 "app.savedata.cEquipWork" => {
                     let hash = &murmur3("Category_Gender", 0xffffffff);
                     if let Some(cat_gen) = self.fields.get(hash) {
@@ -1223,13 +1341,33 @@ impl Editable for Class {
         let type_info = ctx.type_map.get_by_hash(self.hash);
         ui.push_id(ctx.id, |ui| {
             if let Some(ti) = type_info {
-                match ti.name.as_str() {
-                    "app.savedata.cItemWork" => {
-                        self.edit_as_item_work(ui, ctx);
+                if let Some(remap) = ctx.remaps.get(&ti.name) {
+                    if !remap.remap.is_empty() {
+                        return self.edit_as_remapped(remap, ui, ctx);
                     }
-                    "app.savedata.cArtianPartsWork" => {
-                        self.edit_as_artian_parts_work(ui, ctx);
-                    },
+                }
+                match ti.name.as_str() {
+                    "ace.Bitset" => {
+                        let bitset = ctx.field_info.and_then(|f| {
+                            let x = ctx.parent_type.and_then(|t| {
+                                ctx.remaps.get(&t.name).and_then(|remap| {
+                                    remap.bitsets.get(&f.name)
+                                })
+                            });
+                            x
+                        });
+
+                        /*let generics: Vec<&str> = if let Some(start) = remapped.find('<') {
+                          if let Some(end) = remapped.rfind('>') {
+                          let content = &remapped[start + 1..end];
+                          content.split(',').map(|s| s.trim()).collect::<Vec<&str>>()
+                          } else {
+                          Vec::new()
+                          }
+                          } else {Vec::new()};*/
+
+                        self.edit_as_bitset(bitset.map(|x| x.as_str()), ui, ctx);
+                    }
                     "app.savedata.cEquipWork" => {
                         self.edit_as_equip_work(ui, ctx);
                     },

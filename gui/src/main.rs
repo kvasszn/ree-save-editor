@@ -1,10 +1,12 @@
 
 #[cfg(not(target_arch = "wasm32" ))]
 mod native {
+    use std::path::Path;
+
     use clap::Parser;
     use eframe::egui;
     use mhtame::rsz::dump::{ENUM_FILE, RSZ_FILE};
-    use mhtame_gui::{Config, TameApp};
+    use mhtame_gui::{Config, TameApp, steam};
 
     #[derive(Parser, Debug)]
     #[command(name = "mhtame-gui")]
@@ -30,6 +32,12 @@ mod native {
 
         #[arg(long, default_value_t = String::from("assets/enum_text_mappings.json"))]
         mappings_path: String,
+        #[cfg(target_os = "linux")]
+        #[arg(long, default_value_t = shellexpand::full("~/.local/share/Steam/").unwrap_or_default().to_string())]
+        steam_path: String,
+        #[cfg(target_os = "windows")]
+        #[arg(long, default_value_t = String::from("C:\\Program Files (x86)\\Steam"))]
+        steam_path: String,
     }
 
 
@@ -40,6 +48,7 @@ mod native {
             viewport: egui::ViewportBuilder::default().with_drag_and_drop(true),
             .. Default::default()
         };
+
         ENUM_FILE.set(args.enums_path.clone()).unwrap();
         RSZ_FILE.set(args.rsz_path.clone()).unwrap();
 
@@ -51,6 +60,7 @@ mod native {
             enums_path: args.enums_path,
             msgs_path: args.msgs_path,
             mappings_path: args.mappings_path,
+            steam_path: args.steam_path,
         };
 
         eframe::run_native("mhtame",

@@ -9,22 +9,22 @@ fi
 WINDOWS_PATH="./outputs/$VERSION/windows"
 LINUX_PATH="./outputs/$VERSION/linux"
 echo "Building Linux..."
-cargo build --release --target x86_64-unknown-linux-gnu
+cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu  --release 
 echo "Building Windows..."
-cargo build --release --target x86_64-pc-windows-gnu
-mkdir -p $WINDOWS_PATH
-mkdir -p $LINUX_PATH
-cp target/x86_64-pc-windows-gnu/release/{mhtame.exe,mhtame-gui.exe} $WINDOWS_PATH
-cp target/x86_64-unknown-linux-gnu/release/{mhtame,mhtame-gui} $LINUX_PATH
-cp rszmhwilds.json rszmhwilds_packed.json enums.json $WINDOWS_PATH
-cp rszmhwilds.json rszmhwilds_packed.json enums.json $LINUX_PATH
+cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release
+mkdir -p $WINDOWS_PATH/assets
+mkdir -p $LINUX_PATH/assets
+cp ./target/x86_64-unknown-linux-gnu/release/mhtame-gui $LINUX_PATH
+cp assets/rszmhwilds_packed.json assets/enumsmhwilds.json assets/combined_msgs.json assets/enum_text_mappings.json assets/wilds_remap.json $LINUX_PATH/assets
+cp ./target/x86_64-pc-windows-msvc/release/mhtame-gui.exe $WINDOWS_PATH
+cp assets/rszmhwilds_packed.json assets/enumsmhwilds.json assets/combined_msgs.json assets/enum_text_mappings.json assets/wilds_remap.json $WINDOWS_PATH/assets
 
 echo "Zipping Windows release..."
-(cd "$WINDOWS_PATH" && zip -r "../mhtame-windows-$VERSION.zip" .)
+(cd "$WINDOWS_PATH" && zip -r "../save-editor-windows-$VERSION.zip" .)
 echo "Contents:"
-unzip -l "./outputs/$VERSION/mhtame-windows-$VERSION.zip"
+unzip -l "./outputs/$VERSION/save-editor-windows-$VERSION.zip"
 
 echo "Zipping Linux release..."
-(cd "$LINUX_PATH" && zip -r "../mhtame-linux-$VERSION.zip" .)
+(cd "$LINUX_PATH" && zip -r "../save-editor-linux-$VERSION.zip" .)
 echo "Contents:"
-unzip -l "./outputs/$VERSION/mhtame-linux-$VERSION.zip"
+unzip -l "./outputs/$VERSION/save-editor-linux-$VERSION.zip"
