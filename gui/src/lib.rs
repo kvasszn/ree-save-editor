@@ -903,6 +903,8 @@ impl eframe::App for TameApp {
                     });
             }
         });
+
+        ctx.request_repaint_after(std::time::Duration::from_secs(1));
     }
 }
 

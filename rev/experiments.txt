@@ -1,0 +1,29 @@
+1. Losing friends/followers and online stuff (game force resets the IDs)
+
+og: b87602c6-b24a-4e46-bf05-adb3ccaf3768
+og: H48PR4X4
+
+
+diff b/w two things, one updated after the shit it says (losing old stuff)
+data001Slot.bin
+hunter id/short id
+variousParam[2] just a unix timestamp
+variousParam[4] 30 vs 14 // idk wtf this is lol
+
+_DeliveryBounty is different (login bonuses, this is my suspect)
+
+if you fuck aroudn with the new save, like by loading an old one with a diff id and going online, you fuck up the new one too?
+idk
+
+generating a new id also clears your friends list and stuff, but the game doesn't say anything when it does it this way
+
+have a save where this happens (id might ne deleted or something)
+get a new id automatically (this message appears, lose online related data that was tied to the id)
+go back to the old save and go online,
+go back to the "new" save, the new one also gets fucked
+
+also copying a slot 1 to slot 2 requires slot 2 to make a new id, otherwise you cant go online.
+
+
+still don't know the real cause for the fucked save
+

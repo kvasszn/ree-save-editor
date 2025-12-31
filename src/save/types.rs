@@ -871,6 +871,25 @@ impl Class {
         else {return EditResponse::default()};
 
         let edit_bitset = |ui: &mut Ui, a: &mut Array, generic: Option<&str>| {
+            ui.horizontal(|ui| {
+                let mut count = 0;
+                if ui.small_button("Check All").clicked() {
+                    for v in &mut a.values {
+                        if count >= max_element { break; }
+                        let bits = (max_element - count).min(32);
+                        let mask = (1u32 << bits) - 1;
+                        if let FieldValue::U32(x) = v { *x = mask; }
+                        count += bits;
+                    }
+                }
+                if ui.small_button("Uncheck All").clicked() {
+                    for v in &mut a.values {
+                        if let FieldValue::U32(x) = v { *x = 0; }
+                    }
+                }
+            });
+            ui.separator();
+
             let enums = generic.and_then(|g| {
                 if let Some((base_type, _)) = g.split_once("<") {
                     ctx.type_map.enums.get(base_type)
@@ -906,7 +925,6 @@ impl Class {
 
 
         let edit_outer_armor_flags = |ui: &mut Ui, a: &mut Array| {
-            let mut count = 0usize;
             let (gender_enum, series_enum, part_enum) = {
                 (
                     ctx.type_map.enums.get("app.CharacterDef.GENDER"),
@@ -914,6 +932,28 @@ impl Class {
                     ctx.type_map.enums.get("app.ArmorDef.ARMOR_PARTS"),
                 )
             };
+
+
+            ui.horizontal(|ui| {
+                let mut count = 0;
+                if ui.small_button("Check All").clicked() {
+                    for v in &mut a.values {
+                        if count >= max_element { break; }
+                        let bits = (max_element - count).min(32);
+                        let mask = (1u32 << bits) - 1;
+                        if let FieldValue::U32(x) = v { *x = mask; }
+                        count += bits;
+                    }
+                }
+                if ui.small_button("Uncheck All").clicked() {
+                    for v in &mut a.values {
+                        if let FieldValue::U32(x) = v { *x = 0; }
+                    }
+                }
+            });
+            ui.separator();
+
+            let mut count = 0usize;
             for v in &mut a.values {
                 if let FieldValue::U32(x) = v {
                     if count >= max_element { break; }
