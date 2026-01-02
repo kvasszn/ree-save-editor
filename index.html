@@ -9,8 +9,8 @@
     
     
 <script type="module">
-import init, * as bindings from '/mhtame/mhtame-gui-31b2132f4826b8d0.js';
-const wasm = await init({ module_or_path: '/mhtame/mhtame-gui-31b2132f4826b8d0_bg.wasm' });
+import init, * as bindings from '/mhtame/mhtame-gui-2af0e7256504466b.js';
+const wasm = await init({ module_or_path: '/mhtame/mhtame-gui-2af0e7256504466b_bg.wasm' });
 
 
 window.wasmBindings = bindings;
@@ -102,7 +102,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             100% { transform: rotate(360deg); }
         }
     </style>
-<link rel="modulepreload" href="/mhtame/mhtame-gui-31b2132f4826b8d0.js" crossorigin="anonymous" integrity="sha384-BYEHxXa29jD6SrpTaWlVAIBBWC1PzDvVNkRMPU/DiD8p7+R69AeX5/aYNshV54H/"><link rel="preload" href="/mhtame/mhtame-gui-31b2132f4826b8d0_bg.wasm" crossorigin="anonymous" integrity="sha384-F4gCbL1Y2nQar449s2NeoctCO6PSE8/o6b0Zwzibbhszp7DbZiqXKOCyIWEGnmdK" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="/mhtame/mhtame-gui-2af0e7256504466b.js" crossorigin="anonymous" integrity="sha384-WsGHKySFQpyKefkve5ZeXpfkgAE5t5JXTzXzW1EvDGHflx5SV1tte/gG+1kbyICu"><link rel="preload" href="/mhtame/mhtame-gui-2af0e7256504466b_bg.wasm" crossorigin="anonymous" integrity="sha384-HMM2PN5K8EVgRS/PkkiQUXWiqfzk3O5L8UurmKrbsu7SfE0pN5y1iGi3rjJviv+D" as="fetch" type="application/wasm"></head>
 
 <body>
     <canvas id="the_canvas_id"></canvas>
