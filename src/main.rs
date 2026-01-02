@@ -14,19 +14,11 @@ extern crate image;
 
 use clap::Parser;
 use file::FileReader;
-use mhtame::file::User;
-use mhtame::rsz::dump::RszDump;
 use rsz::dump::{ENUM_FILE, RSZ_FILE};
-use sdk::deserializer::RszDeserializer;
-use sdk::json_serializer::RszWithCtx;
-use sdk::type_map::TypeMap;
-
-use std::collections::HashMap;
 use std::error::Error;
-use std::fs::{File, read_to_string};
-use std::io::{BufWriter, Cursor, Read};
+use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

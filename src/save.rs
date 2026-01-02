@@ -155,7 +155,7 @@ impl StructRW<SaveContext> for SaveFile {
             reader.seek(SeekFrom::Start(data_start))?;
             let mut encrypted = vec![];
             reader.read_to_end(&mut encrypted)?;
-            let data = if mandarin && deflate || true {
+            let data = if mandarin {
                 let key = if ctx.key == 0 {
                     Mandarin::brute_force(&encrypted, decrypted_len as u64)
                 } else {ctx.key};

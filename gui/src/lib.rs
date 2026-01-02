@@ -903,7 +903,8 @@ impl eframe::App for TameApp {
                     });
             }
         });
-
+        
+        #[cfg(not(target_arch = "wasm32"))]
         ctx.request_repaint_after(std::time::Duration::from_secs(1));
     }
 }

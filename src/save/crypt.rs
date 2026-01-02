@@ -250,7 +250,8 @@ impl Mandarin {
         // the module gets launched, but whatever values you find work for anyone
         // pragmata: 0x3F90D767F13ABE2E
         // wilds: 0xBFACF76C3F96
-        let mut state_a: u64 = 0xBFACF76C3F96;
+        // dd2: 5EC646997D69AE1B?
+        let mut state_a: u64 = 0x90EDB79172FDBE51; // dd2
         let mut rands: [u8; 0x20] = [0u8; 0x20];
         for i in 0..32 {
             state_a = SplitMix64::next_int(&mut state_a); // this doesnt even actually do anything???
@@ -264,8 +265,9 @@ impl Mandarin {
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
                                                                         // allocated, its on the stack
                                                                         // but like variable size
-         let mut state_p: u64 = 0x7A36955255266CED; // wilds
+        //let mut state_p: u64 = 0x7A36955255266CED; // wilds
         //let mut state_p: u64 = 0x7DA24A9E1479F3D7; // pragmata
+        let mut state_p: u64 = 0x5EC646997D69AE1B; // dd2
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
             state_p = SplitMix64::next_int(&mut state_p);
