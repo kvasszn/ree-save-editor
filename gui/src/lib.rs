@@ -911,9 +911,11 @@ impl eframe::App for TameApp {
                 self.config.edit_asset_paths(ui);
                 
                 #[cfg(not(target_arch = "wasm32"))]
-                let mut sp = self.steam_path.display().to_string();
-                if ui.text_edit_singleline(&mut sp).changed() {
-                    self.steam_path = PathBuf::from(sp);
+                {
+                    let mut sp = self.steam_path.display().to_string();
+                    if ui.text_edit_singleline(&mut sp).changed() {
+                        self.steam_path = PathBuf::from(sp);
+                    }
                 }
 
                 // TODO: add egui debugging stuff here

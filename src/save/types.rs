@@ -115,7 +115,7 @@ impl FieldValue {
                 reader.seek_align_up(size.into())?;
             }
         }
-        else */
+        else*/
         if field_type != FieldType::String {
             reader.seek_align_up(size as u64)?;
         }
