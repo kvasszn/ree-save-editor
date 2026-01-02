@@ -1,11 +1,12 @@
 pub mod crypt;
+pub mod game;
 pub mod types;
 pub mod remap;
 
 use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
 use flate2::{Compression, write::{DeflateDecoder, DeflateEncoder}};
-use crate::{file::{Magic, StructRW}, save::types::Class};
+use crate::{file::{Magic, StructRW}, save::{game::Game, types::Class}};
 
 use util::*;
 
@@ -13,15 +14,16 @@ use crypt::Mandarin;
 
 #[derive(Debug)]
 pub struct SaveFile {
+    pub game: Game,
     pub fields: Vec<(u32, Class)>
 }
 
 pub struct SaveContext {
     pub key: u64,
+    pub game: Game,
 }
 
 impl SaveFile {
-
     pub fn to_bytes(&self, key: u64) -> crate::file::Result<Vec<u8>> {
         let mut data = Cursor::new(Vec::<u8>::new());
         let version: u32 = 2;
@@ -49,7 +51,9 @@ impl SaveFile {
         data.write(&compressed[..compressed_size as usize])?;
 
         let decrypted_size = data.get_ref().len() as u64;
-        let data = Mandarin::encrypt(data.get_ref(), key)?;
+        let mandarin = Mandarin::init_from_game(self.game)?;
+        let key = self.game.get_key_from_steamid(key);
+        let data = mandarin.encrypt(data.get_ref(), key)?;
 
         let mut fb = Cursor::new(Vec::<u8>::new());
         fb.write_all(b"DSSS")?;
@@ -93,7 +97,9 @@ impl SaveFile {
         data.write(&compressed[..compressed_size as usize])?;
 
         let decrypted_size = data.get_ref().len() as u64;
-        let data = Mandarin::encrypt(data.get_ref(), key)?;
+        let mandarin = Mandarin::init_from_game(self.game)?;
+        let key = self.game.get_key_from_steamid(key);
+        let data = mandarin.encrypt(data.get_ref(), key)?;
 
         let mut fb = Cursor::new(Vec::<u8>::new());
         fb.write_all(b"DSSS")?;
@@ -124,15 +130,16 @@ impl StructRW<SaveContext> for SaveFile {
                 return Err(format!("Save file version incorrect I think: {version}").into())
             }
             let flags = u32::read(reader, &mut ())?;
-            log::info!("Version={version}, Save Flags: {:034b}", flags); // theres flags for encryption type, compression,
+            println!("Version={version}, Save Flags: {:034b}", flags); // theres flags for encryption type, compression,
             let _save_or_user_i_think = u32::read(reader, &mut ())?;
             //println!("{_save_or_user_i_think}");
             let mandarin = flags & 0x10 != 0;
             let blowfish = flags & 0x1 != 0;
+            let _autostrong = flags & 0x3 != 0;
             let _citrus = flags & 0x4 != 0;
             let deflate = flags & 0x8 != 0;
             // 0x4 is something related to the usage of mandarin and deflate i think
-            log::info!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}");
+            println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={_citrus}, autostrong={_autostrong}");
 
             let data_start = reader.tell()?;
             reader.seek(std::io::SeekFrom::End(-12))?;
@@ -156,10 +163,12 @@ impl StructRW<SaveContext> for SaveFile {
             let mut encrypted = vec![];
             reader.read_to_end(&mut encrypted)?;
             let data = if mandarin {
+                let mandarin = Mandarin::init_from_game(ctx.game)?;
                 let key = if ctx.key == 0 {
-                    Mandarin::brute_force(&encrypted, decrypted_len as u64)
+                    mandarin.brute_force_v2(&encrypted).unwrap_or(0)
                 } else {ctx.key};
-                let decrypted_buf = Mandarin::decrypt(&encrypted, decrypted_len as u64, key)?;
+                let key = ctx.game.get_key_from_steamid(key);
+                let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
                 log::info!("[Decrypted]");
                 decrypted_buf
             } else {
@@ -191,12 +200,15 @@ impl StructRW<SaveContext> for SaveFile {
             while let Ok(h) = u32::read(data, &mut ()) {
                 match types::Class::read(data) {
                     Ok(field_value) => fields.push((h, field_value)),
-                    Err(e) => println!("Error reading class {e}")
+                    Err(e) => {
+                        println!("Error reading class {e}")
+                    }
                 }
             }
 
             Ok(SaveFile {
-                fields
+                fields,
+                game: ctx.game
             })
         }
 }

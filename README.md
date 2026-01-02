@@ -4,7 +4,7 @@ This repo is mainly for dumping RE engine files into readable json. It also does
 Files that it currently supports are `user, tex, msg, pog, poglst, oft` and `wilds saves`.
 Some basic support exists for `scn` files, but it's rough, RSZ works for it though.
 
-Makes use of texture codecs, and file reading stuff from ![https://github.com/wwylele/mhrice](https://github.com/wwylele/mhrice)
+Makes use of texture codecs, and file reading stuff from [https://github.com/wwylele/mhrice](https://github.com/wwylele/mhrice)
 
 Also looked at it to figure out how to read some of the file formats.
 
@@ -22,6 +22,11 @@ cargo build --bin mhtame --release # the release flag optimizes speeds alot
 ## Usage
 
 ### Save Editing
+
+In depth documentation is available here [Usage](docs/USAGE.md).
+
+If you'd like to add to documentation, please make open issues or pull requests.
+
 It can finally support editing saves for Monster Hunter Wilds, in a GUI too. Use this carefully, might potentially break things.
 
 **ALSO PLEASE MAKE BACKUPS BEFORE MESSING WITH THIS TOO MUCH. IF YOU FIND BUGS PLEASE REPORT THEM.**

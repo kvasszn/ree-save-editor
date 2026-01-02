@@ -11,11 +11,9 @@ pub mod tdb;
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs::File, io::Cursor};
+    use std::{env, io::Cursor};
 
-    use sdk::type_map::TypeMap;
-
-    use crate::{file::StructRW, save::SaveFile};
+    use crate::{file::StructRW, save::{SaveFile, game::Game}};
 
     use super::*;
 
@@ -31,7 +29,8 @@ mod tests {
         let data: Vec<u8> = std::fs::read(save_path).expect("Save file not found for testing");
         let mut data = Cursor::new(data);
         let mut save_ctx = save::SaveContext {
-            key: key
+            key: key,
+            game: Game::MHWILDS
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);
@@ -48,7 +47,8 @@ mod tests {
         let data: Vec<u8> = std::fs::read(save_path).expect("Save file not found for testing");
         let mut data = Cursor::new(data.clone());
         let mut save_ctx = save::SaveContext {
-            key: key
+            key: key,
+            game: Game::MHWILDS
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);

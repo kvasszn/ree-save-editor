@@ -11,6 +11,7 @@ use mhtame::file::StructRW;
 
 use eframe::egui::{self, Button, ComboBox, ScrollArea, TextEdit, Ui, Vec2};
 
+use mhtame::save::game::{GAME_OPTIONS, Game};
 use mhtame::save::remap::Remap;
 use mhtame::{
     edit::{CopyBuffer},
@@ -31,6 +32,28 @@ pub struct Config {
     pub mappings_path: String,
     #[cfg(not(target_arch = "wasm32"))]
     pub steam_path: String,
+}
+
+impl Config {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn edit_asset_paths(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.label("rsz_path:");
+            ui.text_edit_singleline(&mut self.rsz_path);
+        });
+        ui.horizontal(|ui| {
+            ui.label("enums_path:");
+            ui.text_edit_singleline(&mut self.enums_path);
+        });
+        ui.horizontal(|ui| {
+            ui.label("msgs_path:");
+            ui.text_edit_singleline(&mut self.msgs_path);
+        });
+        ui.horizontal(|ui| {
+            ui.label("mappings_path:");
+            ui.text_edit_singleline(&mut self.mappings_path);
+        });
+    }
 }
 
 impl Default for Config {
@@ -244,6 +267,7 @@ pub struct TameApp {
     steam_path: PathBuf,
 
     config: Config,
+    game: Game,
 }
 
 impl TameApp{
@@ -409,12 +433,13 @@ impl TameApp{
             steam_path,
 
             config: config.clone(),
+            game: Game::MHWILDS,
         }
     }
 
     fn read_save<R: Read + Seek>(&mut self, reader: &mut R) -> Option<SaveFile> {
         if let Some(steamid) = self.steam_id {
-            let mut ctx = SaveContext { key: steamid };
+            let mut ctx = SaveContext { key: steamid , game: self.game };
             match SaveFile::read(reader, &mut ctx) {
                 Ok(save) => {
                     return Some(save)
@@ -765,7 +790,7 @@ impl eframe::App for TameApp {
 
                     self.reload();
                 }
-                
+
                 #[cfg(not(target_arch = "wasm32"))]
                 if !self.users.is_empty() {
                     if let Some(steam_id) = self.steam_id {
@@ -785,11 +810,6 @@ impl eframe::App for TameApp {
                                 });
                         }
                     }
-                }
-
-                #[cfg(not(target_arch = "wasm32"))]
-                if ui.button("Reload Assets").clicked() {
-                    self.load_assets();
                 }
             });
 
@@ -882,6 +902,32 @@ impl eframe::App for TameApp {
                     });
             });
 
+            ui.collapsing("Advanced", |ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                if ui.button("Reload Assets").clicked() {
+                    self.load_assets();
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                self.config.edit_asset_paths(ui);
+                
+                #[cfg(not(target_arch = "wasm32"))]
+                let mut sp = self.steam_path.display().to_string();
+                if ui.text_edit_singleline(&mut sp).changed() {
+                    self.steam_path = PathBuf::from(sp);
+                }
+
+                // TODO: add egui debugging stuff here
+
+                ui.label("Game Profile");
+                ComboBox::from_id_salt("GameProfilePicker")
+                    .selected_text(GAME_OPTIONS[self.game as usize].0)
+                    .show_ui(ui, |ui| {
+                        for option in GAME_OPTIONS {
+                            ui.selectable_value(&mut self.game, option.1, option.0);
+                        }
+                    });
+            });
+
             ui.separator();
             self.add_file_area(ui);
 
@@ -923,8 +969,6 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
     let window = web_sys::window().expect("No window found");
     let document = window.document().expect("No document found");
 
-    // 2. Remove the Loading Spinner
-    // We do this immediately before starting the WebRunner
     if let Some(loader) = document.get_element_by_id("loading_text") {
         loader.remove();
     }
@@ -932,7 +976,6 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
     let web_options = eframe::WebOptions::default();
     let config = Config::default();
 
-    // --- NEW: Manually look up the canvas element ---
     let document = web_sys::window()
         .expect("No window found")
         .document()
@@ -943,11 +986,10 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
         .expect("Failed to find canvas with that ID")
         .dyn_into::<web_sys::HtmlCanvasElement>()
         .map_err(|_| "Element is not a canvas")?;
-    // ------------------------------------------------
 
     eframe::WebRunner::new()
         .start(
-            canvas, // <--- Pass the element, NOT the string
+            canvas,
             web_options,
             Box::new(|cc| Ok(Box::new(TameApp::new(config, cc)))),
         )

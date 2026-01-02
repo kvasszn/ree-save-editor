@@ -22,7 +22,7 @@ pub use pog::*;
 use std::{collections::HashSet, error::Error, fs::File, io::{BufReader, Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}};
 
 
-use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext}};
+use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext, game::Game}};
 use crate::save::SaveFile;
 use serde::Serialize;
 use util::*;
@@ -323,7 +323,7 @@ impl FileReader {
                     }?;
                     //Mandarin::sanity_check(&file_path);
                     let mut reader = File::open(&file)?;
-                    let save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid})?;
+                    let save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: Game::MHWILDS})?;
                     //let save = SaveFile::from_file(&file)?;
                     /*let dersz = to_dersz(save.fields[0].1.clone())?;
                     //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);
@@ -341,7 +341,7 @@ impl FileReader {
                     let mut buf = vec![];
                     reader.read_to_end(&mut buf).unwrap();
                     let mut reader = Cursor::new(&buf);
-                    let _ = SaveFile::read(&mut reader, &mut SaveContext{key: 0});
+                    let _ = SaveFile::read(&mut reader, &mut SaveContext{key: 0, game: Game::MHWILDS});
                     /*(0..c).into_par_iter().for_each(|i| {
                         let key = 0x0110000100000000 + i;
                         let mut reader = Cursor::new(&buf);

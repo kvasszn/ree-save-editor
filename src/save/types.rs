@@ -1,12 +1,11 @@
 use std::collections::HashSet;
-use std::default;
 use std::fmt::Display;
 use std::io::{Cursor, Read, Seek, Write};
 use std::error::Error;
 use std::str::FromStr;
 
 use bitfield::BitMut;
-use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, TextStyle, Ui};
+use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, Ui};
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
 use sdk::type_map::TypeInfo;
@@ -17,7 +16,7 @@ use util::*;
 use crate::edit::{CopyBuffer, EditContext, EditResponse, Editable};
 #[allow(unused_imports)]
 use crate::rsz::dump::RszDump;
-use crate::rsz::rszserde::{Mandrake, capitalize};
+use crate::rsz::rszserde::{Mandrake};
 use crate::save::remap::Remap;
 
 // Some of this stuff comes from via.reflection.TypeKind
@@ -86,6 +85,7 @@ impl FieldValue {
                 }).collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
                 FieldValue::String(Box::new(StringU16::new(data)))
             }
+            // TODO: Add Struct weird shit handling
             // These values actually need a size/len
             _ => {
                 reader.seek_align_up(4)?;
@@ -99,6 +99,23 @@ impl FieldValue {
     // When this is run for the Array struct, it should never be able to read an Object, I'm not
     // sure about array though
     pub fn read_sized<R: Read + Seek>(reader: &mut R, field_type: FieldType, size: u32) -> Result<Self, Box<dyn Error>> {
+        /*if field_type == FieldType::Struct {
+            let pos = reader.stream_position()?;
+            if size == 24 {
+                if pos % 32 > 16 {
+                    let aligned = 32 - (pos % (16)); 
+                    reader.seek(std::io::SeekFrom::Current(aligned as i64))?;
+                } else {
+                    reader.seek_align_up(16)?;
+                }
+            } else if size == 32 {
+                let aligned = 32 - (pos % (16)); 
+                reader.seek(std::io::SeekFrom::Current(aligned as i64))?;
+            } else {
+                reader.seek_align_up(size.into())?;
+            }
+        }
+        else */
         if field_type != FieldType::String {
             reader.seek_align_up(size as u64)?;
         }
@@ -877,7 +894,11 @@ impl Class {
                     for v in &mut a.values {
                         if count >= max_element { break; }
                         let bits = (max_element - count).min(32);
-                        let mask = (1u32 << bits) - 1;
+                        let mask = if bits == 32 {
+                            u32::MAX
+                        } else {
+                            (1u32 << bits) - 1
+                        };
                         if let FieldValue::U32(x) = v { *x = mask; }
                         count += bits;
                     }
@@ -940,7 +961,11 @@ impl Class {
                     for v in &mut a.values {
                         if count >= max_element { break; }
                         let bits = (max_element - count).min(32);
-                        let mask = (1u32 << bits) - 1;
+                        let mask = if bits == 32 {
+                            u32::MAX
+                        } else {
+                            (1u32 << bits) - 1
+                        };
                         if let FieldValue::U32(x) = v { *x = mask; }
                         count += bits;
                     }
@@ -1061,17 +1086,53 @@ impl Class {
     fn add_enum_edit_ex(&mut self, type_info: Option<&TypeInfo>, field_name: &str, label: &str, enum_type_str: &str, ui: &mut Ui, ctx: &mut EditContext, left: &mut HashSet<u32>) -> EditResponse {
         let hash = &murmur3(field_name, 0xffffffff);
         if let Some(field) = self.fields.get_mut(hash) {
-            if let FieldValue::S32(mut val) = field.value {
-                ui.horizontal(|ui| {
-                    ui.label(label);
-                    let child_id = ui.make_persistent_id(hash).value();
-                    let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
-                    edit_enum_from_type(&mut val, enum_type_str, ui, &mut ctx);
-                    field.value = FieldValue::S32(val);
-                });
-                left.remove(hash);
+            match field.value {
+                FieldValue::S32(mut val) => {
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        let child_id = ui.make_persistent_id(hash).value();
+                        let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                        edit_enum_from_type(&mut val, enum_type_str, ui, &mut ctx);
+                        field.value = FieldValue::S32(val);
+                    });
+                    left.remove(hash);
+                }
+                FieldValue::U16(val) => {
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        let child_id = ui.make_persistent_id(hash).value();
+                        let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                        let mut val_i32 = val as i32;
+                        edit_enum_from_type(&mut val_i32, enum_type_str, ui, &mut ctx);
+                        field.value = FieldValue::U16(val_i32 as u16);
+                    });
+                    left.remove(hash);
+                }
+                FieldValue::S16(val) => {
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        let child_id = ui.make_persistent_id(hash).value();
+                        let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                        let mut val_i32 = val as i32;
+                        edit_enum_from_type(&mut val_i32, enum_type_str, ui, &mut ctx);
+                        field.value = FieldValue::S16(val_i32 as i16);
+                    });
+                    left.remove(hash);
+                }
+                FieldValue::U32(val) => {
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        let child_id = ui.make_persistent_id(hash).value();
+                        let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                        let mut val_i32 = val as i32;
+                        edit_enum_from_type(&mut val_i32, enum_type_str, ui, &mut ctx);
+                        field.value = FieldValue::U32(val_i32 as u32);
+                    });
+                    left.remove(hash);
+                }
+                _ => { }
             }
-        };
+        }
         EditResponse::default()
     }
 

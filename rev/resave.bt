@@ -24,8 +24,29 @@ void AlignUpNoSub(int align){
     FSeek(aligned);
 }
 
-struct Object;
+enum <int32> FieldType {
+    FT_Array = -1,
+    FT_Unknown = 0,
+    FT_Enum = 0x1,
+    FT_Boolean = 0x2,
+    FT_S8 = 0x3,
+    FT_U8 = 0x4,
+    FT_S16 = 0x5,
+    FT_U16 = 0x6,
+    FT_S32 = 0x7,
+    FT_U32 = 0x8,
+    FT_S64 = 0x9,
+    FT_U64 = 0xa,
+    FT_F32 = 0xb,
+    FT_F64 = 0xc,
+    FT_C8 = 0xd,
+    FT_C16 = 0xe,
+    FT_String = 0xf, // U16String
+    FT_Struct = 0x10,
+    FT_Class = 0x11,
+};
 
+struct Object;
 struct Value;
 string ReadValue( Value &value ) {
     string s;
@@ -47,31 +68,61 @@ string ReadStruct( Struct &value ) {
  
 typedef struct {
     uint32 size;
-	// stupid bullshit i think on structs larger than 16? bytes
-	local int pos = FTell();
-	local int aligned;
-	if (size == 24) {
-		if (pos % 32 > 16) {
-			aligned = pos + 32 - (pos % (16)); 
-			FSeek(aligned);
-		} else {
-			AlignUp(16);
-		}
-	} else if (size == 32) {
-		aligned = pos + 32 - (pos % (16)); 
+    // stupid bullshit i think on structs larger than 16? bytes
+    local int pos = FTell();
+    local int aligned;
+    if (size == 24) {
+        if (pos % 32 > 16) {
+            aligned = pos + 32 - (pos % (16)); 
+            FSeek(aligned);
+        } else {
+            AlignUp(16);
+        }
+    } else if (size == 32) {
+        aligned = pos + 32 - (pos % (16)); 
         FSeek(aligned);
-	} else {
-		AlignUp(size);
-	}
+    } else {
+        AlignUp(size);
+    }
     if (size > 0)
-		uint8 data[size];
+        uint8 data[size];
 } Struct <read=ReadStruct>;
 
 typedef struct {
     uint32 size;
-	AlignUp(size);
-    if (size > 0)
-		uint8 data[size];
+    AlignUp(size);
+    if (size > 0) {
+        if (field_type == FT_Unknown) {
+        } else if (field_type == FT_Enum) {
+            int32 value;
+        } else if (field_type == FT_Boolean) {
+            uint8 value;
+        } else if (field_type == FT_S8) {
+            int8 value;
+        } else if (field_type == FT_U8) {
+            uint8 value;
+        } else if (field_type == FT_S16) {
+            int16 value;
+        } else if (field_type == FT_U16) {
+            uint16 value;
+        } else if (field_type == FT_S32) {
+            int32 value;
+        } else if (field_type == FT_U32) {
+            uint32 value;
+        } else if (field_type == FT_S64) {
+            int64 value;
+        } else if (field_type == FT_U64) {
+            uint64 value;
+        } else if (field_type == FT_F32) {
+            float value;
+        } else if (field_type == FT_F64) {
+            double value;
+        } else if (field_type == FT_C8) {
+            uchar value;
+        } else if (field_type == FT_C16) {
+            wchar_t value;
+        }
+    }
 } Value <read=ReadValue>;
 
 struct StringU16 {
@@ -82,7 +133,7 @@ struct StringU16 {
 };
 
 struct Array {
-    uint32 arr_member_type;
+    FieldType arr_member_type;
     uint32 arr_member_size;
     uint32 len;
     uint32 array_type;
@@ -92,7 +143,7 @@ struct Array {
         if (arr_member_type == 0x0f) {
             if (len > 0)
                 StringU16 values[len] <optimize=false>;
-                AlignUp(4);
+            AlignUp(4);
         } else {
             struct Values {
                 for (i = 0; i < len; i++) {
@@ -112,37 +163,35 @@ struct Array {
 
 struct Field {
     uint32 hash;
-    int32 field_type;
+    FieldType field_type;
 
-    if (field_type == 0x11) {
+    if (field_type == FT_Class) {
         Object fields;
-    } else if (field_type == -1) {
+    } else if (field_type == FT_Array) {
         Array array;
-    } else if (field_type == 0x10){
-		Struct value;
+    } else if (field_type == FT_Struct){
+        Struct value;
+    } else if (field_type == FT_String) {
+        StringU16 value;
+        AlignUp(4);
     } else {
-        if (field_type == 0x0f) {
-            StringU16 value;
-            AlignUp(4);
-        } else {
-            Value value;
-        }
+        Value value;
     }
     AlignUp(4);
 };
 
 struct Object {
     uint32 num_fields;
-	if (num_fields <= 0x1000000) {
-		uint32 hash;
-		local int i = 0;
-		// put some limit on this shit
-		for (i = 0; i < num_fields; i++) {
-			Field field;
-		}
-	} else {
-		FSeek(FTell() - 4);
-	}
+    if (num_fields <= 0x1000000) {
+        uint32 hash;
+        local int i = 0;
+        // put some limit on this shit
+        for (i = 0; i < num_fields; i++) {
+            Field field;
+        }
+    } else {
+        FSeek(FTell() - 4);
+    }
 };
 
 struct Entry {

@@ -69,6 +69,8 @@ mod backend {
 
 use backend::*;
 
+use crate::save::game::Game;
+
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -161,6 +163,7 @@ pub enum MandarinError {
     InvalidChecksum{target: u64, real: u64},
     InvalidKey{target: [u8; 16], real: [u8; 16]},
     InvalidIV{target: [u8; 16], real: [u8; 16]},
+    GameNotSupported{game: Game},
     AuthFailed,
 }
 
@@ -178,6 +181,9 @@ impl Display for MandarinError {
             Self::InvalidIV { target, real } => {
                 write!(f, "IV Mismatch target={:#018x}, real={:#018x}", u128::from_be_bytes(*target), u128::from_be_bytes(*real))
             }
+            Self::GameNotSupported{ game } => {
+                write!(f, "Game {game:?} does not support Mandarin Encryption")
+            }
             Self::AuthFailed => {
                 write!(f, "Auth Failed idk")
             }
@@ -186,12 +192,81 @@ impl Display for MandarinError {
 }
 
 // Note: keys are different for pragmata, seems to not be steamid, or they just don't care because
-// its the demo, or a single player game
-
+// its the demo, or a single player game, its constant
 #[derive(Debug)]
-pub struct Mandarin {}
+pub struct Mandarin {
+    seed_for_rsa_rand: u64,
+    seed_for_enc_rand: u64,
+}
 
 impl Mandarin {
+
+    pub fn init_from_game(game: Game) -> Result<Self, MandarinError> {
+        let seeds = game.get_mandarin_seeds();
+        match seeds {
+            None => {
+                Err(MandarinError::GameNotSupported { game })
+            }
+            Some(x) => {
+                Ok(Self {
+                    seed_for_rsa_rand: x.0,
+                    seed_for_enc_rand: x.1,
+                })
+            }
+        }
+    }
+    // decrypts by brute forcing the RSA encrypted key (not brute forcing RSA itself, brute forcing
+    // the plaintext)
+    pub fn brute_force_v2(&self, encrypted: &[u8]) -> Option<u64> {
+
+        let len = encrypted.len();
+        let encrypted_key = &encrypted[len - 0x80-12..len-12];
+        let encrypted_key = bytes_to_int(encrypted_key);
+
+        println!("Found encrypted_key={encrypted_key:?}");
+
+        let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2");
+        let n = bytes_to_int(&n);
+        let e = Integer::from(65537);
+
+        //let mut state_a: u64 = 0xBFACF76C3F96;
+        let mut state_a: u64 = self.seed_for_rsa_rand;
+        let mut static_rands = [0u8; 32];
+
+        // Run the PRNG to fill the buffer
+        for i in 0..32 {
+            state_a = SplitMix64::next_int(&mut state_a);
+            static_rands[i] = state_a as u8;
+        }
+        for i in 0..8 {
+            static_rands[i] = 0;
+        }
+
+        // 3. Convert this "Upper Mask" to a BigInt ONCE
+        // Since bytes_to_int uses Little Endian (Lsf), the zeros at the start
+        // correctly place the constant data in the upper bits (from bit 64 onwards).
+        let high_part_int = bytes_to_int(&static_rands);
+
+        let start = 0x00000000u64;
+        let end = 0x00ffffffu64;
+        let base = 0x0110000100000000;
+        let count = end - start;
+        let start_time = std::time::SystemTime::now();
+        println!("trying {} keys", count);
+        let good_key = (base+start..base+end).into_par_iter().find_first(|x| {
+            let key_inv = !x;
+            let guess_int = &high_part_int + Integer::from(key_inv);
+            let encrypted_key_guess = mod_exp(&guess_int, &e, &n);
+            encrypted_key_guess == encrypted_key
+        });
+        println!("checked {count} keys in {}ms", start_time.elapsed().unwrap().as_millis());
+        match good_key {
+            None => println!("Could not brute force the key"),
+            Some(x) => println!("found key at x={x:x}"),
+        }
+        good_key
+    }
+
     // this is not very feasible unless i optimize the fuck out of it somehow
     pub fn brute_force(encrypted: &[u8], decrypted_len: u64) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
@@ -245,13 +320,13 @@ impl Mandarin {
         0x0
     }
 
-    pub fn decrypt(encrypted: &[u8], decrypted_len: u64, key: u64) -> Result<Vec<u8>, MandarinError>{
+    pub fn decrypt(&self, encrypted: &[u8], decrypted_len: u64, key: u64) -> Result<Vec<u8>, MandarinError>{
         // This is different for dif games, i think it actually just gets generated somehow before
         // the module gets launched, but whatever values you find work for anyone
-        // pragmata: 0x3F90D767F13ABE2E
-        // wilds: 0xBFACF76C3F96
-        // dd2: 5EC646997D69AE1B?
-        let mut state_a: u64 = 0x90EDB79172FDBE51; // dd2
+        //let mut state_a: u64 = 0x90EDB79172FDBE51; // dd2
+        //let mut state_a: u64 = 0x3F90D767F13ABE2E; // pargamata
+        //let mut state_a: u64 = 0xBFACF76C3F96; // wilds
+        let mut state_a: u64 = self.seed_for_rsa_rand;
         let mut rands: [u8; 0x20] = [0u8; 0x20];
         for i in 0..32 {
             state_a = SplitMix64::next_int(&mut state_a); // this doesnt even actually do anything???
@@ -265,9 +340,11 @@ impl Mandarin {
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
                                                                         // allocated, its on the stack
                                                                         // but like variable size
+
         //let mut state_p: u64 = 0x7A36955255266CED; // wilds
         //let mut state_p: u64 = 0x7DA24A9E1479F3D7; // pragmata
-        let mut state_p: u64 = 0x5EC646997D69AE1B; // dd2
+        //let mut state_p: u64 = 0x5EC646997D69AE1B; // dd2
+        let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
             state_p = SplitMix64::next_int(&mut state_p);
@@ -363,8 +440,9 @@ impl Mandarin {
         Ok(decrypted)
     }
 
-    pub fn encrypt(data: &[u8], key: u64) -> Result<Vec<u8>, MandarinError>{
-        let mut state_a: u64 = 0xBFACF76C3F96;
+    pub fn encrypt(&self, data: &[u8], key: u64) -> Result<Vec<u8>, MandarinError>{
+        //let mut state_a: u64 = 0xBFACF76C3F96;
+        let mut state_a: u64 = self.seed_for_rsa_rand;
         let mut rands: [u8; 0x20] = [0u8; 0x20];
         for i in 0..32 {
             SplitMix64::next_int(&mut state_a); // this doesnt even actually do anything???
@@ -373,9 +451,10 @@ impl Mandarin {
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
         //let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
-        let rands_int = bytes_to_int(&rands[0..32]);
         let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
+        let rands_int = bytes_to_int(&rands[0..32]);
         let n = bytes_to_int(&n);
+        println!("{n:?}");
         //let n = Integer::from_digits(&n, Order::Lsf);
         let e = Integer::from(65537);
         let encrypted_key = mod_exp(&rands_int, &e, &n);
@@ -386,7 +465,7 @@ impl Mandarin {
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
                                                                         // allocated, its on the stack
                                                                         // but like variable size
-        let mut state_p: u64 = 0x7A36955255266CED;
+        let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
             state_p = SplitMix64::next_int(&mut state_p);
@@ -469,6 +548,7 @@ impl Mandarin {
             //println!("remaining_bytes={remaining_bytes:#x}");
         }
         let integer = int_to_bytes_le::<0x80>(&encrypted_key);
+        println!("encrypted_key={encrypted_key:?}, {integer:?}");
         encrypted[encrypted_start..encrypted_start+0x80].copy_from_slice(&integer);
         Ok(encrypted[..encrypted_start+0x80].to_vec())
     }
