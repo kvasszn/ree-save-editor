@@ -3,22 +3,22 @@ pub mod steam;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::{Cursor, Read, Seek};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 use mhtame::edit::{EditContext, Editable};
 use mhtame::file::StructRW;
 
-use eframe::egui::{self, Button, ComboBox, ScrollArea, TextEdit, Ui, Vec2};
+use eframe::egui::{self, ComboBox, ScrollArea, TextEdit, Ui, Vec2};
 
 use mhtame::save::game::{GAME_OPTIONS, Game};
 use mhtame::save::remap::Remap;
 use mhtame::{
-    edit::{CopyBuffer},
+    edit::copy::CopyBuffer,
     save::{SaveContext, SaveFile},
 };
 use crate::steam::*;
-use sdk::type_map::{ContentLanguage, TypeMap};
+use mhtame::sdk::type_map::{ContentLanguage, TypeMap};
 
 // We need a common config struct that works for both CLI (Clap) and Web
 #[derive(Debug, Clone)]
@@ -912,10 +912,13 @@ impl eframe::App for TameApp {
                 
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    let mut sp = self.steam_path.display().to_string();
-                    if ui.text_edit_singleline(&mut sp).changed() {
-                        self.steam_path = PathBuf::from(sp);
-                    }
+                    ui.horizontal(|ui| {
+                        ui.label("steam_path");
+                        let mut sp = self.steam_path.display().to_string();
+                        if ui.text_edit_singleline(&mut sp).changed() {
+                            self.steam_path = PathBuf::from(sp);
+                        }
+                    });
                 }
 
                 // TODO: add egui debugging stuff here

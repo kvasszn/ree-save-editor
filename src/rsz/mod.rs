@@ -8,7 +8,7 @@ use rszserde::DeRsz;
 use rszserde::DeRszType;
 use rszserde::RszDeserializerCtx;
 use rszserde::RszSerializerCtx;
-use sdk::types::TypeDescriptor;
+use crate::sdk::types::TypeDescriptor;
 use serde::Serialize;
 use util::*;
 
@@ -33,7 +33,6 @@ pub struct Extern {
 #[derive(Debug)]
 pub struct Rsz {
     version: u32,
-    offset: usize,
     pub roots: Vec<u32>,
     pub extern_slots: HashMap<u32, Extern>,
     pub type_descriptors: Vec<TypeDescriptor>,
@@ -163,7 +162,6 @@ impl Rsz {
         };
         Ok(Rsz {
             version,
-            offset: base as usize,
             roots,
             extern_slots,
             type_descriptors,
@@ -257,7 +255,7 @@ impl From<DeRsz> for Result<Rsz> {
                 s.to_bytes(&mut ctx)?;
             }
         }
-        Ok(Rsz{ version: 0x10, offset: dersz.offset, roots: dersz.roots, extern_slots: HashMap::new(), type_descriptors, data: buffer })
+        Ok(Rsz{ version: 0x10, roots: dersz.roots, extern_slots: HashMap::new(), type_descriptors, data: buffer })
 
     }
 

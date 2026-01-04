@@ -4,7 +4,7 @@ use half::f16;
 use log::debug;
 use util::{ReadExt, SeekExt};
 
-use crate::{rsz::{self, Rsz, RszHeader}, type_map::{self, FieldInfo, TypeInfo, TypeMap}, types::*, value::{Extern, Instance, Value}};
+use crate::sdk::{rsz::{Rsz, RszHeader}, type_map::{FieldInfo, TypeInfo, TypeMap}, types::*, value::{Extern, Instance, Value}};
 
 pub struct RszDeserializer<'a, R: Read + Seek> {
     data: R,
@@ -54,7 +54,7 @@ impl<'a, R: Read + Seek> RszDeserializer<'a, R> {
             }
 
             let mut fields = Vec::new();
-            for (hash, field) in &type_info.fields {
+            for (_hash, field) in &type_info.fields {
                 debug!("field: {}", field.name);
                 let value = self.deserialize_field(field, type_info)?;
                 debug!("value: {:?}", value);
@@ -89,7 +89,7 @@ impl<'a, R: Read + Seek> RszDeserializer<'a, R> {
         Ok(value)
     }
 
-    fn deserialize_field_single(&mut self, field: &FieldInfo, parent: &TypeInfo) -> Result<Value, Box<dyn Error>> {
+    fn deserialize_field_single(&mut self, field: &FieldInfo, _parent: &TypeInfo) -> Result<Value, Box<dyn Error>> {
         let value = match field.r#type.as_str() {
             "Bool" =>  Value::Bool(self.data.read_bool()?),
             "U8" =>  Value::U8(self.data.read_u8()?),

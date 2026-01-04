@@ -292,3 +292,31 @@ pub struct AnimationCurve {
     pub loop_count: u32,
     pub loop_wrap_no: u32,
 }
+
+
+#[derive(Debug, Serialize, Clone, Copy)]
+pub struct Mandrake {
+    pub v: i64,
+    pub m: i64, // maybe change to NonZeroU64
+}
+
+impl Mandrake {
+    pub fn to_buf(self) -> [u8; size_of::<Self>()] {
+        let mut buf = [0u8; size_of::<Self>()]; 
+        buf[0..8].copy_from_slice(&self.v.to_le_bytes());
+        buf[8..16].copy_from_slice(&self.m.to_le_bytes());
+        buf
+    }
+
+    pub fn set(&mut self, n: i64) {
+        self.v = n * self.m 
+    }
+
+    pub fn get(&self) -> Option<i64> {
+        if self.m == 0 {
+            None
+        } else {
+            Some(self.v / self.m)
+        }
+    }
+}

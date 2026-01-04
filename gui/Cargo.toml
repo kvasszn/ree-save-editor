@@ -10,7 +10,6 @@ name = "mhtame-gui"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-sdk = { path = "../sdk" }
 util = { path = "../util" }
 mhtame = { path = "../" }
 
@@ -50,10 +49,3 @@ rug = { version = "1.28.0", optional = true }
 num-bigint = "0.4.6"
 num-traits = "0.2"
 num-integer = "0.1"
-
-[target.x86_64-pc-windows-gnu]
-rustflags = [
-    "-C", "link-arg=-Wl,--exclude-all-symbols", 
-    "-l", "ws2_32",
-    "-l", "user32"
-]

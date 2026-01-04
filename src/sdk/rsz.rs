@@ -1,9 +1,8 @@
 use std::{collections::HashMap, error::Error, io::{self, Read, Seek, SeekFrom}};
 
-use serde::Serialize;
 use util::{ReadExt, SeekExt};
 
-use crate::{deserializer::RszDeserializer, rsz, type_map::{self, TypeMap}, types::TypeDescriptor, value::{Extern, Instance, Value}};
+use crate::sdk::{deserializer::RszDeserializer, type_map::{TypeMap}, types::TypeDescriptor, value::{Extern, Instance}};
 
 
 #[derive(Debug, Clone)]
@@ -23,6 +22,7 @@ impl Rsz {
 
 #[derive(Debug, Clone)]
 pub struct RszHeader {
+    #[allow(unused)]
     version: u32,
     pub roots: Vec<u32>,
     pub extern_slots: HashMap<u32, String>,

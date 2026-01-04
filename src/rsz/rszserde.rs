@@ -6,11 +6,9 @@
 use std::{any::Any, collections::{HashMap, HashSet}, fmt::{Debug, Display}, io::{Cursor, Read, Seek, SeekFrom, Write}, rc::Rc, str::FromStr};
 
 use half::f16;
-use eframe::egui::{Ui};
 use indexmap::IndexMap;
-use rsz_macros::{DeRszFrom, DeRszInstance, Edit};
+use rsz_macros::{DeRszFrom, DeRszInstance};
 use serde::{Deserialize, Serialize};
-use crate::edit::{Edit, RszEditCtx};
 use crate::reerr::{self, Result, RszError};
 use util::*;
 use super::{dump::{enum_map, get_enum_name, get_enum_val, RszDump, RszField, RszStruct}, Extern, Rsz, TypeDescriptor};
@@ -132,27 +130,6 @@ pub struct RszJsonSerializerCtx<'a> {
     parent: Option<&'a RszStruct<RszField>>
 }
 
-pub struct RszEditSerializerCtx<'a> {
-    root: Option<u32>,
-    field: Option<&'a RszField>,
-    //objects: &'a mut Vec<RefCell<RszFieldsValue>>,
-    objects: &'a mut Vec<RszFieldsValue>,
-    parent: Option<&'a RszStruct<RszField>>,
-    id: u64,
-}
-
-impl<'a> RszEditSerializerCtx<'a> {
-    pub fn new(root: u32, objects: &'a mut Vec<RszFieldsValue>) -> Self {
-        Self {
-            root: Some(root),
-            objects,
-            parent: None,
-            field: None,
-            id: 0
-        }
-    }
-}
-
 pub trait DeRszType<'a> {
     fn from_bytes(ctx: &'a mut RszDeserializerCtx) -> Result<Self> where Self: Sized;
 }
@@ -161,7 +138,7 @@ pub trait DeRszInstanceClone {
     fn clone_box(&self) -> Box<dyn DeRszInstance>;
 }
 
-pub trait DeRszInstance: Debug + DeRszInstanceClone + Any + Edit {
+pub trait DeRszInstance: Debug + DeRszInstanceClone + Any {
     fn as_any(&self) -> &dyn Any;
     fn to_json(&self, ctx: &RszJsonSerializerCtx) -> serde_json::Value;
     fn to_bytes(&self, _ctx: &mut RszSerializerCtx) -> Result<()>;
@@ -810,50 +787,50 @@ impl DeRsz {
  * types
  */
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct UInt2(u32, u32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct UInt3(u32, u32, u32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct UInt4(u32, u32, u32, u32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Int2(i32, i32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Int3(i32, i32, i32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Int4(i32, i32, i32, i32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Color(u8, u8, u8, u8);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Vec2(f32, f32, f32, f32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Vec3(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Vec4(f32, f32, f32, f32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Quaternion(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Sphere(f32, f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Position(f64, f64, f64);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Float2(f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Float3(f32, f32, f32);
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Float4(f32, f32, f32, f32);
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct Mat4x4([f32; 16]);
 
 // this is all wrong lmfao
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone)]
 pub struct AnimationCurve3D {
     pub xkeys: Vec<AnimationCurveKey3D>,
     pub ykeys: Vec<AnimationCurveKey3D>,
@@ -866,7 +843,7 @@ pub struct AnimationCurve3D {
     pub loop_wrap_no: u32,
 }
 
-#[derive(Debug, Serialize, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, Clone, Copy)]
 pub struct AnimationCurveKey3D {
     pub value: f32,
     pub curve_type: u16,
@@ -913,11 +890,11 @@ impl RszFromJson for AnimationCurveKey3D {
     }
 }
 
-//#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+//#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 //pub struct AnimationCurveKeyRaw([u8; 22]);
 
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone)]
 pub struct AnimationCurve {
     pub keys: Vec<AnimationCurveKey3D>,
     pub min_value: f32,
@@ -1139,7 +1116,7 @@ impl<'de> Deserialize<'de> for StringU16 {
     }
 }
 
-#[derive(DeRszInstance, Clone, Edit)]
+#[derive(DeRszInstance, Clone)]
 pub struct StringU16NullTerminated(pub Vec<u16>);
 
 impl Display for StringU16NullTerminated {
@@ -1261,30 +1238,30 @@ impl<'a> DeRszType<'a> for String {
 
 
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone)]
 pub struct RuntimeType(String);
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
 struct OBB {
     center: Vec3,
     half_extents: Vec3,
     orientation: [Vec3; 3], // local axes (right, up, forward)
 }
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
 struct AABB{
     a: Vec4,
     b: Vec4,
 }
 
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
 struct Rect{
     start: UInt2,
     end: UInt2,
 }
 
-#[derive(Debug, Serialize, DeRszInstance, Clone, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, Clone)]
 struct Data {
     data: Vec<u8>
 }
@@ -1308,19 +1285,19 @@ impl RszFromJson for Data {
     }
 }
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
 pub struct Range{
     start: f32,
     end: f32,
 }
 
-#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszInstance, DeRszFrom, Clone, Copy)]
 pub struct RangeI{
     start: i32,
     end: i32,
 }
 
-#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy, Edit)]
+#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone, Copy)]
 pub struct KeyFrame{
     time: f32,
     val: [f32; 3],
@@ -1571,9 +1548,3 @@ impl Mandrake {
         }
     }
 }
-
-/*#[derive(Debug, Serialize, DeRszFrom, DeRszInstance, Clone)]
-pub struct Bitset {
-    pub value: Vec<u32>,
-    pub max_element: i32,
-}*/

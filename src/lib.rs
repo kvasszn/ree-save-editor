@@ -6,6 +6,8 @@ pub mod compression;
 pub mod file;
 pub mod save;
 pub mod rsz;
+pub mod sdk;
+
 #[cfg(feature = "tdb")]
 pub mod tdb;
 

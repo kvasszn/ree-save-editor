@@ -24,7 +24,7 @@ pub struct TypeMap {
 }
 
 impl TypeMap {
-    // Takes in something like "FooClass, _Foo._Bar[0]._Baz"
+    // Takes in something like type_map.(FooClass, _Foo._Bar[0]._Baz)
     // Should implement this for loaded values
     pub fn get_field_from_str<'a>(&'a self, start_type: &'a str,  path: &'a str) -> Option<&'a FieldInfo> {
         let start_type = self.get_by_name(start_type)?;
@@ -383,16 +383,6 @@ impl TypeInfo {
     }
 }
 
-fn convert_to_map(fields: Vec<FieldInfo>) -> IndexMap<u32, FieldInfo> {
-    fields
-        .into_iter()
-        .map(|field| {
-            let hash = murmur3(field.name.as_str(), 0xffffffff);
-            (hash, field)
-        })
-    .collect()
-}
-
 impl<'de> Deserialize<'de> for TypeInfo {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -544,9 +534,9 @@ impl MsgCombined {
     pub fn get_content(&self, guid: &str, language: ContentLanguage) -> Option<String> {
         self.msgs.get(guid).map(|e| e.content[language as usize].clone())
     }
-    pub fn get_from_enum(&self, name: &str, language: ContentLanguage) -> Option<String> {
+    /*pub fn get_content_by_name(&self, name: &str, language: ContentLanguage) -> Option<String> {
         None
-    }
+    }*/
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]

@@ -80,6 +80,7 @@ struct Pair([u8; 64], [u8; 64]);
 #[derive(Debug, Clone)]
 struct AuthCtx {
     p: Integer, // prime
+    #[allow(unused)]
     q: Integer, // prime
     r: Integer, // integer
     s: Integer, // r ^ u mod q

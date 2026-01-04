@@ -323,7 +323,7 @@ impl FileReader {
                     }?;
                     //Mandarin::sanity_check(&file_path);
                     let mut reader = File::open(&file)?;
-                    let save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: Game::MHWILDS})?;
+                    let _save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: Game::MHWILDS})?;
                     //let save = SaveFile::from_file(&file)?;
                     /*let dersz = to_dersz(save.fields[0].1.clone())?;
                     //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);

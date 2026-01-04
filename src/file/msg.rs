@@ -45,7 +45,7 @@ impl<C> StructRW<C> for MsgEncryptedData {
 #[derive(Debug, file_macros::StructRW, Serialize)]
 #[depends_on(
     data_offset: u64,
-    data: &'a MsgEncryptedData,
+    //data: &'a MsgEncryptedData,
     lang_count: u32,
     attr_count: u32,
     cursor: Cursor<&'a [u8]>
@@ -124,10 +124,10 @@ pub struct Msg {
     #[var(MsgEncryptedData, data_offset)]
     data: MsgEncryptedData,
     #[varlist(ty = MsgString, count = attr_count, offset = attr_type_name_offset)]
-    #[context(MsgEntry, data_offset: data_offset, data: &data, lang_count: lang_count, attr_count: attr_count, cursor: Cursor::new(&data.data))]
+    #[context(MsgEntry, data_offset: data_offset, lang_count: lang_count, attr_count: attr_count, cursor: Cursor::new(&data.data))]
     attr_names: Vec<MsgString>,
     #[varlist(ty = MsgEntry, count = entry_count, offsets = entry_offsets)]
-    #[context(MsgEntry, data_offset: data_offset, data: &data, lang_count: lang_count, attr_count: attr_count, cursor: Cursor::new(&data.data))]
+    #[context(MsgEntry, data_offset: data_offset, lang_count: lang_count, attr_count: attr_count, cursor: Cursor::new(&data.data))]
     entries: Vec<MsgEntry>,
 }
 

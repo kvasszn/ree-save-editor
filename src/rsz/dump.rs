@@ -2,7 +2,6 @@ use std::sync::OnceLock;
 use std::collections::HashMap;
 
 use flate2::read::GzDecoder;
-use sdk::rsz::Rsz;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use crate::reerr::{Result, RszError::*};

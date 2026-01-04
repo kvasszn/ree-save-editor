@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use serde::{Serialize, Serializer, ser::{SerializeMap, SerializeSeq}};
 
-use crate::{rsz::Rsz, type_map::{self, FieldInfo, TypeMap}, value::{Instance, Value}};
+use crate::sdk::{rsz::Rsz, type_map::{FieldInfo, TypeMap}, value::{Instance, Value}};
 
 pub struct RszWithCtx<'a> {
     pub rsz: &'a Rsz,
@@ -84,7 +84,7 @@ impl<'a> Serialize for ValueWithCtx<'a> {
         let type_map = self.type_map;
         match value {
             // TODO: make enums faster by embedding enum = True or false in the field info somewhere
-            // otherwise this is very slow
+            // otherwise this is very stupid
             Value::S32(v) => {
                 serialize_enum(v, &self.field_info.original_type, type_map, serializer)
             },
