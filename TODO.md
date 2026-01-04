@@ -6,6 +6,9 @@
     - done for the editor
 
 ### Editor
+- [] add a feature that let's you load in two saves + add a default/empty save file to assets.
+- [] diff view
+- [] investigate DRM in System Save Data
 - [x] Make it run in a browser for wasm
 - [x] Copy objects / arrays
     - fix copying array to class and vice versa

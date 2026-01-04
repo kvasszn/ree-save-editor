@@ -97,7 +97,6 @@ Transfering between steam accounts can be done by loading the save with the orig
 > [!IMPORTANT]
 > For MH Wilds see: [Account Transfer](#account-transfer-and-slot-changing)
 
-
 ## Game Specific Editing
 
 ### Monster Hunter Wilds
@@ -114,17 +113,23 @@ There is also a third type which is the SS1* files, but they are not supported a
 
 #### Account Transfer and Slot Changing
 > [!NOTE]
-> When changing accounts and slots, you will lose online related things, since the Hunter Id is associated with your steam accoutn and slot.
+> When changing accounts and slots, you will lose online related things, since the Hunter Id is associated with your steam account and slot.
+
 
 In *Character Data*.
 
-To probably transfer saves between accounts, you have to first load the save with the original steam id, then wipe `HunterId` and `HunterShortId` (just make them blank). Then save.
+To transfer saves between accounts, you have to first load the save with the original steam id, then wipe `HunterId` and `HunterShortId` (just make them blank), then enter the steam id of the account you'd like to load the save on, and save.
 
-You can then launch the game with that save and when you first go online, a new steam id will be generated for you.
+You can then launch the game with that save and when you first go online, a new hunter id and short id will be generated for you.
 
 To change slots, you have to copy the slot to where you want it, wipe the `HunterId` and `HunterShortId` in the new slot (where you copied it), and then save.
 
 You can then load in with the new slot (you have to be online), and going into a lobby (multiplayer or singleplayer) will give the slot a new `HunterId`/`HunterShortId`.
+
+Hunter IDs are very likely linked to steam accounts, which is why you have to reset them to make capcom generate new ones for you when you connect online.
+
+> [!NOTE]
+> You might also have to delete the `_Album` field in the slot when transfering slots or b/w steam accounts. The easiest way to do this is to copy `_Album` from an empty character slot, and paste into the target slots `_Album`.
 
 #### Hunter/Palico Tickets Used
 
