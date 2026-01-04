@@ -7,6 +7,7 @@ pub mod file;
 pub mod save;
 pub mod rsz;
 pub mod sdk;
+pub mod bindings;
 
 #[cfg(feature = "tdb")]
 pub mod tdb;

@@ -1,8 +1,7 @@
-use std::{collections::HashSet, fmt::Display, str::FromStr};
+use std::{collections::HashSet, fmt::Display, rc::Rc, str::FromStr};
 
 use bitfield::BitMut;
 use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, Ui};
-use simd_json::base::ValueAsScalar;
 
 use crate::{edit::{EditContext, EditResponse, Editable, copy::CopyBuffer}, save::{remap::Remap, types::*}, sdk::{type_map::{TypeInfo, murmur3}, *}};
 
@@ -72,13 +71,13 @@ fn collapsing_header_with_buttons_for_array_member(
         ui.add_space(10.0);
         if let FieldValue::Class(member_class) = member {
             if ui.small_button("Copy").clicked() {
-                *ctx.copy_buffer = CopyBuffer::Array(*member_class.clone());
+                *ctx.copy_buffer = CopyBuffer::Array(member_class.borrow().clone());
             }
 
             if let CopyBuffer::Array(copied_class) = &ctx.copy_buffer {
-                if copied_class.hash == member_class.hash {
+                if copied_class.hash == member_class.borrow().hash {
                     if ui.add(egui::Button::new("Paste")).clicked() {
-                        *member_class = Box::new(copied_class.clone());
+                        *member_class = Rc::new(copied_class.clone().into());
                         // *ctx.copy_buffer = None;
                     }
                 }
@@ -208,7 +207,7 @@ impl FieldValue {
             FieldValue::F64(v) => Some(v.to_string()),
             FieldValue::C8(v) => Some(v.to_string()),
             FieldValue::C16(v) => Some(v.to_string()),
-            FieldValue::Class(c) => c.get_preview(ctx),
+            FieldValue::Class(c) => c.borrow().get_preview(ctx),
             FieldValue::Array(a) => {
                 a.values[0].get_preview(ctx).map(|s| {
                     format!("[0]={}", s)
@@ -249,8 +248,8 @@ impl Editable for FieldValue {
             FieldValue::F64(v) => v.edit(ui, ctx),
             FieldValue::C8(v) => v.edit(ui, ctx),
             FieldValue::C16(v) => v.edit(ui, ctx),
-            FieldValue::Class(c) => c.edit(ui, ctx),
-            FieldValue::Array(a) => a.edit(ui, ctx),
+            FieldValue::Class(c) => c.borrow_mut().edit(ui, ctx),
+            FieldValue::Array(a) => a.borrow_mut().edit(ui, ctx),
             FieldValue::String(v) => v.edit(ui, ctx),
             FieldValue::Struct(v) => v.edit(ui, ctx),
             _ => {

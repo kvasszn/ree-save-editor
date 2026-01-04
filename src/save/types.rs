@@ -1,5 +1,8 @@
+use std::cell::{Ref, RefCell, RefMut};
 use std::io::{Cursor, Read, Seek, Write};
 use std::error::Error;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
@@ -35,7 +38,7 @@ pub enum FieldType {
 
 #[derive(Debug, Clone)]
 pub enum FieldValue {
-    Array(Box<Array>),
+    Array(Rc<RefCell<Array>>),
     Unknown,
     Enum(i32),
     Boolean(bool),
@@ -53,7 +56,7 @@ pub enum FieldValue {
     C16(u16),
     String(Box<StringU16>),
     Struct(Box<Struct>),
-    Class(Box<Class>)
+    Class(Rc<RefCell<Class>>)
 }
 
 impl FieldValue {
@@ -61,10 +64,10 @@ impl FieldValue {
         let value = match field_type {
             FieldType::Unknown => { panic!("Unknown Field Type found") }
             FieldType::Array => { 
-                FieldValue::Array(Box::new(Array::read(reader)?))
+                FieldValue::Array(Rc::new(Array::read(reader)?.into()))
             }
             FieldType::Class=> { 
-                FieldValue::Class(Box::new(Class::read(reader)?))
+                FieldValue::Class(Rc::new(Class::read(reader)?.into()))
             }
             FieldType::String => { 
                 reader.seek_align_up(4)?;
@@ -123,7 +126,7 @@ impl FieldValue {
             FieldType::F64 => { FieldValue::F64(reader.read_f64()?) }
             FieldType::C8 => { FieldValue::C8(reader.read_u8()?) }
             FieldType::C16 => { FieldValue::C16(reader.read_u16()?) }
-            FieldType::Array => { FieldValue::Array(Box::new(Array::read(reader)?))}
+            FieldType::Array => { FieldValue::Array(Rc::new(Array::read(reader)?.into()))}
             FieldType::Struct => { 
                 let mut data = vec![0u8; size as usize];
                 reader.read_exact(&mut data)?;
@@ -137,8 +140,8 @@ impl FieldValue {
     pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
         match self {
             FieldValue::Unknown => { panic!("Unknown Field Type found") }
-            FieldValue::Array(v) => v.write(w),
-            FieldValue::Class(v) => v.write(w),
+            FieldValue::Array(v) => v.borrow().write(w),
+            FieldValue::Class(v) => v.borrow().write(w),
             FieldValue::String(v) => { 
                 w.seek_align_up(4)?;
                 w.write(&(v.0.len() as u32).to_le_bytes())?;
@@ -176,7 +179,7 @@ impl FieldValue {
             FieldValue::S64(v) => w.write(&v.to_le_bytes())?,
             FieldValue::U64(v) => w.write(&v.to_le_bytes())?,
             FieldValue::F64(v) => w.write(&v.to_le_bytes())?,
-            FieldValue::Array(v) => {v.write(w)?; 0},
+            FieldValue::Array(v) => {v.borrow().write(w)?; 0},
             FieldValue::Struct(v) => {
                 for e in &v.data {
                     w.write(&e.to_le_bytes())?;
@@ -207,23 +210,23 @@ impl FieldValue {
         None
     }
 
-    pub fn as_class(&self) -> Option<&Class> {
+    pub fn as_class(&self) -> Option<Ref<Class>> {
         match self {
-            FieldValue::Class(b) => Some(b),
+            FieldValue::Class(b) => Some(b.borrow()),
             _ => None,
         }
     }
 
-    pub fn as_class_mut(&mut self) -> Option<&mut Class> {
+    pub fn as_class_mut(&mut self) -> Option<RefMut<Class>> {
         match self {
-            FieldValue::Class(b) => Some(b),
+            FieldValue::Class(b) => Some(b.borrow_mut()),
             _ => None,
         }
     }
 
-    pub fn as_array(&self) -> Option<&Array> {
+    pub fn as_array(&self) -> Option<Ref<Array>> {
         match self {
-            FieldValue::Array(b) => Some(b),
+            FieldValue::Array(b) => Some(b.borrow()),
             _ => None,
         }
     }
@@ -377,19 +380,19 @@ impl_generic_primitive!(u64,  U64);
 impl_generic_primitive!(f32,  F32);
 impl_generic_primitive!(f64,  F64);
 
-impl<'a> TryFromValue<'a> for &'a Class {
+impl<'a> TryFromValue<'a> for Ref<'a, Class> {
     fn try_from_value(value: &'a FieldValue) -> Option<Self> {
         match value {
-            FieldValue::Class(v) => Some(v),
+            FieldValue::Class(v) => Some(v.borrow()),
             _ => None,
         }
     }
 }
 
-impl<'a> TryFromValueMut<'a> for &'a mut Class {
+impl<'a> TryFromValueMut<'a> for RefMut<'a, Class> {
     fn try_from_value_mut(value: &'a mut FieldValue) -> Option<Self> {
         match value {
-            FieldValue::Class(v) => Some(v),
+            FieldValue::Class(v) => Some(v.borrow_mut()),
             _ => None,
         }
     }
@@ -460,7 +463,7 @@ impl Array {
                         FieldValue::read_sized(reader, member_type, member_size)?
                     }
                 },
-                ArrayType::Class => FieldValue::Class(Box::new(Class::read(reader)?)),
+                ArrayType::Class => FieldValue::Class(Rc::new(Class::read(reader)?.into())),
             };
             values.push(value);
         }
@@ -522,11 +525,11 @@ impl Array {
         self.values.get_mut(index)
     }
 
-    pub fn get_as_class(&self, index: usize) -> Option<&Class> {
+    pub fn get_as_class(&self, index: usize) -> Option<Ref<Class>> {
         self.values.get(index)?.as_class()
     }
 
-    pub fn get_as_class_mut(&mut self, index: usize) -> Option<&mut Class> {
+    pub fn get_as_class_mut(&mut self, index: usize) -> Option<RefMut<Class>> {
         self.values.get_mut(index)?.as_class_mut()
     }
 
@@ -646,11 +649,11 @@ impl Class {
         self.get_field_mut(name).map(|f| &mut f.value)
     }
 
-    pub fn get_subclass<'a>(&'a self, name: &'a str) -> Option<&'a Class> {
+    pub fn get_subclass<'a>(&'a self, name: &'a str) -> Option<Ref<Class>> {
         self.get_value(name)?.as_class()
     }
 
-    pub fn get_subclass_mut<'a>(&'a mut self, name: &'a str) -> Option<&'a mut Class> {
+    pub fn get_subclass_mut<'a>(&'a mut self, name: &'a str) -> Option<RefMut<Class>> {
         self.get_value_mut(name)?.as_class_mut()
     }
 

@@ -8,6 +8,7 @@ mod font;
 pub mod mesh;
 mod pog;
 
+use mlua::Lua;
 pub use msg::Msg;
 pub use user::User;
 
@@ -324,6 +325,11 @@ impl FileReader {
                     //Mandarin::sanity_check(&file_path);
                     let mut reader = File::open(&file)?;
                     let _save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: Game::MHWILDS})?;
+                    let lua_state = Lua::new();
+                    lua_state.globals().set("character_data", _save.fields[0].1.clone())?;
+                    let script = std::fs::read_to_string("scripts/foo.lua").unwrap();
+                    lua_state.load(script).exec()?;
+            
                     //let save = SaveFile::from_file(&file)?;
                     /*let dersz = to_dersz(save.fields[0].1.clone())?;
                     //println!("{:?}, {:?}", dersz.structs.len(), dersz.roots);

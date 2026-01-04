@@ -63,6 +63,10 @@ impl StringU16 {
     pub fn new(data: Vec<u16>) -> Self {
         U16String::<false>(data)
     }
+    pub fn from(data: &str) -> Self {
+        let data = data.chars().map(|x| x as u16).collect();
+        U16String::<false>(data)
+    }
 }
 pub type StringU16C = U16String<true>;
 
