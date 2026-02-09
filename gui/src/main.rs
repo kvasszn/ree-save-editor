@@ -6,7 +6,7 @@ mod native {
     use clap::Parser;
     use eframe::egui;
     use mhtame::rsz::dump::{ENUM_FILE, RSZ_FILE};
-    use mhtame_gui::{Config, TameApp, steam};
+    use mhtame_gui::{Config, app::TameApp, steam};
 
     #[derive(Parser, Debug)]
     #[command(name = "mhtame-gui")]
@@ -66,7 +66,8 @@ mod native {
         eframe::run_native("mhtame",
             options,
             Box::new(|_cc| {
-                Ok(Box::new(TameApp::new(config, _cc)))
+                //Ok(Box::new(TameApp::new(config, _cc)))
+                Ok(Box::new(TameApp::new(config)))
             }),
         )
     }

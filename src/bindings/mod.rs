@@ -1,159 +1,252 @@
+pub mod save;
+pub mod runner;
+
 use std::{cell::RefCell, rc::Rc};
 
 use mlua::prelude::*;
 
-use crate::{save::types::{Array, Class, Field, FieldValue, Struct}, sdk::StringU16};
+use crate::{save::types::{Array, Class, FieldValue}};
 
-impl IntoLua for FieldValue {
-    fn into_lua(self, lua: &Lua) -> LuaResult<LuaValue> {
-        match self {
-            FieldValue::Boolean(b) => Ok(LuaValue::Boolean(b)),
-            FieldValue::S8(v) => Ok(LuaValue::Integer(v as i64)),
-            FieldValue::U8(v) => Ok(LuaValue::Integer(v as i64)),
-            FieldValue::S16(v) => Ok(LuaValue::Integer(v as i64)),
-            FieldValue::U16(v) => Ok(LuaValue::Integer(v as i64)),
-            FieldValue::S32(v) => Ok(LuaValue::Integer(v as i64)),
-            FieldValue::U32(v) => Ok(LuaValue::Integer(v as i64)),
-            FieldValue::S64(v) => Ok(LuaValue::Integer(v)),
-            FieldValue::U64(v) => Ok(LuaValue::Number(v as f64)), // U64 often fits better in float in Lua, idk gemini, well see
-            FieldValue::F32(v) => Ok(LuaValue::Number(v as f64)),
-            FieldValue::F64(v) => Ok(LuaValue::Number(v)),
-            
-            FieldValue::String(s) => {
-                let string = String::from_utf16_lossy(&s.0);
-                Ok(LuaValue::String(lua.create_string(&string)?))
-            },
-
-            FieldValue::Class(c) => {
-                lua.create_userdata(c.borrow().clone())?.into_lua(lua)
-            },
-            FieldValue::Array(a) => {
-                lua.create_userdata(*a)?.into_lua(lua)
-            },
-            
-            // Handle Structs / Unknowns / Enums as needed
-            FieldValue::Enum(v) => Ok(LuaValue::Integer(v as i64)),
-            _ => Ok(LuaValue::Nil),
-        }
-    }
+#[derive(Clone, Debug)]
+pub enum RefPath {
+    FieldName(String),
+    FieldHash(u32),
+    Index(usize),
 }
 
-fn set_fieldvalue_from_lua(lua: &Lua, lhs: &mut FieldValue, value: LuaValue) -> LuaResult<()> {
-    match lhs {
-        FieldValue::Boolean(v) => value.as_boolean().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::U8(v) => value.as_u32().inspect(|x| *v = *x as u8).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::U16(v) => value.as_u32().inspect(|x| *v = *x as u16).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::U32(v) => value.as_u32().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::U64(v) => value.as_u64().inspect(|x| *v = *x as u64).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::S8(v) => value.as_i32().inspect(|x| *v = *x as i8).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::S16(v) => value.as_i32().inspect(|x| *v = *x as i16).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::S32(v) => value.as_i32().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::S64(v) => value.as_i64().inspect(|x| *v = *x as i64).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::F32(v) => value.as_f32().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::F64(v) => value.as_f64().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::C8(v) => value.as_u32().inspect(|x| *v = *x as u8).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::C16(v) => value.as_u32().inspect(|x| *v = *x as u16).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::String(v) => {
-            match value {
-                LuaValue::String(s) => {
-                    println!("Here\n {:?}, {v}", s);
-                    let data = s.as_bytes().iter().map(|b| *b as u16).collect();
-                    *v = Box::new(StringU16::new(data));
-                    println!("Here\n {:?}, {v}", s);
-                    Ok(())
+#[derive(Clone, Debug)]
+pub enum DataRoot {
+    Class(Class),
+    Array(Array),
+}
+impl LuaUserData for DataRoot {}
+
+#[derive(Clone, Debug)]
+pub struct DataRef {
+    pub root: Rc<RefCell<DataRoot>>,
+    pub path: Vec<RefPath>,
+}
+
+
+impl DataRef {
+    fn traverse<'b, 'a: 'b> (&'a self) -> Option<FieldValue> {
+        println!("traversing: {:?}", self.path);
+        match &*self.root.borrow_mut() {
+            DataRoot::Class(c) => {
+                let iter = &mut self.path.iter();
+                if let RefPath::FieldName(first_segment) = iter.next()? {
+                    let mut current = c.get_value(first_segment);
+                    while let Some(path_segment) = iter.next() {
+                        if let Some(cur) = current  {
+                            current = match (cur, &path_segment) {
+                                (FieldValue::Class(c), RefPath::FieldName(k)) => c.get_value(&k),
+                                (FieldValue::Array(a), RefPath::Index(i)) => a.get_value(*i),
+                                _ => None
+                            };
+                        }
+                    }
+                    return current.cloned()
+                } else {
+                    return None
                 }
-                LuaValue::UserData(ud) => {
-                    let rhs = ud.borrow::<StringU16>()?.clone();
-                    *v = Box::new(rhs);
-                    Ok(())
+            }
+            DataRoot::Array(c) => {
+                let iter = &mut self.path.iter();
+                if let RefPath::Index(first_segment) = iter.next()? {
+                    let mut current = c.get_value(*first_segment);
+                    while let Some(path_segment) = iter.next() {
+                        if let Some(cur) = current  {
+                            current = match (cur, &path_segment) {
+                                (FieldValue::Class(c), RefPath::FieldName(k)) => c.get_value(&k),
+                                (FieldValue::Array(a), RefPath::Index(i)) => a.get_value(*i),
+                                _ => None
+                            };
+                        }
+                    }
+                    return current.cloned()
+                } else {
+                    return None
                 }
-                _ => Err(LuaError::FromLuaConversionError { from: "Something", to: "FieldValue::String".to_string(), message: None })
             }
         }
-        FieldValue::Class(v) => {
-            if let LuaValue::UserData(ud) = value {
-                let incoming_class = ud.borrow::<Rc<RefCell<Class>>>()?.clone();
-                *v = incoming_class;
-                Ok(())
-            } else {
-                Err(LuaError::FromLuaConversionError { from: "non-userdata", to: "Class".to_string(), message: None })
+    }
+
+    fn with_target_mut<F, R>(&self, func: F) -> LuaResult<R>
+    where
+        F: FnOnce(&mut FieldValue) -> LuaResult<R>,
+    {
+
+        let iter = &mut self.path.iter();
+        let binding = &mut *self.root.borrow_mut();
+        let target = match binding {
+            DataRoot::Class(c) => {
+                if let RefPath::FieldName(first_segment) = iter.next().ok_or(LuaError::RuntimeError("Empty Path".to_string()))? {
+                    let mut current = c.get_value_mut(first_segment);
+                    while let Some(path_segment) = iter.next() {
+                        if let Some(cur) = current  {
+                            current = match (cur, &path_segment) {
+                                (FieldValue::Class(c), RefPath::FieldName(k)) => c.get_value_mut(&k),
+                                (FieldValue::Array(a), RefPath::Index(i)) => a.get_value_mut(*i),
+                                _ => None
+                            };
+                        }
+                    }
+                    current
+                } else {
+                    None
+                }
             }
-        }
-        FieldValue::Array(v) => {
-            if let LuaValue::UserData(ud) = value {
-                let rhs = ud.borrow::<Array>()?.clone();
-                *v = Box::new(rhs);
-                Ok(())
-            } else {
-                Err(LuaError::FromLuaConversionError { from: "non-userdata", to: "Class".to_string(), message: None })
+            DataRoot::Array(c) => {
+                if let RefPath::Index(first_segment) = iter.next().ok_or(LuaError::RuntimeError("Empty Path".to_string()))? {
+                    let mut current = c.get_value_mut(*first_segment);
+                    while let Some(path_segment) = iter.next() {
+                        if let Some(cur) = current  {
+                            current = match (cur, &path_segment) {
+                                (FieldValue::Class(c), RefPath::FieldName(k)) => c.get_value_mut(&k),
+                                (FieldValue::Array(a), RefPath::Index(i)) => a.get_value_mut(*i),
+                                _ => None
+                            };
+                        }
+                    }
+                    current
+                } else {
+                    None
+                }
             }
-        }
-        FieldValue::Struct(v) => {
-            if let LuaValue::UserData(ud) = value {
-                let rhs = ud.borrow::<Struct>()?.clone();
-                *v = Box::new(rhs);
-                Ok(())
-            } else {
-                Err(LuaError::FromLuaConversionError { from: "non-userdata", to: "Class".to_string(), message: None })
-            }
-        }
-        FieldValue::Enum(v) => value.as_i32().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
-        FieldValue::Unknown => Ok(())
+        };
+
+        let cur_unwrapped = target.ok_or(LuaError::RuntimeError("Could not evaluate path".to_string()))?;
+        return func(cur_unwrapped)
     }
 }
-
-impl IntoLua for Field {
-    fn into_lua(self, lua: &Lua) -> LuaResult<LuaValue> {
-        self.value.into_lua(lua)
-    }
-}
-
-impl LuaUserData for Class {
+impl LuaUserData for DataRef {
     fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method(LuaMetaMethod::Index, |lua, this, key: String| {
-            this.get_value(&key).map(|x| x.clone().into_lua(lua)).unwrap_or(Ok(LuaValue::Nil))
-        });
-
-        methods.add_meta_method_mut(LuaMetaMethod::NewIndex, |lua, this, (key, value): (String, LuaValue)| {
-            let Some(lhs) = this.get_value_mut(&key) else {
-                return Err(LuaError::FromLuaConversionError { from: "Something", to: "Anything".to_string(), message: Some("Could not find field".to_string()) })
+        methods.add_meta_method(LuaMetaMethod::Index, |lua, this, key: LuaValue| {
+            let index = match key {
+                LuaValue::String(s) => Some(RefPath::FieldName(s.to_str()?.to_string())),
+                LuaValue::Integer(i) => Some(RefPath::Index((i - 1) as usize)), // Lua 1-based to Rust 0-based
+                _ => None
             };
-            set_fieldvalue_from_lua(lua, lhs, value)
+
+            if this.path.is_empty() {
+                if let Some(ref index) = index {
+                    let binding = &mut *this.root.borrow_mut();
+                    let target = match (binding, &index) {
+                        (DataRoot::Class(c), RefPath::FieldName(k)) => c.get_value_mut(k),
+                        (DataRoot::Array(a), RefPath::Index(i)) => a.values.get_mut(*i),
+                        _ => None
+                    };
+                    if let Some(val) = target {
+                        match val {
+                            FieldValue::Class(_) | FieldValue::Array(_) => {
+                                let mut new_path = this.path.clone();
+                                new_path.push(index.clone());
+                                return Ok(DataRef { root: this.root.clone(), path: new_path }.into_lua(lua)?);
+                            },
+                            _ => return val.clone().into_lua(lua)
+                        }
+                    }
+                }
+            }
+
+            this.with_target_mut(|value| {
+                if let Some(index) = index {
+                    let target = match (value, &index) {
+                        (FieldValue::Class(c), RefPath::FieldName(k)) => c.get_value_mut(k),
+                        (FieldValue::Array(a), RefPath::Index(i)) => a.values.get_mut(*i),
+                        _ => None
+                    };
+                    if let Some(val) = target {
+                        match val {
+                            FieldValue::Class(_) | FieldValue::Array(_) => {
+                                let mut new_path = this.path.clone();
+                                new_path.push(index);
+                                return Ok(DataRef { root: this.root.clone(), path: new_path }.into_lua(lua)?);
+                            },
+                            _ => return val.clone().into_lua(lua)
+                        }
+                    }
+                }
+                Ok(LuaValue::Nil)
+            })
+        });
+
+        methods.add_meta_method_mut(LuaMetaMethod::NewIndex, |lua, this, (key, value): (LuaValue, LuaValue)| {
+            let segment = match key {
+                LuaValue::String(s) => RefPath::FieldName(s.to_str()?.to_string()),
+                LuaValue::Integer(i) => RefPath::Index((i - 1) as usize),
+                _ => return Ok(()),
+            };
+
+            let mut self_cloned_val: Option<FieldValue> = None;
+
+            if let LuaValue::UserData(ref ud) = value {
+                if let Ok(rhs_ref) = ud.borrow::<DataRef>() {
+                    if Rc::ptr_eq(&this.root, &rhs_ref.root) {
+                        let root_read = this.root.borrow();
+                        if let Some(source_fv) = save::get_target_from_root(&*root_read, &rhs_ref.path) {
+                            self_cloned_val = Some(source_fv.clone());
+                        }
+                    }
+                }
+            }
+
+            let mut root_write = this.root.borrow_mut();
+            let mut cursor: Option<&mut FieldValue> = None;
+
+            if !this.path.is_empty() {
+                match (&mut *root_write, &this.path[0]) {
+                    (DataRoot::Class(c), RefPath::FieldName(k)) => cursor = c.get_value_mut(k),
+                    (DataRoot::Array(a), RefPath::Index(i)) => cursor = a.values.get_mut(*i),
+                    _ => {} 
+                };
+
+                for p in this.path.iter().skip(1) {
+                    if let Some(curr) = cursor {
+                        cursor = match (curr, p) {
+                            (FieldValue::Class(c), RefPath::FieldName(k)) => c.get_value_mut(k),
+                            (FieldValue::Array(a), RefPath::Index(i)) => a.values.get_mut(*i),
+                            _ => None
+                        }
+                    }
+                }
+            }
+
+            let target_slot = if let Some(parent) = cursor {
+                match (parent, &segment) {
+                    (FieldValue::Class(c), RefPath::FieldName(k)) => c.get_value_mut(k),
+                    (FieldValue::Array(a), RefPath::Index(i)) => a.values.get_mut(*i),
+                    _ => None
+                }
+            } else {
+                match (&mut *root_write, &segment) {
+                    (DataRoot::Class(c), RefPath::FieldName(k)) => c.get_value_mut(k),
+                    (DataRoot::Array(a), RefPath::Index(i)) => a.values.get_mut(*i),
+                    _ => None
+                }
+            };
+
+            if let Some(slot) = target_slot {
+                if let Some(val) = self_cloned_val {
+                    match (slot, val) {
+                        (FieldValue::Class(lhs), FieldValue::Class(rhs)) => *lhs = rhs,
+                        (FieldValue::Array(lhs), FieldValue::Array(rhs)) => *lhs = rhs,
+                        _ => return Err(LuaError::RuntimeError("Type mismatch in self-copy".into())),
+                    }
+                } else {
+                    save::set_fieldvalue_from_lua(lua, slot, value)?;
+                }
+            }
+
+            Ok(())
         });
         methods.add_meta_method(LuaMetaMethod::ToString, |lua, this, ()| {
-            lua.create_string(&format!("Class(hash={:08x}, fields={})", this.hash, this.num_fields))
-        });
-    }
-}
-
-impl LuaUserData for Array {
-    fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method(LuaMetaMethod::Index, |lua, this, index: usize| {
-            if index == 0 { return Ok(LuaValue::Nil); }
-            let rust_index = index - 1;
-            if let Some(val) = this.get_value(rust_index) {
-                return val.clone().into_lua(lua);
-            }
-            Ok(LuaValue::Nil)
-        });
-
-        methods.add_meta_method(LuaMetaMethod::Len, |_, this, ()| {
-            Ok(this.values.len())
-        });
-
-        methods.add_meta_method_mut(LuaMetaMethod::NewIndex, |lua, this, (index, value): (usize, LuaValue)| {
-            if index == 0 { 
-                return Err(LuaError::RuntimeError(format!("lua indeces start at 1")))
-            }
-            let rust_index = index - 1;
-            if let Some(val) = this.get_value_mut(rust_index) {
-                return set_fieldvalue_from_lua(lua, val, value);
-            }
-            Err(LuaError::RuntimeError(format!("Index {index}, out of bounds, len={}", this.values.len())))
-        });
-
-        methods.add_meta_method(LuaMetaMethod::ToString, |lua, this, ()| {
-            lua.create_string(&format!("Array(len={}, type={:?})", this.values.len(), this.member_type))
+            let path_str = this.path.iter().map(|p| match p {
+                RefPath::FieldName(k) => format!(".{}", k),
+                RefPath::FieldHash(k) => format!(".{}", k),
+                RefPath::Index(i) => format!("[{}]", i + 1),
+            }).collect::<String>();
+            lua.create_string(&format!("Ref(root{})", path_str))
         });
     }
 }

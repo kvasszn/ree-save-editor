@@ -1,4 +1,8 @@
 pub mod steam;
+pub mod scripting;
+pub mod file;
+pub mod viewer;
+pub mod app;
 
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
@@ -17,6 +21,7 @@ use mhtame::{
     edit::copy::CopyBuffer,
     save::{SaveContext, SaveFile},
 };
+use crate::file::FileView;
 use crate::steam::*;
 use mhtame::sdk::type_map::{ContentLanguage, TypeMap};
 
@@ -232,7 +237,7 @@ fn configure_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-pub struct TameApp {
+pub struct TameAppOld {
     steam_id: Option<u64>,
     steam_id_text: String,
     input_file: String,
@@ -270,7 +275,7 @@ pub struct TameApp {
     game: Game,
 }
 
-impl TameApp{
+impl TameAppOld{
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_assets(&mut self) {
         let mut path = self.steam_path.clone();
@@ -439,7 +444,7 @@ impl TameApp{
 
     fn read_save<R: Read + Seek>(&mut self, reader: &mut R) -> Option<SaveFile> {
         if let Some(steamid) = self.steam_id {
-            let mut ctx = SaveContext { key: steamid , game: self.game };
+            let mut ctx = SaveContext { key: steamid , game: self.game, repair: false};
             match SaveFile::read(reader, &mut ctx) {
                 Ok(save) => {
                     return Some(save)
@@ -687,7 +692,7 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
     }
 }
 
-impl eframe::App for TameApp {
+impl eframe::App for TameAppOld {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // File Drag and Drop
         if !ctx.input(|i| i.raw.dropped_files.is_empty()) {
@@ -931,6 +936,24 @@ impl eframe::App for TameApp {
                             ui.selectable_value(&mut self.game, option.1, option.0);
                         }
                     });
+
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ui.horizontal(|ui| {
+                        if ui.button("Run Script").clicked() {
+                            use mhtame::bindings::runner::ScriptRunner;
+
+                            match &self.current_file {
+                                CurrentFile::Loaded { loaded, ..} => {
+                                    let mut script_runner = ScriptRunner::new();
+                                    let _ = script_runner.set_save_file_context(loaded);
+                                    let _ = script_runner.load_and_execute_from_file("scripts/foo.lua");
+                                }
+                                _ => {();}
+                            }
+                        };
+                    });
+                }
             });
 
             ui.separator();
@@ -996,7 +1019,7 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             web_options,
-            Box::new(|cc| Ok(Box::new(TameApp::new(config, cc)))),
+            Box::new(|cc| Ok(Box::new(TameAppOld::new(config, cc)))),
         )
         .await
 }

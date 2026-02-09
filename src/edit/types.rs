@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display, rc::Rc, str::FromStr};
+use std::{cell::RefMut, collections::HashSet, fmt::Display, rc::Rc, str::FromStr};
 
 use bitfield::BitMut;
 use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, Ui};
@@ -71,13 +71,13 @@ fn collapsing_header_with_buttons_for_array_member(
         ui.add_space(10.0);
         if let FieldValue::Class(member_class) = member {
             if ui.small_button("Copy").clicked() {
-                *ctx.copy_buffer = CopyBuffer::Array(member_class.borrow().clone());
+                *ctx.copy_buffer = CopyBuffer::Array(*member_class.clone());
             }
 
             if let CopyBuffer::Array(copied_class) = &ctx.copy_buffer {
-                if copied_class.hash == member_class.borrow().hash {
+                if copied_class.hash == member_class.hash {
                     if ui.add(egui::Button::new("Paste")).clicked() {
-                        *member_class = Rc::new(copied_class.clone().into());
+                        *member_class = copied_class.clone().into();
                         // *ctx.copy_buffer = None;
                     }
                 }
@@ -207,7 +207,7 @@ impl FieldValue {
             FieldValue::F64(v) => Some(v.to_string()),
             FieldValue::C8(v) => Some(v.to_string()),
             FieldValue::C16(v) => Some(v.to_string()),
-            FieldValue::Class(c) => c.borrow().get_preview(ctx),
+            FieldValue::Class(c) => c.get_preview(ctx),
             FieldValue::Array(a) => {
                 a.values[0].get_preview(ctx).map(|s| {
                     format!("[0]={}", s)
@@ -248,8 +248,8 @@ impl Editable for FieldValue {
             FieldValue::F64(v) => v.edit(ui, ctx),
             FieldValue::C8(v) => v.edit(ui, ctx),
             FieldValue::C16(v) => v.edit(ui, ctx),
-            FieldValue::Class(c) => c.borrow_mut().edit(ui, ctx),
-            FieldValue::Array(a) => a.borrow_mut().edit(ui, ctx),
+            FieldValue::Class(c) => c.edit(ui, ctx),
+            FieldValue::Array(a) => a.edit(ui, ctx),
             FieldValue::String(v) => v.edit(ui, ctx),
             FieldValue::Struct(v) => v.edit(ui, ctx),
             _ => {
@@ -481,7 +481,7 @@ impl Class {
         });
         let max_element = *max_element as usize;
 
-        let Some(values) = self.get_mut::<&mut Array>("_Values") else {
+        let Some(mut values) = self.get_mut::<&mut Array>("_Value") else {
             return EditResponse::default();
         };
 
@@ -516,6 +516,7 @@ impl Class {
                     ctx.type_map.enums.get(g)
                 }
             });
+            println!("{enums:?}");
             let mut count = 0usize;
             for v in &mut a.values {
                 let Some(x) = v.as_u32_mut() else { continue };
@@ -652,8 +653,8 @@ impl Class {
                             .min_scrolled_height(300.0)
                             .show(ui, |ui| {
                                 match generic {
-                                    Some("Custom.OuterArmorFlags") => edit_outer_armor_flags(ui, values),
-                                    Some(_) | None => edit_bitset(ui, values, generic)
+                                    Some("Custom.OuterArmorFlags") => edit_outer_armor_flags(ui, &mut values),
+                                    Some(_) | None => edit_bitset(ui, &mut values, generic)
                     }
                             });
                     });
@@ -778,8 +779,8 @@ impl Class {
         if let Some(cat_gen_val) = self.get_field_mut("Category_Gender") {
             ui.horizontal(|ui| {
                 ui.label("Category_Gender: ");
-                cat_gen_val.edit(ui, ctx);
-                category = cat_gen_val.value.as_u32().unwrap_or(141);
+                cat_gen_val.value.edit(ui, ctx);
+                category = cat_gen_val.value.as_u8().unwrap_or(141);
             });
             left.remove(&cat_gen_val.hash);
         };
@@ -936,11 +937,12 @@ impl Class {
         let type_info = ctx.type_map.get_by_hash(self.hash);
         type_info.and_then(|type_info| {
             if let Some(v) = ctx.remaps.get(&type_info.name) {
-                return self.get_preview_from_remap(v, ctx);
+                let r = self.get_preview_from_remap(v, ctx);
+                return r;
             }
             match type_info.name.as_str() {
                 "app.savedata.cEquipWork" => {
-                    if let Some(cat_gen_val) = self.get::<u32>("Category_Gender") {
+                    if let Some(cat_gen_val) = self.get::<u8>("Category_Gender") {
                         let is_empty = cat_gen_val & 0x80 != 0;
                         if is_empty {
                             return Some("Empty".to_string())
@@ -1026,6 +1028,7 @@ impl Editable for Class {
                 }
                 match ti.name.as_str() {
                     "ace.Bitset" => {
+                        println!("{type_info:?}");
                         let bitset = ctx.field_info.and_then(|f| {
                             let x = ctx.parent_type.and_then(|t| {
                                 ctx.remaps.get(&t.name).and_then(|remap| {

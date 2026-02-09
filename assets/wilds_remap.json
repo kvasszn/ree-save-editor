@@ -143,5 +143,12 @@
             "_HeavyBowgun": "app.WeaponDef.OuterWeaponId<app.WeaponDef.HeavyBowgunId>",
             "_LightBowgun": "app.WeaponDef.OuterWeaponId<app.WeaponDef.LightBowgunId>"
         }
-    }
+    },
+	"app.savedata.cBossReportParam": {
+		"remap": {
+			"FixedId": "app.EnemyDef.ID_Fixed"
+		},
+		"preview": "FixedId",
+		"bitsets": {}
+	}
 }

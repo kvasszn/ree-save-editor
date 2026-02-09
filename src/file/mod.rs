@@ -8,7 +8,7 @@ mod font;
 pub mod mesh;
 mod pog;
 
-use mlua::Lua;
+use mlua::{IntoLua, Lua};
 pub use msg::Msg;
 pub use user::User;
 
@@ -20,10 +20,10 @@ pub use mesh::Mesh;
 pub use pog::*;
 
 
-use std::{collections::HashSet, error::Error, fs::File, io::{BufReader, Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}};
+use std::{cell::RefCell, collections::HashSet, error::Error, fs::File, io::{BufReader, Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}, rc::Rc};
 
 
-use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext, game::Game}};
+use crate::{bindings::{DataRef, DataRoot}, rsz::rszserde::{Guid, StringU16}, save::{SaveContext, game::Game, types::FieldValue}};
 use crate::save::SaveFile;
 use serde::Serialize;
 use util::*;
@@ -324,11 +324,29 @@ impl FileReader {
                     }?;
                     //Mandarin::sanity_check(&file_path);
                     let mut reader = File::open(&file)?;
-                    let _save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: Game::MHWILDS})?;
-                    let lua_state = Lua::new();
-                    lua_state.globals().set("character_data", _save.fields[0].1.clone())?;
+                    let mut _save = SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: Game::MHWILDS, repair: true})?;
+                    /*println!("here\n");
+                    for field in &_save.fields {
+                        println!("save1={:?},{:?},{:?}", field.0, field.1.fields.len(), field.1.hash);
+                    }
+                    let mut reader2 = File::open("./misc/saves/unkemptherald/data001Slot.bin")?;
+                    let mut _save2 = SaveFile::read(&mut reader2, &mut SaveContext{key: 76561198053503919, game: Game::MHWILDS})?;
+                    //_save2.fields.push(_save.fields[1].clone());
+                    for field in &_save2.fields {
+                        println!("save2={:?},{:?},{:?}", field.0, field.1.fields.len(), field.1.hash);
+                    }
+                    let data = _save.fields[0].1.get_array_mut("_Data").unwrap();
+                    let data2 = _save2.fields[0].1.get_array_mut("_Data").unwrap();
+                    data.values[0] = data2.values[0].clone();
+                    let path = Path::new("./misc/saves/unkemptherald_fixed/data001Slot.bin");
+                    _save.save(path, 76561198053503919).unwrap();*/
+                    /*let lua_state = Lua::new();
+                    let data: Rc<RefCell<DataRoot>> = Rc::new(DataRoot::Class(_save.fields[0].1.clone()).into());
+                    let root_ref = DataRef { root: data, path: vec![] };
+                    lua_state.globals().set("savefile", root_ref)?;
+                    //lua_state.globals().set("character_data", _save.fields[0].1.clone())?;
                     let script = std::fs::read_to_string("scripts/foo.lua").unwrap();
-                    lua_state.load(script).exec()?;
+                    lua_state.load(script).exec()?;*/
             
                     //let save = SaveFile::from_file(&file)?;
                     /*let dersz = to_dersz(save.fields[0].1.clone())?;
@@ -347,7 +365,7 @@ impl FileReader {
                     let mut buf = vec![];
                     reader.read_to_end(&mut buf).unwrap();
                     let mut reader = Cursor::new(&buf);
-                    let _ = SaveFile::read(&mut reader, &mut SaveContext{key: 0, game: Game::MHWILDS});
+                    let _ = SaveFile::read(&mut reader, &mut SaveContext{key: 0, game: Game::MHWILDS, repair: false});
                     /*(0..c).into_par_iter().for_each(|i| {
                         let key = 0x0110000100000000 + i;
                         let mut reader = Cursor::new(&buf);

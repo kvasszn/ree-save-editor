@@ -33,7 +33,8 @@ mod tests {
         let mut data = Cursor::new(data);
         let mut save_ctx = save::SaveContext {
             key: key,
-            game: Game::MHWILDS
+            game: Game::MHWILDS,
+            repair: false,
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);
@@ -51,7 +52,8 @@ mod tests {
         let mut data = Cursor::new(data.clone());
         let mut save_ctx = save::SaveContext {
             key: key,
-            game: Game::MHWILDS
+            game: Game::MHWILDS,
+            repair: false,
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);
