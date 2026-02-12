@@ -147,6 +147,15 @@ impl TypeMap {
         self.string_map = string_map;
         Ok(self)
     }
+    pub fn load_string_map_from_str(&mut self, data: &str) -> std::result::Result<(), Box<dyn Error>> {
+        let mut string_map = HashMap::new();
+        for line in data.lines() {
+            let hash = murmur3(&line, 0xffffffff);
+            string_map.insert(hash, line.to_string());
+        }
+        self.string_map = string_map;
+        Ok(())
+    }
 
     pub fn load_with_msgs(rsz_path: &str, enum_path: &str, msg_path: &str, mappings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let mut type_map =  TypeMap::load_from_file(rsz_path, enum_path)?;

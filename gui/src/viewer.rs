@@ -80,12 +80,18 @@ impl GameCtx {
             const ENUMS_JSON: &[u8] = include_bytes!("../../assets/enumsmhwilds.json.gz");
             const MSGS_JSON: &[u8] = include_bytes!("../../assets/combined_msgs.json.gz");
             const ENUM_MAPPINGS_JSON: &str = include_str!("../../assets/enum_text_mappings.json");
+            const MHST3_STRINGS: &str = include_str!("../../assets/mhst3_strings.txt");
             let rsz = decompress(RSZ_JSON);
             let enums = decompress(ENUMS_JSON);
             let msgs = decompress(MSGS_JSON);
-            TypeMap::parse_str(&rsz, &enums)
+            let mut res = TypeMap::parse_str(&rsz, &enums)
                 .expect("Could not load type map")
-                .load_msg(&msgs, ENUM_MAPPINGS_JSON)
+                .load_msg(&msgs, ENUM_MAPPINGS_JSON);
+            match res.load_string_map_from_str(&MHST3_STRINGS) {
+                Err(e) => eprintln!("[ERROR] Could not load MHST3 Strings"),
+                _ => ()
+            };
+            res
         };
 
         #[cfg(target_arch = "wasm32")]
