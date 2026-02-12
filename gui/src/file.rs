@@ -177,17 +177,15 @@ impl FileView {
             self.output_path_picker.ui(ui);
         });
 
-        #[cfg(not(target_arch = "wasm32"))]
         ui.horizontal(|ui| {
             if let Some(path) = self.steam.found_file(ui) {
                 self.update_file_path(path);
                 self.reload();
             };
+            #[cfg(not(target_arch = "wasm32"))]
+            self.steam.edit_steam_path(ui);
         });
-        #[cfg(target_arch = "wasm32")]
-        ui.horizontal(|ui| {
-            self.steam.edit_steam_id(ui);
-        });
+
         ui.horizontal(|ui| {
             ui.label("Try Repairing Corruption (WIP)");
             ui.checkbox(&mut self.repair, "");
@@ -519,9 +517,20 @@ impl Steam {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn edit_steam_path(&mut self, ui: &mut Ui) -> bool{
+        ui.label("Steam Path: ");
+        let mut buf = self.steam_path.display().to_string();
+        let res = ui.text_edit_singleline(&mut buf).changed();
+        self.steam_path = PathBuf::from(buf);
+        res
+    }
+
     pub fn found_file(&mut self, ui: &mut Ui) -> Option<String> {
         let mut res = None;
         self.edit_steam_id(ui);
+
+        #[cfg(not(target_arch = "wasm32"))]
         self.select_user(ui);
 
         #[cfg(not(target_arch = "wasm32"))]
