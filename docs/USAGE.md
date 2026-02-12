@@ -16,6 +16,7 @@ Currently, only Wilds is supported, but I'm working other games.
 |Game|Steam AppID|Support|
 |-|-|-|
 |MH Wilds|2246340|✅ |
+|MH Stories 3|2852190|✅ WIP|
 |MH Rise|1446780|❌ WIP|
 |DD2|2054970|❌ WIP|
 |Pragmata|3357650|❌ WIP|

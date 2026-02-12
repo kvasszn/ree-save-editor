@@ -881,6 +881,72 @@ impl Class {
             // idfk 21
             0b0001_0101 => {
                 self.add_enum_edit_ex(type_info, "FreeVal0", "FreeVal0(AmuletType)", "app.ArmorDef.AmuletType", ui, ctx, &mut left);
+                //let amulet_type = self.get::<i32>("FreeVal0").unwrap_or(0);
+                let free_flag_1 = self.get_mut::<&mut i32>("FreeVal1");
+                if let Some(free_flag_1) = free_flag_1 {
+                    ui.label("This should equal 1 for Unknown/Historical/Secret/Golden Age Charms, otherwise 2 for most other charms");
+                    ui.horizontal(|ui|{
+                        ui.label("FreeVal1");
+                        free_flag_1.edit(ui, ctx);
+                        left.remove(&murmur3("FreeVal1", 0xffffffff));
+                    });
+                    if *free_flag_1 == 1  {
+                        let skills = self.get_array_mut("BowgunCustomizeId");
+                        let mut edit_skill = |ui: &mut Ui, idx: usize, skill: &mut i16| {
+                            let mut level = *skill / 1_000i16;
+                            let mut id = (*skill % 1_000i16) as i32;
+                            ui.horizontal(|ui| {
+                                ui.label(format!("Skill #{idx}: "));
+                                let child_id = ui.make_persistent_id(("AmuletEdit", ctx.id, idx)).value();
+                                let mut child_ctx = Class::udpate_ctx(type_info, child_id, ctx);
+                                edit_enum_from_type(&mut id, "app.HunterDef.Skill", ui, &mut child_ctx);
+                                ui.label("Level: ");
+                                level.edit(ui, &mut child_ctx);
+                            });
+                            *skill = level * 1_000 + id as i16;
+                        };
+                        if let Some(skills) = skills {
+                            let skill_1 = skills.get_value_mut(0).and_then(|x| x.as_i16_mut());
+                            if let Some(skill) = skill_1 {
+                                edit_skill(ui, 1, skill);
+                            }
+                            let skill_2 = skills.get_value_mut(1).and_then(|x| x.as_i16_mut());
+                            if let Some(skill) = skill_2 {
+                                edit_skill(ui, 2, skill);
+                            }
+                            let skill_3 = skills.get_value_mut(2).and_then(|x| x.as_i16_mut());
+                            if let Some(skill) = skill_3 {
+                                edit_skill(ui, 3, skill);
+                            }
+                            let slots = skills.get_value_mut(3).and_then(|x| x.as_i16_mut());
+                            if let Some(slots) = slots {
+                                let mut slot_1 = *slots / 1_000;
+                                let mut slot_2 = (*slots / 100) % 10;
+                                let mut slot_3 = (*slots / 10) % 10;
+                                let mut slot_4 = *slots % 10;
+                                ui.label("Decoration Slots (W/A lvl, A lvl, A lvl)");
+                                ui.horizontal(|ui| {
+                                    ComboBox::new((ctx.id, "AmuletSlots"), "")
+                                        .selected_text(if slot_4 == 1 {
+                                            "Weapon"
+                                        } else {
+                                            "Armor"
+                                        })
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut slot_4, 1, "Weapon");
+                                        ui.selectable_value(&mut slot_4, 0, "Armor");
+                                    });
+                                    slot_1.edit(ui, ctx);
+                                    ui.label("Armor");
+                                    slot_2.edit(ui, ctx);
+                                    ui.label("Armor");
+                                    slot_3.edit(ui, ctx);
+                                });
+                                *slots = slot_1 * 1000 + slot_2 * 100 + slot_3 * 10 + slot_4;
+                            }
+                        }
+                    }
+                }
             }
             // idfk again 37
             0b0010_0101 => {
@@ -1036,7 +1102,6 @@ impl Editable for Class {
                 }
                 match ti.name.as_str() {
                     "ace.Bitset" => {
-                        println!("{type_info:?}");
                         let bitset = ctx.field_info.and_then(|f| {
                             let x = ctx.parent_type.and_then(|t| {
                                 ctx.remaps.get(&t.name).and_then(|remap| {
