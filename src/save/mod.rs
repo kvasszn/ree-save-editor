@@ -12,7 +12,7 @@ use util::*;
 
 use crypt::Mandarin;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SaveFile {
     pub game: Game,
     pub fields: Vec<(u32, Class)>

@@ -397,9 +397,17 @@ impl Editable for Field {
         //let type_info = ctx.type_map.get_by_hash(self.hash);
         let field_info = ctx.parent_type.and_then(|x| x.get_by_hash(self.hash));
         let name: String = field_info.map(|x| x.name.clone())
-            .unwrap_or(format!("{:08x}", self.hash));
+            .unwrap_or_else(|| {
+                if let Some(n) = ctx.type_map.get_hash_str(self.hash) {
+                    n.clone()
+                } else {
+                    format!("{:08x}", self.hash)
+                }
+            });
         let og_type = field_info.map(|f| f.original_type.clone())
-            .unwrap_or(format!("{:?}", self.field_type));
+            .unwrap_or_else(|| {
+                format!("{:?}", self.field_type)
+            });
         let array_brackets = field_info.map(|f| f.array).unwrap_or(false);
         let array_brackets = if array_brackets {"[]"} else {""};
 

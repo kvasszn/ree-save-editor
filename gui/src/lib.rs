@@ -1,5 +1,4 @@
 pub mod steam;
-pub mod scripting;
 pub mod file;
 pub mod viewer;
 pub mod app;

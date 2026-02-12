@@ -1,13 +1,15 @@
-use eframe::egui::{Align, CentralPanel, Layout, MenuBar, TopBottomPanel};
-use egui_dock::{DockArea, DockState, NodeIndex, SurfaceIndex};
-use mhtame::sdk::type_map::ContentLanguage;
+use std::{cell::RefCell, rc::Rc};
+
+use eframe::{self, egui::{Align, CentralPanel, DragValue, Layout, MenuBar, TopBottomPanel, Window}};
+use egui_dock::{DockArea, DockState};
+use mhtame::{bindings::runner::ScriptRunner, sdk::type_map::ContentLanguage};
 
 use crate::{Config, file::FilePicker, file::FileView, viewer::Viewer};
 
 pub struct TameApp {
     viewer: Viewer,
     tree: DockState<FileView>,
-    file_opener: FilePicker<false>
+    file_opener: FilePicker<false>,
 }
 
 impl TameApp {
@@ -19,7 +21,7 @@ impl TameApp {
         Self {
             viewer,
             tree: dock_state,
-            file_opener: FilePicker::new("Open")
+            file_opener: FilePicker::new("Open"),
         }
     }
     fn add_tab(&mut self, file_view: FileView) {
@@ -38,10 +40,17 @@ impl TameApp {
 impl eframe::App for TameApp {
 
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+        if self.viewer.reload {
+            //let _ = self.viewer.register_ui_functions();
+            //let _ = self.viewer.script_runner.register_io_functions();
+            self.viewer.reload = false;
+        }
         if let Some(path) = self.file_opener.take() {
             let file_view = FileView::from_path(&self.viewer.config, path, self.viewer.num_tabs, self.viewer.default_language);
             self.add_tab(file_view);
         }
+
+        self.viewer.update(ctx);
 
         TopBottomPanel::top("MenuBar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -63,7 +72,8 @@ impl eframe::App for TameApp {
                         let file_view = FileView::new(&self.viewer.config, self.viewer.num_tabs, self.viewer.default_language);
                         self.add_tab(file_view);
                     }
-                    if ui.button("Run Script (Dummy)").clicked() {
+                    if ui.button("Run Script").clicked() {
+                        self.viewer.run_script("scripts/load_saves.lua");
 
                     }
                 });
@@ -129,4 +139,4 @@ const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
     ("Hindi", ContentLanguage::Hindi),
     ("Spanish (Latin America)", ContentLanguage::LatinAmericanSpanish),
     ("Unknown", ContentLanguage::Unknown),
-];
+    ];

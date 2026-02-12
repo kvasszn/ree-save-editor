@@ -58,7 +58,10 @@ pub enum FieldValue {
 impl FieldValue {
     pub fn read<R: Read + Seek>(reader: &mut R, field_type: FieldType) -> Result<Self, Box<dyn Error>> {
         let value = match field_type {
-            FieldType::Unknown => { println!("Unknown Field Type found"); return Err("idk bad".into())}
+            FieldType::Unknown => { 
+                /*println!("Unknown Field Type found");*/ 
+                return Err("Unknown Field Type".into())
+            }
             FieldType::Array => { 
                 FieldValue::Array(Array::read(reader)?.into())
             }
@@ -473,9 +476,11 @@ impl Array {
                     }
                 },
             };
+
             if broken { 
-                for i in _i..len {
-                    values.push(value.clone());
+                //eprintln!("[WARNING] Replacing Array Elements");
+                for _ in _i..len {
+                    //values.push(value.clone());
                 }
                 break;
             } else {

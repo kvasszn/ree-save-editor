@@ -7,13 +7,9 @@ use serde::{Deserialize, Deserializer, Serialize, de::{MapAccess, Visitor}};
 
 use murmur3::murmur3_32;
 
-use crate::sdk::type_map;
-
 pub fn murmur3(data: impl AsRef<[u8]>, seed: u32) -> u32 {
     murmur3_32(&mut Cursor::new(data), seed).unwrap()
 }
-
-
 
 // This can probably get optimized alot (msgs + enum_mappings)
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,7 +18,9 @@ pub struct TypeMap {
     pub enums: EnumMap,
     pub msgs: MsgCombined,
     // enum_type -> (enum_str -> guid)
-    pub enum_mappings: HashMap<String, HashMap<String, String>>
+    pub enum_mappings: HashMap<String, HashMap<String, String>>,
+    // mapping of every murmur3 -> String in the game exe
+    pub string_map: HashMap<u32, String>
 }
 
 impl TypeMap {
@@ -137,6 +135,19 @@ impl TypeMap {
         (matching_types, fields_to_expand)
     }
 
+    pub fn load_string_map(mut self, strings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
+        let mut file = File::open(strings_path)?;
+        let mut string_map = HashMap::new();
+        let mut data = String::new();
+        file.read_to_string(&mut data)?;
+        for line in data.lines() {
+            let hash = murmur3(&line, 0xffffffff);
+            string_map.insert(hash, line.to_string());
+        }
+        self.string_map = string_map;
+        Ok(self)
+    }
+
     pub fn load_with_msgs(rsz_path: &str, enum_path: &str, msg_path: &str, mappings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let mut type_map =  TypeMap::load_from_file(rsz_path, enum_path)?;
         let mut file = File::open(msg_path)?;
@@ -159,7 +170,7 @@ impl TypeMap {
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
         let enums = serde_json::from_slice(&mut data)?;
-        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default()})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default(), string_map: HashMap::default()})
     }
 
     /*pub fn load_from_file_compressed(rsz_path: &str, enum_path: &str, combined_msgs: &str, mappings: &str) -> std::result::Result<Self, Box<dyn Error>> {
@@ -185,24 +196,24 @@ impl TypeMap {
     pub fn from_reader<R: Read + Seek>(rsz_reader: R, enum_reader: R) -> std::result::Result<Self, Box<dyn Error>> {
         let types: TypesWrapper = simd_json::from_reader(rsz_reader)?;
         let enums: HashMap<String, IndexMap<String, String>> = simd_json::from_reader(enum_reader)?;
-        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default(), string_map: HashMap::default()})
     }
 
     pub fn parse(type_data: &mut [u8], enum_data: &mut [u8]) -> std::result::Result<Self, Box<dyn Error>> {
         let types = simd_json::from_slice(type_data)?;
         let enums = simd_json::from_slice(enum_data)?;
-        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default(), string_map: HashMap::default()})
     }
 
     pub fn parse_str(type_data: &str, enum_data: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let types = serde_json::from_str(type_data)?;
         let enums = serde_json::from_str(enum_data)?;
-        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default(), string_map: HashMap::default()})
     }
     pub fn parse_str_compressed(type_data: &str, enum_data: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let types = serde_json::from_str(type_data)?;
         let enums = serde_json::from_str(enum_data)?;
-        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::new()})
+        Ok(TypeMap{types, enums, msgs: MsgCombined::default(), enum_mappings: HashMap::default(), string_map: HashMap::default()})
     }
 
     pub fn load_msg(mut self, msg_data: &str, enum_mappings: &str) -> Self {
@@ -291,6 +302,10 @@ impl TypeMap {
         });
         //println!("{enum_str:?} {original_type:?} {guid:?} {res:?}");
         res
+    }
+
+    pub fn get_hash_str(&self, hash: u32) -> Option<&String> {
+        self.string_map.get(&hash)
     }
 }
 

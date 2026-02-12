@@ -1,0 +1,11 @@
+{
+    "workspace": {
+        "library": [
+            "typings"
+        ],
+        "checkThirdParty": false
+    },
+	"runtime": {
+		"version": "Lua 5.4"
+	}
+}

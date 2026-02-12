@@ -138,7 +138,7 @@ impl Editable for SaveFile {
                 id: child_id.value(),
                 ..*ctx
             };
-            CollapsingHeader::new(format!("{:08x}, {}", field.0, child_id.value()))
+            CollapsingHeader::new(format!("{:08x}", field.0))
                 .id_salt(child_id)
                 .default_open(true)
                 .show(ui, |ui| {

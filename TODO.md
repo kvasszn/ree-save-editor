@@ -5,8 +5,11 @@
 - [] Github Actions Builds for Windows/Linux/wasm
     - done for the editor
 
+### Lua
+- [] add steam related bindings as described in typings/api.lua
+
 ### Editor
-- [] add a feature that let's you load in two saves + add a default/empty save file to assets.
+- [x] add a feature that let's you load in two saves + add a default/empty save file to assets.
 - [] diff view
 - [] investigate DRM in System Save Data
 - [x] Make it run in a browser for wasm

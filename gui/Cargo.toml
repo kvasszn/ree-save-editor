@@ -24,6 +24,7 @@ keyvalues-parser = "0.2.2"
 keyvalues-serde = "0.2.3"
 serde_json = "1.0.147"
 egui_dock = "0.18.0"
+mlua = {version = "0.11.5", features = ["lua54", "vendored", "async", "send"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

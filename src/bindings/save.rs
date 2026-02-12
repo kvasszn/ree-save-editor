@@ -1,7 +1,7 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}};
 use mlua::prelude::*;
 
-use crate::{bindings::{DataRef, DataRoot, RefPath}, save::types::{Array, Class, Field, FieldValue, Struct}, sdk::StringU16};
+use crate::{bindings::{DataRef, DataRoot, RefPath, SaveDataRef}, save::{SaveFile, types::{Array, Class, Field, FieldValue, Struct}}, sdk::{StringU16, type_map::murmur3}};
 
 impl IntoLua for FieldValue {
     fn into_lua(self, lua: &Lua) -> LuaResult<LuaValue> {
@@ -90,10 +90,9 @@ pub fn set_fieldvalue_from_lua(_lua: &Lua, lhs: &mut FieldValue, value: LuaValue
         FieldValue::Class(v) => {
             if let LuaValue::UserData(ud) = value {
                 println!("class: {ud:?}");
-                let incoming = ud.borrow::<DataRef>()?;
-                let root = incoming.root.borrow();
-                let inc_class = get_target_from_root(&root, &incoming.path)
-                    .ok_or(LuaError::RuntimeError("".to_string())).unwrap();
+                let incoming = ud.borrow::<SaveDataRef>()?;
+                let inc_class = incoming.get_value()
+                    .ok_or(LuaError::RuntimeError("Could not Traverse Ref to Class".to_string())).unwrap();
                 if let FieldValue::Class(c) = inc_class {
                     *v = c.clone();
                 } else {
@@ -107,8 +106,8 @@ pub fn set_fieldvalue_from_lua(_lua: &Lua, lhs: &mut FieldValue, value: LuaValue
         FieldValue::Array(v) => {
             if let LuaValue::UserData(ud) = value {
                 println!("arr: {ud:?}");
-                let incoming = ud.borrow::<DataRef>()?;
-                let inc = incoming.traverse().ok_or(LuaError::UserDataTypeMismatch)?;
+                let incoming = ud.borrow::<SaveDataRef>()?;
+                let inc = incoming.get_value().ok_or(LuaError::UserDataTypeMismatch)?;
                 if let FieldValue::Array(a) = inc {
                     *v = a;
                 } else {
@@ -125,7 +124,7 @@ pub fn set_fieldvalue_from_lua(_lua: &Lua, lhs: &mut FieldValue, value: LuaValue
                 *v = Box::new(rhs);
                 Ok(())
             } else {
-                Err(LuaError::FromLuaConversionError { from: "non-userdata", to: "Class".to_string(), message: None })
+                Err(LuaError::FromLuaConversionError { from: "non-userdata", to: "Struct".to_string(), message: None })
             }
         }
         FieldValue::Enum(v) => value.as_i32().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
@@ -143,10 +142,10 @@ impl IntoLua for Field {
 impl LuaUserData for Class {
     fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Index, |_lua, this, key: String| {
-            let root: Rc<RefCell<DataRoot>> = Rc::new(DataRoot::Class(this.clone()).into());
+            let root: Arc<RwLock<DataRoot>> = Arc::new(RwLock::new(DataRoot::Class(this.clone())));
             if this.get_value(&key).is_some() {
                 let path = vec![RefPath::FieldName(key)];
-                return Ok(DataRef { root, path })
+                return Ok(DataRef { root: root.clone(), path })
             }
             return Err(LuaError::UserDataTypeMismatch)
         });

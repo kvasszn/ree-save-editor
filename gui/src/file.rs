@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use std::{collections::HashSet, error::Error, io::{Cursor, Read, Seek}, sync::mpsc::{Receiver, Sender}, time::Duration};
 
 use eframe::{self, egui::{ComboBox, Context, Id, ScrollArea, TextEdit, Ui, Window}};
-use mhtame::{edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::Game}, sdk::type_map::ContentLanguage};
+use mhtame::{bindings::runner::ScriptRunner, edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::{GAME_OPTIONS, Game}}, sdk::type_map::ContentLanguage};
 
 use crate::{Config, steam::{UserAccount, get_wilds_save_files}, viewer::GameCtx};
 
 pub struct FileView {
     pub idx: u64,
     pub input_file_picker: FilePicker<false>,
+    pub output_path_picker: FilePicker<true>,
     pub current_file: CurrentFile,
     pub language: ContentLanguage,
     pub game: Game,
@@ -26,6 +27,7 @@ impl FileView {
             //id: ui.make_persistent_id(format!("file_view_{idx}")),
             idx,
             input_file_picker: FilePicker::<false>::new("File"),
+            output_path_picker: FilePicker::new("Output Path"),
             current_file: CurrentFile::Null,
             language,
             game: Game::MHWILDS,
@@ -44,6 +46,7 @@ impl FileView {
         Self {
             idx,
             input_file_picker,
+            output_path_picker: FilePicker::new("Output Path"),
             current_file,
             language,
             game: Game::MHWILDS,
@@ -80,8 +83,51 @@ impl FileView {
         ui.horizontal(|ui| {
             self.input_file_picker.ui(ui);
             self.input_file_picker.update();
+            self.output_path_picker.update();
             if ui.button("Save").clicked() {
+                if let Some(steamid) = self.steam.steam_id {
+                    match self.current_file.write_save_to_buf(steamid) {
+                        Ok((file_path, data)) => {
+                            // quite disgusting but oh well
+                            #[cfg(not(target_arch = "wasm32"))]
+                            let path = self.output_path_picker.text.clone();
+                            use std::{fs::File};
+                            let mut path = PathBuf::from(path);
+                            let _ = std::fs::create_dir_all(&path);
+                            let in_file_path = PathBuf::from(&file_path);
+                            let file_name = in_file_path.file_name()
+                                .map(|x| x.to_string_lossy().to_string())
+                                .unwrap_or("data.bin".to_string());
+                            path.push(file_name);
+                            log::info!("Saving to {path:?}");
+                            match File::create(&path) {
+                                Ok(mut file) => {
+                                    use std::io::Write;
+                                    let _ = file.write_all(&data);
+                                    self.popup_msg = format!("Saved to {:?}", path)
+                                }
+                                Err(e) => {
+                                    self.popup_msg = format!("Could not create file {:?}: error: {e}", path)
 
+                                }
+                            }
+
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                save_file_dialog(&file_path, data);
+                                self.popup_msg = "Saved/Downloaded".to_string();
+                            }
+
+                        }
+                        Err(e) => {
+                            self.popup_msg = format!("Error saving {}", e)
+                        }
+                    }
+                    self.show_popup = true;
+                } else {
+                    self.popup_msg = String::from("Need a steamid to save");
+                    self.show_popup = true;
+                }
             }
 
             if ui.button("Refresh / Load").clicked() {
@@ -92,6 +138,20 @@ impl FileView {
                 }
                 self.reload();
             }
+
+            ui.label("Game Profile");
+            ComboBox::from_id_salt("GameProfilePicker")
+                .selected_text(GAME_OPTIONS[self.game as usize].0)
+                .show_ui(ui, |ui| {
+                    for option in GAME_OPTIONS {
+                        ui.selectable_value(&mut self.game, option.1, option.0);
+                    }
+                });
+
+
+        });
+        ui.horizontal(|ui| {
+            self.output_path_picker.ui(ui);
         });
         ui.horizontal(|ui| {
             if let Some(path) = self.steam.found_file(ui) {
@@ -102,6 +162,28 @@ impl FileView {
         ui.horizontal(|ui| {
             ui.label("Try Repairing Corruption");
             ui.checkbox(&mut self.repair, "");
+            if ui.button("Run Script").clicked() {
+                match &mut self.current_file {
+                    CurrentFile::Loaded { loaded, .. } => {
+                        let mut script_runner = ScriptRunner::new();
+                        let res = script_runner.set_save_file_context(loaded);
+                        match res {
+                            Ok(_) => {
+                                let res = script_runner.load_and_execute_from_file("scripts/foo.lua");
+                                println!("[INFO] lua res: {res:?}");
+                            }
+                            Err(e) => {
+                                eprintln!("[ERROR] Script Runner: {e}")
+                            }
+                        }
+                        let res = script_runner.get_save_file_context();
+                        if let Some(res) = res {
+                            *loaded = res;
+                        }
+                    }
+                    _ => {}
+                }
+            }
         });
 
         ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
