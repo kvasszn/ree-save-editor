@@ -1,5 +1,7 @@
+use serde::Deserialize;
+
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 pub enum Game {
     MHWILDS = 0,
     DD2 = 1,
@@ -10,11 +12,22 @@ pub enum Game {
 pub const GAME_OPTIONS: [(&'static str, Game); 4] = [
     ("MH Wilds", Game::MHWILDS),
     ("Dragon's Dogma 2", Game::DD2),
-    ("Pragamata", Game::PRAGMATA),
+    ("Pragmata", Game::PRAGMATA),
     ("MH Stories 3", Game::MHST3),
 ];
 
 impl Game {
+
+    pub fn from_string(id: &str) -> Option<Game> {
+        match id {
+            "MHWILDS" => Some(Game::MHWILDS),
+            "DD2" => Some(Game::DD2),
+            "PRAGMATA" => Some(Game::PRAGMATA),
+            "MHST3" => Some(Game::MHST3),
+            _ => None,
+        }
+    }
+
     // return (rsa_seed, enc_seed)
     pub fn get_mandarin_seeds(&self) -> Option<(u64, u64)> {
         match self {

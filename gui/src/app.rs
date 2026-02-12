@@ -1,22 +1,26 @@
-use std::{cell::RefCell, rc::Rc};
+use std::path::PathBuf;
 
-use eframe::{self, egui::{Align, CentralPanel, DragValue, Layout, MenuBar, TopBottomPanel, Window}};
+use eframe::{
+    self,
+    egui::{Align, CentralPanel, Layout, MenuBar, TopBottomPanel},
+};
 use egui_dock::{DockArea, DockState};
-use mhtame::{bindings::runner::ScriptRunner, sdk::type_map::ContentLanguage};
+use mhtame::{sdk::type_map::ContentLanguage};
 
-use crate::{Config, file::FilePicker, file::FileView, viewer::Viewer};
+use crate::{Config, code_editor::CodeEditor, file::{FilePicker, FileView}, tab::Tab, viewer::Viewer};
 
 pub struct TameApp {
     viewer: Viewer,
-    tree: DockState<FileView>,
+    tree: DockState<Tab>,
     file_opener: FilePicker<false>,
 }
 
 impl TameApp {
     pub fn new(config: Config) -> Self {
         let file_view = FileView::new(&config, 0, ContentLanguage::English);
+        let tab = Tab::from(file_view);
         let mut viewer = Viewer::new(config);
-        let dock_state = DockState::new(vec![file_view]);
+        let dock_state = DockState::new(vec![tab]);
         viewer.num_tabs += 1;
         Self {
             viewer,
@@ -24,30 +28,39 @@ impl TameApp {
             file_opener: FilePicker::new("Open"),
         }
     }
-    fn add_tab(&mut self, file_view: FileView) {
-        println!("adding {}", file_view.idx);
+    fn add_tab(&mut self, tab: Tab) {
         if self.viewer.num_tabs == 0 {
             self.viewer.num_tabs += 1;
-            self.tree = DockState::new(vec![file_view])
+            self.tree = DockState::new(vec![tab])
         } else {
             self.viewer.num_tabs += 1;
             let surface = self.tree.main_surface_mut();
-            surface.push_to_focused_leaf(file_view);
+            surface.push_to_focused_leaf(tab);
         }
     }
 }
 
 impl eframe::App for TameApp {
-
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         if self.viewer.reload {
-            //let _ = self.viewer.register_ui_functions();
-            //let _ = self.viewer.script_runner.register_io_functions();
             self.viewer.reload = false;
         }
         if let Some(path) = self.file_opener.take() {
-            let file_view = FileView::from_path(&self.viewer.config, path, self.viewer.num_tabs, self.viewer.default_language);
-            self.add_tab(file_view);
+            if path.ends_with("lua") {
+                log::info!("Loading Lua Script From {path}");
+                let tab = Tab::load_script(&path, self.viewer.num_tabs);
+                self.add_tab(tab);
+            } else {
+                log::info!("Loading Save File From {path}");
+                let file_view = FileView::from_path(
+                    &self.viewer.config,
+                    path,
+                    self.viewer.num_tabs,
+                    self.viewer.default_language,
+                );
+                let tab = Tab::from(file_view);
+                self.add_tab(tab);
+            }
         }
 
         self.viewer.update(ctx);
@@ -59,7 +72,6 @@ impl eframe::App for TameApp {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.hyperlink_to("GitHub", "https://github.com/kvasszn/mhtame");
                     ui.separator();
-                    ui.label("v0.1.5");
                 });
             });
 
@@ -68,23 +80,53 @@ impl eframe::App for TameApp {
                     if ui.button("Open").clicked() {
                         self.file_opener.spawn_dialog();
                     }
-                    if ui.button("Empty File").clicked() {
-                        let file_view = FileView::new(&self.viewer.config, self.viewer.num_tabs, self.viewer.default_language);
-                        self.add_tab(file_view);
+                    if ui.button("Empty Save File").clicked() {
+                        let file_view = FileView::new(
+                            &self.viewer.config,
+                            self.viewer.num_tabs,
+                            self.viewer.default_language,
+                        );
+                        self.add_tab(Tab::from(file_view));
+                    }
+                    if ui.button("New Script").clicked() {
+                        self.add_tab(Tab::from(CodeEditor::new_default(self.viewer.num_tabs)));
                     }
                     if ui.button("Run Script").clicked() {
-                        self.viewer.run_script("scripts/load_saves.lua");
-
+                        let cur = std::env::current_dir().unwrap_or(PathBuf::from("~"));
+                        let file_path = rfd::FileDialog::new()
+                            .set_title("Select Lua Script")
+                            .add_filter("Lua Script", &["lua"])
+                            .add_filter("All Files", &["*"])
+                            .set_directory(cur)
+                            .pick_file();
+                        // ahh whatever who cares
+                        if let Some(file_path) = file_path {
+                            let file_path = file_path.to_str();
+                            if let Some(file_path) = file_path {
+                                self.viewer.run_script(&file_path);
+                            }
+                        }
                     }
                 });
-                ui.menu_button(LANGUAGE_OPTIONS[self.viewer.default_language as usize].0, |ui| {
-                    for option in LANGUAGE_OPTIONS {
-                        ui.selectable_value(&mut self.viewer.default_language, option.1, option.0);
-                    }
+                ui.menu_button("Options", |ui| {
+                    ui.menu_button(
+                        format!("Language ({})", LANGUAGE_OPTIONS[self.viewer.default_language as usize].0),
+                        |ui| {
+                            for option in LANGUAGE_OPTIONS {
+                                ui.selectable_value(
+                                    &mut self.viewer.default_language,
+                                    option.1,
+                                    option.0,
+                                );
+                            }
+                        },
+                    );
                 });
+                if ui.button("Reload").clicked() {
+                    self.viewer.reload = true;
+                }
             });
         });
-
 
         //let style = ctx.style();
         CentralPanel::default()
@@ -137,6 +179,9 @@ const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
     ("Indonesian", ContentLanguage::Indonesian),
     ("Fiction", ContentLanguage::Fiction),
     ("Hindi", ContentLanguage::Hindi),
-    ("Spanish (Latin America)", ContentLanguage::LatinAmericanSpanish),
+    (
+        "Spanish (Latin America)",
+        ContentLanguage::LatinAmericanSpanish,
+    ),
     ("Unknown", ContentLanguage::Unknown),
     ];

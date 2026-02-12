@@ -1,28 +1,29 @@
-pub mod steam;
-pub mod file;
-pub mod viewer;
 pub mod app;
+pub mod file;
+pub mod steam;
+pub mod tab;
+pub mod viewer;
+pub mod code_editor;
 
+use mhtame::edit::{EditContext, Editable};
+use mhtame::file::StructRW;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::{Cursor, Read, Seek};
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
-use mhtame::edit::{EditContext, Editable};
-use mhtame::file::StructRW;
 
 use eframe::egui::{self, ComboBox, ScrollArea, TextEdit, Ui, Vec2};
 
+use crate::steam::*;
 use mhtame::save::game::{GAME_OPTIONS, Game};
 use mhtame::save::remap::Remap;
+use mhtame::sdk::type_map::{ContentLanguage, TypeMap};
 use mhtame::{
     edit::copy::CopyBuffer,
     save::{SaveContext, SaveFile},
 };
-use crate::file::FileView;
-use crate::steam::*;
-use mhtame::sdk::type_map::{ContentLanguage, TypeMap};
 
 // We need a common config struct that works for both CLI (Clap) and Web
 #[derive(Debug, Clone)]
@@ -73,7 +74,9 @@ impl Default for Config {
             #[cfg(target_os = "windows")]
             steam_path: "C:\\Program Files (x86)\\Steam".to_string(),
             #[cfg(target_os = "linux")]
-            steam_path: shellexpand::full("~/.local/share/Steam").unwrap_or_default().to_string(),
+            steam_path: shellexpand::full("~/.local/share/Steam")
+                .unwrap_or_default()
+                .to_string(),
         }
     }
 }
@@ -82,20 +85,31 @@ impl Default for Config {
 pub enum CurrentFile {
     Null,
     Path(String),
-    FileData { file_name: String, bytes: Vec<u8> },
-    Loaded { file_name: String, loaded: SaveFile },
-    LoadedWeb { file_name: String, original_bytes: Vec<u8>, loaded: SaveFile },
+    FileData {
+        file_name: String,
+        bytes: Vec<u8>,
+    },
+    Loaded {
+        file_name: String,
+        loaded: SaveFile,
+    },
+    LoadedWeb {
+        file_name: String,
+        original_bytes: Vec<u8>,
+        loaded: SaveFile,
+    },
 }
 
 impl CurrentFile {
     pub fn write_save_to_buf(&self, key: u64) -> Result<(String, Vec<u8>), Box<dyn Error>> {
         match self {
-            CurrentFile::Null | CurrentFile::Path(_)| CurrentFile::FileData {..} => {
+            CurrentFile::Null | CurrentFile::Path(_) | CurrentFile::FileData { .. } => {
                 Err("Can't save unloaded file".into())
             }
-            CurrentFile::Loaded { file_name, loaded } | CurrentFile::LoadedWeb { file_name, loaded, .. } => {
-                Ok((file_name.clone(), loaded.to_bytes(key)?))
-            }
+            CurrentFile::Loaded { file_name, loaded }
+            | CurrentFile::LoadedWeb {
+                file_name, loaded, ..
+            } => Ok((file_name.clone(), loaded.to_bytes(key)?)),
         }
     }
 }
@@ -112,13 +126,13 @@ pub struct FilePicker<const FOLDER: bool> {
     rx: Receiver<FilePickResult>,
     label: String,
     text: String,
-    pending_result: Option<FilePickResult>
+    pending_result: Option<FilePickResult>,
 }
 
 impl<const FOLDER: bool> FilePicker<FOLDER> {
     pub fn new(label: &str) -> Self {
         let (tx, rx) = mpsc::channel();
-        
+
         Self {
             label: label.to_string(),
             text: String::new(),
@@ -132,7 +146,7 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
         if let Ok(result) = self.rx.try_recv() {
             match &result {
                 FilePickResult::Native(p) => self.text = p.clone(),
-                FilePickResult::Wasm{ name, .. } => self.text = name.clone(),
+                FilePickResult::Wasm { name, .. } => self.text = name.clone(),
             }
             self.pending_result = Some(result);
         }
@@ -176,7 +190,6 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
     }
 }
 
-
 const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
     ("Japanese", ContentLanguage::Japanese),
     ("English", ContentLanguage::English),
@@ -210,7 +223,10 @@ const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
     ("Indonesian", ContentLanguage::Indonesian),
     ("Fiction", ContentLanguage::Fiction),
     ("Hindi", ContentLanguage::Hindi),
-    ("Spanish (Latin America)", ContentLanguage::LatinAmericanSpanish),
+    (
+        "Spanish (Latin America)",
+        ContentLanguage::LatinAmericanSpanish,
+    ),
     ("Unknown", ContentLanguage::Unknown),
 ];
 
@@ -274,47 +290,60 @@ pub struct TameAppOld {
     game: Game,
 }
 
-impl TameAppOld{
+impl TameAppOld {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_assets(&mut self) {
         let mut path = self.steam_path.clone();
         path.push("config/loginusers.vdf");
-        log::info!("Searching for users in steam path {}", self.steam_path.display());
+        log::info!(
+            "Searching for users in steam path {}",
+            self.steam_path.display()
+        );
         let users = steam::parse_accounts(&path);
         match users {
             Ok(users) => {
                 println!("found {users:?}");
                 self.users = users;
             }
-            Err(e) => log::error!("Error loading users {e}")
+            Err(e) => log::error!("Error loading users {e}"),
         }
 
         let data = std::fs::read_to_string("./assets/wilds_remap.json");
         match data {
             Ok(data) => {
-                let remaps  = serde_json::from_str::<HashMap<String, Remap>>(&data);
+                let remaps = serde_json::from_str::<HashMap<String, Remap>>(&data);
                 match remaps {
                     Ok(remaps) => self.remaps = remaps,
-                    Err(e) => log::error!("Error loading remap {e}")
+                    Err(e) => log::error!("Error loading remap {e}"),
                 }
             }
-            Err(e) => log::error!("Error reading remap {e}")
+            Err(e) => log::error!("Error reading remap {e}"),
         }
 
-
-        let type_map = TypeMap::load_with_msgs(&self.config.rsz_path, &self.config.enums_path, &self.config.msgs_path, &self.config.mappings_path);
+        let type_map = TypeMap::load_with_msgs(
+            &self.config.rsz_path,
+            &self.config.enums_path,
+            &self.config.msgs_path,
+            &self.config.mappings_path,
+        );
         match type_map {
             Ok(type_map) => self.type_map = type_map,
-            Err(e) => log::error!("Error loading type map and messages {e}")
+            Err(e) => log::error!("Error loading type map and messages {e}"),
         }
     }
 
     pub fn new(config: Config, cc: &eframe::CreationContext<'_>) -> Self {
         // on native, use assets in assets/
         #[cfg(not(target_arch = "wasm32"))]
-        let type_map = TypeMap::load_with_msgs(&config.rsz_path, &config.enums_path, &config.msgs_path, &config.mappings_path)
-            .expect("Could not load assets for the editor, make sure your assets are in the right place");
-
+        let type_map = TypeMap::load_with_msgs(
+            &config.rsz_path,
+            &config.enums_path,
+            &config.msgs_path,
+            &config.mappings_path,
+        )
+        .expect(
+            "Could not load assets for the editor, make sure your assets are in the right place",
+        );
 
         // on wasm load from included stuff
         #[cfg(target_arch = "wasm32")]
@@ -323,7 +352,7 @@ impl TameAppOld{
             const RSZ_JSON: &[u8] = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
             const ENUMS_JSON: &[u8] = include_bytes!("../../assets/enumsmhwilds.json.gz");
             const MSGS_JSON: &[u8] = include_bytes!("../../assets/combined_msgs.json.gz");
-            const ENUM_MAPPINGS_JSON : &str = include_str!("../../assets/enum_text_mappings.json");
+            const ENUM_MAPPINGS_JSON: &str = include_str!("../../assets/enum_text_mappings.json");
             let rsz = decompress(RSZ_JSON);
             let enums = decompress(ENUMS_JSON);
             let msgs = decompress(MSGS_JSON);
@@ -339,8 +368,7 @@ impl TameAppOld{
             let mut path = steam_path.clone();
             path.push("config/loginusers.vdf");
             println!("Searching for users in steam path {}", steam_path.display());
-            let users = steam::parse_accounts(&path)
-                .unwrap_or_default();
+            let users = steam::parse_accounts(&path).unwrap_or_default();
             println!("found {users:?}");
             users
         };
@@ -366,7 +394,9 @@ impl TameAppOld{
                 }
             }
         }
-        let steam_id_text = steam_id_u64.map(|x| x.to_string()).unwrap_or("".to_string());
+        let steam_id_text = steam_id_u64
+            .map(|x| x.to_string())
+            .unwrap_or("".to_string());
 
         let mut input_file_picker = FilePicker::<false>::new("File");
         #[cfg(not(target_arch = "wasm32"))]
@@ -386,21 +416,25 @@ impl TameAppOld{
         let mut output_picker = FilePicker::<true>::new("Output Path");
         #[cfg(not(target_arch = "wasm32"))]
         {
-            output_picker.pending_result = Some(FilePickResult::Native("./outputs/saves/".to_string()));
+            output_picker.pending_result =
+                Some(FilePickResult::Native("./outputs/saves/".to_string()));
             output_picker.text = "./outputs/saves/".to_string();
         }
 
         configure_fonts(&cc.egui_ctx);
 
         #[cfg(target_arch = "wasm32")]
-        let remaps: HashMap<String, Remap> = serde_json::from_str(include_str!("../../assets/wilds_remap.json")).unwrap();
+        let remaps: HashMap<String, Remap> =
+            serde_json::from_str(include_str!("../../assets/wilds_remap.json")).unwrap();
         #[cfg(not(target_arch = "wasm32"))]
         let remaps = {
             let data = std::fs::read_to_string("./assets/wilds_remap.json");
             data.map(|data| {
-                let remaps: HashMap<String, Remap> = serde_json::from_str(&data).unwrap_or_default();
+                let remaps: HashMap<String, Remap> =
+                    serde_json::from_str(&data).unwrap_or_default();
                 remaps
-            }).unwrap_or_default()
+            })
+            .unwrap_or_default()
         };
 
         Self {
@@ -443,11 +477,13 @@ impl TameAppOld{
 
     fn read_save<R: Read + Seek>(&mut self, reader: &mut R) -> Option<SaveFile> {
         if let Some(steamid) = self.steam_id {
-            let mut ctx = SaveContext { key: steamid , game: self.game, repair: false};
+            let mut ctx = SaveContext {
+                key: steamid,
+                game: self.game,
+                repair: false,
+            };
             match SaveFile::read(reader, &mut ctx) {
-                Ok(save) => {
-                    return Some(save)
-                },
+                Ok(save) => return Some(save),
                 Err(e) => {
                     self.popup_msg = format!("Error reading save: {e:?}");
                     self.show_popup = true;
@@ -463,7 +499,8 @@ impl TameAppOld{
     pub fn load(&mut self, current_file: CurrentFile) {
         match current_file {
             CurrentFile::Path(path) => {
-                let expanded = shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
+                let expanded =
+                    shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
                 let path = PathBuf::from(expanded.as_ref());
                 if path.exists() {
                     match std::fs::File::open(&path) {
@@ -472,7 +509,7 @@ impl TameAppOld{
                             if let Some(save) = save {
                                 self.current_file = CurrentFile::Loaded {
                                     file_name: path.display().to_string(),
-                                    loaded: save 
+                                    loaded: save,
                                 };
                             }
                         }
@@ -482,23 +519,23 @@ impl TameAppOld{
                         }
                     }
                 }
-            },
+            }
             CurrentFile::FileData { file_name, bytes } => {
                 let mut reader = Cursor::new(&bytes);
                 let save = self.read_save(&mut reader);
                 if let Some(save) = save {
-                    self.current_file = CurrentFile::LoadedWeb { 
+                    self.current_file = CurrentFile::LoadedWeb {
                         file_name,
                         original_bytes: bytes,
-                        loaded: save
+                        loaded: save,
                     };
                 } else {
-                    self.current_file = CurrentFile::FileData { 
+                    self.current_file = CurrentFile::FileData {
                         file_name,
                         bytes: bytes,
                     };
                 }
-            },
+            }
             _ => {
                 self.popup_msg = format!("Need a file to load");
                 self.show_popup = true;
@@ -513,7 +550,8 @@ impl TameAppOld{
                 // do this on wasm too?
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    let expanded = shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
+                    let expanded =
+                        shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
                     let path = PathBuf::from(expanded.as_ref());
                     if path.exists() {
                         match std::fs::File::open(&path) {
@@ -522,7 +560,7 @@ impl TameAppOld{
                                 if let Some(save) = save {
                                     self.current_file = CurrentFile::Loaded {
                                         file_name: path.display().to_string(),
-                                        loaded: save 
+                                        loaded: save,
                                     };
                                     return true;
                                 }
@@ -535,30 +573,34 @@ impl TameAppOld{
                         }
                     }
                 }
-            },
+            }
             CurrentFile::FileData { file_name, bytes } => {
                 let mut reader = Cursor::new(bytes);
                 let save = self.read_save(&mut reader);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::Loaded {
                         file_name: file_name.to_string(),
-                        loaded: save 
+                        loaded: save,
                     };
                     return true;
                 }
-            },
-            CurrentFile::LoadedWeb { file_name, original_bytes, .. } => {
+            }
+            CurrentFile::LoadedWeb {
+                file_name,
+                original_bytes,
+                ..
+            } => {
                 let mut reader = Cursor::new(&original_bytes);
                 let save = self.read_save(&mut reader);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::LoadedWeb {
                         file_name: file_name.to_string(),
                         original_bytes,
-                        loaded: save 
+                        loaded: save,
                     };
                     return true;
                 }
-            },
+            }
             CurrentFile::Loaded { .. } | CurrentFile::Null => {
                 self.current_file = CurrentFile::Path(self.input_file.clone());
                 if self.reload() == false {
@@ -572,10 +614,20 @@ impl TameAppOld{
     }
 
     fn add_file_area(&mut self, ui: &mut Ui) {
-        ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
-            match &mut self.current_file {
+        ScrollArea::both()
+            .auto_shrink(false)
+            .max_width(f32::INFINITY)
+            .show(ui, |ui| match &mut self.current_file {
                 CurrentFile::LoadedWeb { loaded, .. } | CurrentFile::Loaded { loaded, .. } => {
-                    let mut edit_ctx = EditContext::new(&self.type_map, &self.search_fields, &self.search_leaf_nodes, &self.search_range, &mut self.copy_buffer, self.language, &self.remaps);
+                    let mut edit_ctx = EditContext::new(
+                        &self.type_map,
+                        &self.search_fields,
+                        &self.search_leaf_nodes,
+                        &self.search_range,
+                        &mut self.copy_buffer,
+                        self.language,
+                        &self.remaps,
+                    );
                     loaded.edit(ui, &mut edit_ctx);
                 }
                 _ => {
@@ -585,8 +637,7 @@ impl TameAppOld{
                     #[cfg(target_os = "windows")]
                     ui.label("Drag and Drop or use the file dialog");
                 }
-            }
-        });
+            });
     }
 
     fn update_input_file(&mut self) {
@@ -598,16 +649,18 @@ impl TameAppOld{
                     let file = CurrentFile::Path(p);
                     self.load(file);
                 }
-                FilePickResult::Wasm{name, data} => {
+                FilePickResult::Wasm { name, data } => {
                     self.input_file = name.clone();
-                    let file = CurrentFile::FileData{file_name: name, bytes: data};
+                    let file = CurrentFile::FileData {
+                        file_name: name,
+                        bytes: data,
+                    };
                     self.load(file);
                 }
             }
         }
     }
 }
-
 
 // Thanks Gemini :D
 fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
@@ -620,11 +673,11 @@ fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
     };
 
     let name = input[0..start_bracket].to_string();
-    let content = &input[start_bracket+1..end_bracket];
+    let content = &input[start_bracket + 1..end_bracket];
 
     if let Some(colon_pos) = content.find(':') {
         let start_str = &content[0..colon_pos];
-        let end_str = &content[colon_pos+1..];
+        let end_str = &content[colon_pos + 1..];
 
         let start = start_str.parse::<usize>().unwrap_or(0);
         let end = end_str.parse::<usize>().unwrap_or(usize::MAX);
@@ -632,7 +685,7 @@ fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
         (name, start..end)
     } else {
         if let Ok(idx) = content.parse::<usize>() {
-            (name, idx..idx+1)
+            (name, idx..idx + 1)
         } else {
             (name, 0..usize::MAX)
         }
@@ -646,10 +699,7 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
     {
         std::thread::spawn(move || {
             // 1. Open System Dialog
-            if let Some(path) = rfd::FileDialog::new()
-                .set_file_name(&name)
-                    .save_file() 
-            {
+            if let Some(path) = rfd::FileDialog::new().set_file_name(&name).save_file() {
                 // 2. Write to Disk
                 if let Err(e) = std::fs::write(&path, &data) {
                     eprintln!("Failed to save file: {}", e);
@@ -670,9 +720,10 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
         array.push(&uint8_array);
 
         let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(
-            &array, 
-            web_sys::BlobPropertyBag::new().type_("application/octet-stream")
-        ).unwrap();
+            &array,
+            web_sys::BlobPropertyBag::new().type_("application/octet-stream"),
+        )
+        .unwrap();
 
         // 2. Create a URL for that Blob
         let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
@@ -680,7 +731,11 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
         // 3. Create a hidden <a> tag and click it
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
-        let a = document.create_element("a").unwrap().dyn_into::<web_sys::HtmlAnchorElement>().unwrap();
+        let a = document
+            .create_element("a")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlAnchorElement>()
+            .unwrap();
 
         a.set_href(&url);
         a.set_download(&name);
@@ -711,7 +766,7 @@ impl eframe::App for TameAppOld {
                     self.input_file_picker.text = self.input_file.clone();
                     let file = CurrentFile::FileData {
                         file_name: self.input_file.clone(),
-                        bytes: bytes.to_vec()
+                        bytes: bytes.to_vec(),
                     };
                     self.load(file);
                 }
@@ -742,11 +797,12 @@ impl eframe::App for TameAppOld {
                                 if let Some(path) = &self.output_picker.pending_result {
                                     if let FilePickResult::Native(path) = &path {
                                         // quite disgusting but oh well
-                                        use std::{fs::File};
+                                        use std::fs::File;
                                         let mut path = PathBuf::from(path);
                                         let _ = std::fs::create_dir_all(&path);
                                         let in_file_path = PathBuf::from(&file_path);
-                                        let file_name = in_file_path.file_name()
+                                        let file_name = in_file_path
+                                            .file_name()
                                             .map(|x| x.to_string_lossy().to_string())
                                             .unwrap_or("data.bin".to_string());
                                         path.push(file_name);
@@ -758,8 +814,10 @@ impl eframe::App for TameAppOld {
                                                 self.popup_msg = format!("Saved to {:?}", path)
                                             }
                                             Err(e) => {
-                                                self.popup_msg = format!("Could not create file {:?}: error: {e}", path)
-
+                                                self.popup_msg = format!(
+                                                    "Could not create file {:?}: error: {e}",
+                                                    path
+                                                )
                                             }
                                         }
                                     }
@@ -773,11 +831,8 @@ impl eframe::App for TameAppOld {
                                     save_file_dialog(&file_path, data);
                                     self.popup_msg = "Saved/Downloaded".to_string();
                                 }
-
                             }
-                            Err(e) => {
-                                self.popup_msg = format!("Error saving {}", e)
-                            }
+                            Err(e) => self.popup_msg = format!("Error saving {}", e),
                         }
                         self.show_popup = true;
                     } else {
@@ -789,7 +844,8 @@ impl eframe::App for TameAppOld {
                 if ui.button("Refresh / Load").clicked() {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
-                        self.input_file_picker.pending_result = Some(FilePickResult::Native(self.input_file_picker.text.clone()));
+                        self.input_file_picker.pending_result =
+                            Some(FilePickResult::Native(self.input_file_picker.text.clone()));
                     }
 
                     self.reload();
@@ -801,13 +857,20 @@ impl eframe::App for TameAppOld {
                         let save_files = get_wilds_save_files(&self.steam_path, steam_id);
                         if !save_files.is_empty() {
                             egui::ComboBox::from_id_salt("save_select")
-                                .selected_text("Select Save File") 
+                                .selected_text("Select Save File")
                                 .show_ui(ui, |ui| {
                                     for file in &save_files {
-                                        if ui.selectable_label(false, &file.to_string_lossy().to_string()).clicked() {
+                                        if ui
+                                            .selectable_label(
+                                                false,
+                                                &file.to_string_lossy().to_string(),
+                                            )
+                                            .clicked()
+                                        {
                                             self.input_file = file.to_string_lossy().to_string();
                                             self.input_file_picker.text = self.input_file.clone();
-                                            self.current_file = CurrentFile::Path(self.input_file.clone());
+                                            self.current_file =
+                                                CurrentFile::Path(self.input_file.clone());
                                             self.reload();
                                         }
                                     }
@@ -819,33 +882,42 @@ impl eframe::App for TameAppOld {
 
             ui.horizontal(|ui| {
                 ui.label("Steam ID:");
-                if ui.add(TextEdit::singleline(&mut self.steam_id_text)).changed() {
+                if ui
+                    .add(TextEdit::singleline(&mut self.steam_id_text))
+                    .changed()
+                {
                     if let Ok(val) = u64::from_str_radix(&self.steam_id_text, 10) {
                         self.steam_id = Some(val);
                         #[cfg(not(target_arch = "wasm32"))]
-                        { self.selected_user_name = None; }
+                        {
+                            self.selected_user_name = None;
+                        }
 
                         #[cfg(target_arch = "wasm32")]
                         {
                             if let Some(window) = web_sys::window() {
                                 if let Ok(Some(storage)) = window.local_storage() {
                                     // We save the raw string "7656..."
-                                    let _ = storage.set_item("mhtame_steam_id", &self.steam_id_text);
+                                    let _ =
+                                        storage.set_item("mhtame_steam_id", &self.steam_id_text);
                                 }
                             }
                         }
                         // TODO: do this natively too with a config?
                     } else {
-                        self.steam_id = None; 
+                        self.steam_id = None;
                     }
                 }
 
                 #[cfg(not(target_arch = "wasm32"))]
                 if !self.users.is_empty() {
                     ui.label("Users");
-                    let label = self.selected_user_name.clone().unwrap_or("Select User".to_string());
+                    let label = self
+                        .selected_user_name
+                        .clone()
+                        .unwrap_or("Select User".to_string());
                     egui::ComboBox::from_id_salt("users_select")
-                        .selected_text(label) 
+                        .selected_text(label)
                         .show_ui(ui, |ui| {
                             for account in &self.users {
                                 if ui.selectable_label(false, &account.persona_name).clicked() {
@@ -856,7 +928,6 @@ impl eframe::App for TameAppOld {
                             }
                         });
                 }
-
             });
 
             #[cfg(not(target_arch = "wasm32"))]
@@ -876,16 +947,24 @@ impl eframe::App for TameAppOld {
                     if !search_buffer.is_empty() {
                         let start = web_time::Instant::now();
                         match &self.current_file {
-                            CurrentFile::Loaded { loaded, .. } | CurrentFile::LoadedWeb { loaded, .. }  => {
+                            CurrentFile::Loaded { loaded, .. }
+                            | CurrentFile::LoadedWeb { loaded, .. } => {
                                 for field in &loaded.fields {
-                                    if let Some(type_info) = self.type_map.get_by_hash(field.1.hash) {
-                                        let fs = self.type_map.search(type_info, &search_buffer, self.max_search_depth as usize);
+                                    if let Some(type_info) = self.type_map.get_by_hash(field.1.hash)
+                                    {
+                                        let fs = self.type_map.search(
+                                            type_info,
+                                            &search_buffer,
+                                            self.max_search_depth as usize,
+                                        );
                                         self.search_fields.extend(fs.0);
                                         self.search_leaf_nodes.extend(fs.1);
                                     }
                                 }
                             }
-                            _ => {();}
+                            _ => {
+                                ();
+                            }
                         }
                         self.search_time = Some(start.elapsed());
                     } else {
@@ -913,7 +992,7 @@ impl eframe::App for TameAppOld {
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 self.config.edit_asset_paths(ui);
-                
+
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     ui.horizontal(|ui| {
@@ -943,12 +1022,15 @@ impl eframe::App for TameAppOld {
                             use mhtame::bindings::runner::ScriptRunner;
 
                             match &self.current_file {
-                                CurrentFile::Loaded { loaded, ..} => {
+                                CurrentFile::Loaded { loaded, .. } => {
                                     let mut script_runner = ScriptRunner::new();
                                     let _ = script_runner.set_save_file_context(loaded);
-                                    let _ = script_runner.load_and_execute_from_file("scripts/foo.lua");
+                                    let _ =
+                                        script_runner.load_and_execute_from_file("scripts/foo.lua");
                                 }
-                                _ => {();}
+                                _ => {
+                                    ();
+                                }
                             }
                         };
                     });
@@ -976,16 +1058,16 @@ impl eframe::App for TameAppOld {
                     });
             }
         });
-        
+
         #[cfg(not(target_arch = "wasm32"))]
         ctx.request_repaint_after(std::time::Duration::from_secs(1));
     }
 }
 
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]

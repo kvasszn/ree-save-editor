@@ -6,7 +6,7 @@ use std::{cell::RefCell, fs::File, io::Write, path::PathBuf, rc::Rc, sync::{Arc,
 use eframe::egui::TextBuffer;
 use mlua::{MaybeSend, prelude::*};
 
-use crate::{bindings::save::set_fieldvalue_from_lua, save::{SaveFile, types::{Array, Class, FieldValue}}, sdk::type_map::murmur3};
+use crate::{bindings::save::set_fieldvalue_from_lua, save::{SaveFile, game::Game, types::{Array, Class, FieldValue}}, sdk::type_map::murmur3};
 
 #[derive(Clone, Debug)]
 pub enum RefPath {

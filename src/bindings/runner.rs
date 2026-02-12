@@ -39,6 +39,11 @@ impl ScriptRunner {
             _ => ()
         }
 
+        match Self::register_game_table(&lua) {
+            Err(e) => eprintln!("[ERROR] Failed to register game table {e}"),
+            _ => ()
+        }
+
         let runner = Self {
             lua,
             scripts: HashMap::new(),
@@ -133,12 +138,28 @@ impl ScriptRunner {
         None
     }
 
+    pub fn register_game_table(lua: &Lua) -> mlua::Result<()> {
+        let game_table = lua.create_table()?;
+        game_table.set("MHWILDS", "MHWILDS")?;
+        game_table.set("DD2", "DD2")?;
+        game_table.set("PRAGMATA", "PRAGMATA")?;
+        game_table.set("MHST3", "MHST3")?;
+        lua.globals().set("game", game_table)?;
+        println!("[INFO] register game table");
+        Ok(())
+    }
+
     pub fn register_fs_functions(lua: &Lua) -> mlua::Result<()> {
-        let load_save = lua.create_function(move |_, (path, steamid): (String, u64)| {
+        let load_save = lua.create_function(move |_, (path, steamid, game): (String, u64, String)| {
             println!("[INFO] Loading Save File {path}");
-            let path = shellexpand::full(&path).map_err(|e| mlua::Error::RuntimeError(format!("Failed to load save file {e}")))?;
+            let path = shellexpand::full(&path)
+                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to load save file {e}")))?;
+            let game = Game::from_string(&game).unwrap_or_else(|| {
+                eprintln!("[LUA ERROR] Unknown Game {game}, defaulting to MHWILDS");
+                Game::MHWILDS
+            });
             let mut reader = File::open(path.as_ref())?;
-            let save_file = match SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: Game::MHWILDS, repair: true}){
+            let save_file = match SaveFile::read(&mut reader, &mut SaveContext{key: steamid, game: game, repair: true}){
                 Ok(s) => Ok(s),
                 Err(e) => Err(mlua::Error::RuntimeError(format!("Failed to load save file {e}")))
             }?;
@@ -188,8 +209,10 @@ impl ScriptRunner {
 
             #[cfg(not(target_arch = "wasm32"))]
             std::thread::spawn(move || {
+                let cur = std::env::current_dir().unwrap_or(PathBuf::from("~"));
                 let path = rfd::FileDialog::new()
                     .set_title(&title)
+                    .set_directory(cur)
                     .pick_file();
 
                 if let Some(path) = path {
@@ -208,7 +231,9 @@ impl ScriptRunner {
 
             #[cfg(not(target_arch = "wasm32"))]
             std::thread::spawn(move || {
+                let cur = std::env::current_dir().unwrap_or(PathBuf::from("~"));
                 let path = rfd::FileDialog::new()
+                    .set_directory(cur)
                     .set_title(&title)
                     .pick_folder();
 

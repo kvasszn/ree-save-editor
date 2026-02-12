@@ -160,9 +160,9 @@ impl FileView {
             };
         });
         ui.horizontal(|ui| {
-            ui.label("Try Repairing Corruption");
+            ui.label("Try Repairing Corruption (WIP)");
             ui.checkbox(&mut self.repair, "");
-            if ui.button("Run Script").clicked() {
+            /*if ui.button("Run Script").clicked() {
                 match &mut self.current_file {
                     CurrentFile::Loaded { loaded, .. } => {
                         let mut script_runner = ScriptRunner::new();
@@ -183,7 +183,7 @@ impl FileView {
                     }
                     _ => {}
                 }
-            }
+            }*/
         });
 
         ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
@@ -573,7 +573,10 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
 
         #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn(move || {
-            let dialog = rfd::FileDialog::new().set_title(&title);
+            let cur = std::env::current_dir().unwrap_or(PathBuf::from("~"));
+            let dialog = rfd::FileDialog::new()
+                .set_directory(cur)
+                .set_title(&title);
             let result = if FOLDER {
                 dialog.pick_folder()
             } else {

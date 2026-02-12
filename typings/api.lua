@@ -48,11 +48,23 @@ function steam.get_users(install_path) end
 
 --- Returns a list of save file paths associated with a game name or game id
 --- Either app_id or game_name should be supplied
----@param id integer|string Steam AppID for the game or the game's full name
+---@param id integer|Game Steam AppID for the game or the game's lua ID
 ---@return string[] paths Save file associated with the given game
 function steam.save_file_paths(id) end
 
+---@alias GameID "MHWILDS" | "DD2" | "PRAGMATA" | "MHST3"
 
+---@class Game
+---@field MHWILDS GameID Monster Hunter Wilds
+---@field DD2 GameID Dragon's Dogma 2
+---@field PRAGMATA GameID Pragmata
+---@field MHST3 GameID Monster Hunter Stories 3
+game = {
+	MHWILDS = "MHWILDS",
+	DD2 = "DD2",
+	PRAGMATA = "PRAGMATA",
+	MHST3 = "MHST3"
+}
 
 ---@alias SaveNode Class | Array | integer | number | string | boolean | nil
 
@@ -73,6 +85,7 @@ local SaveFile = {}
 function SaveFile:__len() end
 
 --- Write the save file to the specified file
+--- Save File are aware of what game they are loaded from so a GameID is not needed
 ---@param path string
 ---@param steamid integer
 ---@return string|nil error
@@ -85,5 +98,6 @@ fs = {}
 --- Loads a save file from the path
 ---@param path string
 ---@param steamid integer
+---@param game GameID
 ---@return SaveFile
-function fs.load_save(path, steamid) end
+function fs.load_save(path, steamid, game) end
