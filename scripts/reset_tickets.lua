@@ -16,8 +16,18 @@ if system_path == nil then
 end
 local system_save = fs.load_save(system_path, steamid, game.MHWILDS)
 
-print("Name: " .. user_save[1]._Data[1]._BasicData.CharName)
-user_save[1]._Data[2]._BasicData.CharName = "foobarbaz"
+system_save[1]._Data._SystemCommon.HunterTicketsUsed:write_u64(0, 0);
+system_save[1]._Data._SystemCommon.PalicoTicketsUsed:write_u64(0, 0);
 
-system_save:save("./outputs/saves/modified_system2.bin", steamid)
-user_save:save("./outputs/saves/modified_user2.bin", steamid)
+local slots = user_save[1]._Data
+if slots ~= nil then
+	for i = 1, #slots do
+		if slots[i] ~= nil then
+			slots[i]._FreeBuffer.BufferInt[18] = 0
+			slots[i]._FreeBuffer.BufferInt[19] = 0
+		end
+	end
+end
+
+system_save:save("./outputs/saves/modified_system.bin", steamid)
+user_save:save("./outputs/saves/modified_user.bin", steamid)

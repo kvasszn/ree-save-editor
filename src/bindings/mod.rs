@@ -138,7 +138,7 @@ impl LuaUserData for DataRef {
                     };
                     if let Some(val) = target {
                         match val {
-                            FieldValue::Class(_) | FieldValue::Array(_) => {
+                            FieldValue::Class(_) | FieldValue::Array(_) | FieldValue::Struct(_) => {
                                 let mut new_path = this.path.clone();
                                 new_path.push(index.clone());
                                 return Ok(DataRef { root: this.root.clone(), path: new_path }.into_lua(lua)?);
@@ -158,7 +158,7 @@ impl LuaUserData for DataRef {
                     };
                     if let Some(val) = target {
                         match val {
-                            FieldValue::Class(_) | FieldValue::Array(_) => {
+                            FieldValue::Class(_) | FieldValue::Array(_) | FieldValue::Struct(_) => {
                                 let mut new_path = this.path.clone();
                                 new_path.push(index);
                                 return Ok(DataRef { root: this.root.clone(), path: new_path }.into_lua(lua)?);
@@ -256,7 +256,6 @@ pub struct SaveDataRef {
 }
 
 impl SaveDataRef {
-
     fn get_value_with_path(&self, last_path: &RefPath) -> Option<FieldValue> {
         let mut target = self.get_value()?;
         target = match (target, last_path) {
@@ -397,9 +396,60 @@ impl SaveDataRef {
     }
 }
 
+
+macro_rules! register_struct_accessors {
+    ($methods:ident, $($name:ident, $type:ty, $size:expr),*) => {
+        $(
+            // Read Method
+            $methods.add_method(concat!("read_", stringify!($name)), |_, this, offset: usize| {
+                this.with_target(|target| {
+                    if let FieldValue::Struct(s) = target {
+                        let bytes = s.data.get(offset..offset + $size)
+                            .ok_or_else(|| mlua::Error::RuntimeError(
+                                format!("Out of bounds on read_{} at offset {}", stringify!($name), offset)
+                            ))?;
+                        Ok(<$type>::from_le_bytes(bytes.try_into().unwrap()))
+                    } else {
+                        Err(mlua::Error::RuntimeError(format!("Path is not a Struct: {:?}", target)))
+                    }
+                })
+            });
+
+            // Write Method
+            $methods.add_method_mut(concat!("write_", stringify!($name)), |_, this, (value, offset): ($type, usize)| {
+                this.with_target_mut(|target| {
+                    if let FieldValue::Struct(s) = target {
+                        let bytes = s.data.get_mut(offset..offset + $size)
+                            .ok_or_else(|| mlua::Error::RuntimeError(
+                                format!("Out of bounds on write_{} at offset {}", stringify!($name), offset)
+                            ))?;
+                        bytes.copy_from_slice(&value.to_le_bytes());
+                        Ok(())
+                    } else {
+                        Err(mlua::Error::RuntimeError(format!("Path is not a Struct: {:?}", target)))
+                    }
+                })
+            });
+        )*
+    };
+}
+
 impl LuaUserData for SaveDataRef {
     fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("save", |lua, this, (path, steamid): (String, u64)| {
+        register_struct_accessors!(
+            methods,
+            u8,  u8,  1,
+            u16, u16, 2,
+            u32, u32, 4,
+            u64, u64, 8,
+            i8,  i8,  1,
+            i16, i16, 2,
+            i32, i32, 4,
+            i64, i64, 8,
+            f32, f32, 4,
+            f64, f64, 8
+        );
+        methods.add_method("save", |_, this, (path, steamid): (String, u64)| {
             let path_og = path.clone();
             let path_expanded = shellexpand::full(&path)
                 .map_err(|e| mlua::Error::RuntimeError(format!("Failed to shell expand path {e}")))?;
@@ -449,13 +499,16 @@ impl LuaUserData for SaveDataRef {
                     }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {index:?} on root ref")))?;
 
                     match target {
-                        FieldValue::Class(_) | FieldValue::Array(_) => {
-
+                        FieldValue::Class(_) | FieldValue::Array(_) | FieldValue::Struct(_) => {
                             let mut new_path = this.path.clone();
                             new_path.push(index.clone());
                             return Ok(SaveDataRef { root: this.root.clone(), path: new_path }.into_lua(lua)?);
                         },
-                        _ => return target.clone().into_lua(lua)
+                        _ => {
+                            let res = target.clone().into_lua(lua);
+                            //println!("path={:?}, {target:?}, {res:?}", this.path);
+                            return res;
+                        }
                     }
                 })
             }
@@ -468,6 +521,8 @@ impl LuaUserData for SaveDataRef {
                     return Ok(array.values.len())
                 } else if let FieldValue::Class(class) = target {
                     return Ok(class.fields.len())
+                } else if let FieldValue::Struct(s) = target {
+                    return Ok(s.data.len())
                 };
                 Err(LuaError::RuntimeError(format!("Could not find PathRef {:?} on root ref", this.path)))
             });

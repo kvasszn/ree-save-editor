@@ -14,7 +14,7 @@ impl IntoLua for FieldValue {
             FieldValue::S32(v) => Ok(LuaValue::Integer(v as i64)),
             FieldValue::U32(v) => Ok(LuaValue::Integer(v as i64)),
             FieldValue::S64(v) => Ok(LuaValue::Integer(v)),
-            FieldValue::U64(v) => Ok(LuaValue::Number(v as f64)),
+            FieldValue::U64(v) => Ok(LuaValue::Integer(v as i64)),
             FieldValue::F32(v) => Ok(LuaValue::Number(v as f64)),
             FieldValue::F64(v) => Ok(LuaValue::Number(v)),
 
@@ -30,6 +30,9 @@ impl IntoLua for FieldValue {
                 lua.create_userdata(*a)?.into_lua(lua)
             },
             FieldValue::Enum(v) => Ok(LuaValue::Integer(v as i64)),
+            FieldValue::Struct(a) => {
+                lua.create_userdata(*a)?.into_lua(lua)
+            },
             _ => Ok(LuaValue::Nil),
         }
     }
@@ -139,6 +142,146 @@ impl IntoLua for Field {
     }
 }
 
+
+impl LuaUserData for Struct {
+    fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
+        methods.add_meta_method(mlua::MetaMethod::Len, |_, this, ()| {
+            Ok(this.data.len())
+        });
+
+        methods.add_meta_method(mlua::MetaMethod::Index, |_, this, index: usize| {
+            // Lua is 1-indexed
+            this.data.get(index - 1)
+                .copied()
+                .ok_or_else(|| mlua::Error::RuntimeError("Index out of bounds".into()))
+        });
+
+        methods.add_meta_method(mlua::MetaMethod::ToString, |_, this, ()| {
+            Ok(format!("Struct(size: {})", this.data.len()))
+        });
+
+        methods.add_method("to_hex", |_, this, ()| {
+            Ok(hex::encode(&this.data))
+        });
+
+
+        // Reads
+        methods.add_method("read_u8", |_, this, offset: usize| {
+            this.data.get(offset).copied().ok_or_else(|| mlua::Error::RuntimeError("Out of bounds".into()))
+        });
+        methods.add_method("read_u16", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 2)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_u16".into()))?;
+            Ok(u16::from_le_bytes(bytes.try_into().unwrap()))
+        });
+        methods.add_method("read_u32", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 4)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_u32".into()))?;
+            Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
+        });
+        methods.add_method("read_u64", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 8)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_u64".into()))?;
+            Ok(u64::from_le_bytes(bytes.try_into().unwrap()))
+        });
+
+        methods.add_method("read_i8", |_, this, offset: usize| {
+            this.data.get(offset).copied().map(|x| x as i8)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds".into()))
+        });
+        methods.add_method("read_i16", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 2)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_i16".into()))?;
+            Ok(i16::from_le_bytes(bytes.try_into().unwrap()))
+        });
+        methods.add_method("read_i32", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 4)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_i32".into()))?;
+            Ok(i32::from_le_bytes(bytes.try_into().unwrap()))
+        });
+        methods.add_method("read_i64", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 8)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_i64".into()))?;
+            Ok(i64::from_le_bytes(bytes.try_into().unwrap()))
+        });
+
+        methods.add_method("read_f32", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 4)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_f32".into()))?;
+            Ok(f32::from_le_bytes(bytes.try_into().unwrap()))
+        });
+        methods.add_method("read_f64", |_, this, offset: usize| {
+            let bytes = this.data.get(offset..offset + 8)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on read_f64".into()))?;
+            Ok(f64::from_le_bytes(bytes.try_into().unwrap()))
+        });
+
+        // Writes
+        methods.add_method_mut("write_u8", |_, this, (value, offset): (u8, usize)| {
+            let byte = this.data.get_mut(offset)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_u8".into()))?;
+            *byte = value;
+            Ok(())
+        });
+        methods.add_method_mut("write_u16", |_, this, (value, offset): (u16, usize)| {
+            let bytes = this.data.get_mut(offset..offset + 2)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_u16".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+        methods.add_method_mut("write_u32", |_, this, (value, offset): (u32, usize)| {
+            let bytes = this.data.get_mut(offset..offset + 4)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_u32".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+        methods.add_method_mut("write_u64", |_, this, (value, offset): (u64, usize)| {
+            println!("modifying self");
+            let bytes = this.data.get_mut(offset..offset + 8)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_u64".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+
+        methods.add_method_mut("write_i8", |_, this, (value, offset): (i8, usize)| {
+            let byte = this.data.get_mut(offset)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_i8".into()))?;
+            *byte = value as u8;
+            Ok(())
+        });
+        methods.add_method_mut("write_i16", |_, this, (value, offset): (i16, usize)| {
+            let bytes = this.data.get_mut(offset..offset + 2)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_i16".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+        methods.add_method_mut("write_i32", |_, this, (value, offset): (i32, usize)| {
+            let bytes = this.data.get_mut(offset..offset + 4)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_i32".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+        methods.add_method_mut("write_i64", |_, this, (value, offset): (i64, usize)| {
+            let bytes = this.data.get_mut(offset..offset + 8)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_i64".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+
+        methods.add_method_mut("write_f32", |_, this, (value, offset): (f32, usize)| {
+            let bytes = this.data.get_mut(offset..offset + 4)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_f32".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+        methods.add_method_mut("write_f64", |_, this, (value, offset): (f64, usize)| {
+            let bytes = this.data.get_mut(offset..offset + 8)
+                .ok_or_else(|| mlua::Error::RuntimeError("Out of bounds on write_f64".into()))?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            Ok(())
+        });
+    }
+}
 impl LuaUserData for Class {
     fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method(LuaMetaMethod::Index, |_lua, this, key: String| {
