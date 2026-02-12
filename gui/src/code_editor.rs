@@ -107,7 +107,7 @@ impl CodeEditor {
             self.save();
         }
 
-        ui.label("THIS EDITOR SUCKS YOU PROBABLY SHOULDN'T USE IT IT'S MORE HERE TO JUST SHOW YOUR CODE");
+        ui.label("THIS EDITOR SUCKS YOU PROBABLY SHOULDN'T USE IT IT'S MORE HERE TO JUST SHOW THE CODE");
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
             let mut layout_job = egui_extras::syntax_highlighting::highlight(
                 ui.ctx(),

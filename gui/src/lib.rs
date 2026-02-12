@@ -3,6 +3,8 @@ pub mod file;
 pub mod steam;
 pub mod tab;
 pub mod viewer;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub mod code_editor;
 
 use mhtame::edit::{EditContext, Editable};
@@ -1072,6 +1074,8 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
+    use crate::app::TameApp;
+
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
 
@@ -1100,7 +1104,7 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             web_options,
-            Box::new(|cc| Ok(Box::new(TameAppOld::new(config, cc)))),
+            Box::new(|cc| Ok(Box::new(TameApp::new(config)))),
         )
         .await
 }

@@ -6,6 +6,8 @@ pub mod rsz;
 pub mod file;
 pub mod save;
 pub mod sdk;
+
+#[cfg(feature = "scripting")]
 pub mod bindings;
 
 #[cfg(feature = "tdb")]
@@ -16,7 +18,6 @@ extern crate image;
 
 use clap::Parser;
 use file::FileReader;
-use mhtame::sdk::type_map::murmur3;
 use rsz::dump::{ENUM_FILE, RSZ_FILE};
 use std::error::Error;
 use std::fs::read_to_string;
@@ -139,12 +140,6 @@ fn main() -> Result<()> {
         //println!("{:#?}", rsz);
         println!("Dyn Rsz took {}ms", now.elapsed()?.as_millis());
     }*/
-    let target = 0x85e904c1 as u32;
-    let guesses = ["_detail", "detail", "Detail", "_Detail", "DETAIL", "_DETAIL", "Title", "Game", "Data", "SaveData", "SaveFileDetail"];
-
-    for guess in &guesses {
-        println!("{:010x}", murmur3(guess, 0xffffffff));
-    }
 
     // Ugly but will change later
     let rsz_file = std::env::var("RSZ_FILE").unwrap_or_else( 

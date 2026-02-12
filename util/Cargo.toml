@@ -11,7 +11,4 @@ crate-type = ["lib"]
 [dependencies]
 murmur3 = "0.5.2"
 uuid = "1.19.0"
-nalgebra-glm = { version = "0.20", features = ["serde-serialize"]}
-nalgebra = "*"
-
 

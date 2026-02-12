@@ -638,7 +638,7 @@ impl Class {
         let hash = reader.read_u32()?;
         //let name = RszDump::get_struct(hash).and_then(|x|Ok(x.name.clone())).unwrap_or("none".to_string());
         let mut fields = IndexMap::<u32, Field>::new();
-        for i in 0..num_fields {
+        for _ in 0..num_fields {
             let field = Field::read(reader);
             match field {
                 Ok(field) => {fields.insert(field.hash, field);},

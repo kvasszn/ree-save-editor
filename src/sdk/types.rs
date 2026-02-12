@@ -140,7 +140,7 @@ impl Vec3 {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub struct Vec4(f32, f32, f32, f32);
+pub struct Vec4(pub f32, pub f32, pub f32, pub f32);
 impl Vec4 {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
         Ok(Self(r.read_f32()?,r.read_f32()?,r.read_f32()?,r.read_f32()?,))

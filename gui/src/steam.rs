@@ -1,6 +1,5 @@
-use std::{error::Error, path::{Path, PathBuf}};
+use std::{collections::HashMap, error::Error, path::{Path, PathBuf}};
 
-use egui::ahash::HashMap;
 use serde::{self,Deserialize};
 
 #[derive(Deserialize, Debug, Clone)]

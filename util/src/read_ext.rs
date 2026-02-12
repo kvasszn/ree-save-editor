@@ -1,5 +1,4 @@
 use std::io::{self, Read};
-use nalgebra_glm::*;
 use uuid::Uuid;
 
 pub trait ReadExt: Read {
@@ -143,8 +142,8 @@ pub trait ReadExt: Read {
         self.read_exact(&mut buf)?;
         Ok(f64::from_le_bytes(buf))
     }
-    fn read_f32vec4(&mut self) ->io::Result<Vec4> {
-        Ok(vec4(
+    fn read_f32vec4(&mut self) ->io::Result<(f32, f32, f32, f32)> {
+        Ok((
             self.read_f32()?,
             self.read_f32()?,
             self.read_f32()?,
@@ -152,20 +151,14 @@ pub trait ReadExt: Read {
         ))
     }
 
-    fn read_f32vec3(&mut self) ->io::Result<Vec3> {
-        Ok(vec3(self.read_f32()?, self.read_f32()?, self.read_f32()?))
+    fn read_f32vec3(&mut self) ->io::Result<(f32, f32, f32,)> {
+        Ok((self.read_f32()?, self.read_f32()?, self.read_f32()?))
     }
 
-    fn read_f32vec2(&mut self) ->io::Result<Vec2> {
-        Ok(vec2(self.read_f32()?, self.read_f32()?))
+    fn read_f32vec2(&mut self) ->io::Result<(f32, f32)> {
+        Ok((self.read_f32()?, self.read_f32()?))
     }
 
-    fn read_f32m4x4(&mut self) ->io::Result<Mat4x4> {
-        let data: Vec<f32> = std::iter::from_fn(|| Some(self.read_f32()))
-            .take(16)
-            .collect::<io::Result<_>>()?;
-        Ok(make_mat4x4(&data))
-    }
     fn read_guid(&mut self) ->io::Result<Uuid> {
         let mut buf = [0; 16];
         for i in 0..16 {

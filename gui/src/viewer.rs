@@ -4,14 +4,17 @@ use std::{
 
 use eframe::egui::{Ui};
 use egui_dock::tab_viewer::OnCloseResponse;
+
+#[cfg(not(target_arch = "wasm32"))]
+use mhtame::bindings::runner::ScriptRunner;
+
 use mhtame::{
-    bindings::runner::ScriptRunner,
     edit::copy::CopyBuffer,
     save::remap::Remap,
     sdk::type_map::{ContentLanguage, TypeMap},
 };
 
-use crate::{Config, file::FileView, tab::{self, TabType}};
+use crate::{Config, tab::{self, TabType}};
 
 #[derive(Debug)]
 pub struct Viewer {
@@ -19,6 +22,8 @@ pub struct Viewer {
     game_ctx: GameCtx,
     pub config: Config,
     pub default_language: ContentLanguage,
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub script_runner: ScriptRunner,
     pub reload: bool,
 }
@@ -26,23 +31,25 @@ pub struct Viewer {
 impl Viewer {
     pub fn new(config: Config) -> Self {
         let game_ctx = GameCtx::new(&config);
-        let script_runner = ScriptRunner::new();
         Self {
             game_ctx,
             config,
             num_tabs: 0,
             default_language: ContentLanguage::English,
-            script_runner: script_runner,
+            #[cfg(not(target_arch = "wasm32"))]
+            script_runner: ScriptRunner::new(),
             reload: true,
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn run_script(&mut self, path: &str) {
         let res = self.script_runner.load_and_execute_from_file(path);
         println!("[INFO] run_script {res:?}");
     }
 
     pub fn update(&mut self, ctx: &eframe::egui::Context) {
+        #[cfg(not(target_arch = "wasm32"))]
         self.script_runner.update_dialogs(ctx);
     }
 }
@@ -56,18 +63,35 @@ pub struct GameCtx {
 
 impl GameCtx {
     pub fn new(config: &Config) -> Self {
+       #[cfg(not(target_arch = "wasm32"))]
         let type_map = TypeMap::load_with_msgs(
             &config.rsz_path,
             &config.enums_path,
             &config.msgs_path,
             &config.mappings_path,
         )
-        .expect(
-            "Could not load assets for the editor, make sure your assets are in the right place",
-        );
-        let type_map = type_map
-            .load_string_map("assets/mhst3_strings.txt")
-            .expect("Error loading mhst3_strings.txt map");
+        .expect("Could not load assets for the editor, make sure your assets are in the right place")
+        .load_string_map("assets/mhst3_strings.txt")
+        .expect("Error loading mhst3_strings.txt map");
+       #[cfg(target_arch = "wasm32")]
+        let type_map = {
+            use mhtame::rsz::dump::decompress;
+            const RSZ_JSON: &[u8] = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
+            const ENUMS_JSON: &[u8] = include_bytes!("../../assets/enumsmhwilds.json.gz");
+            const MSGS_JSON: &[u8] = include_bytes!("../../assets/combined_msgs.json.gz");
+            const ENUM_MAPPINGS_JSON: &str = include_str!("../../assets/enum_text_mappings.json");
+            let rsz = decompress(RSZ_JSON);
+            let enums = decompress(ENUMS_JSON);
+            let msgs = decompress(MSGS_JSON);
+            TypeMap::parse_str(&rsz, &enums)
+                .expect("Could not load type map")
+                .load_msg(&msgs, ENUM_MAPPINGS_JSON)
+        };
+
+        #[cfg(target_arch = "wasm32")]
+        let remaps: HashMap<String, Remap> =
+            serde_json::from_str(include_str!("../../assets/wilds_remap.json")).unwrap();
+        #[cfg(not(target_arch = "wasm32"))]
         let remaps = {
             let data = std::fs::read_to_string("./assets/wilds_remap.json");
             data.map(|data| {
@@ -92,6 +116,7 @@ impl egui_dock::TabViewer for Viewer {
         ui.push_id(tab.idx, |ui| {
             match &mut tab.tab {
                 TabType::SaveFileView(save_file) => save_file.ui(ui, &mut self.game_ctx),
+                #[cfg(not(target_arch = "wasm32"))]
                 TabType::Script(script) => {
                     if script.ui(ui) {
                         if script.path.is_none() {
@@ -111,7 +136,8 @@ impl egui_dock::TabViewer for Viewer {
     fn title(&mut self, tab: &mut Self::Tab) -> eframe::egui::WidgetText {
         let title: String = match &tab.tab {
             TabType::SaveFileView(_) => format!("File #{}", tab.idx).into(),
-            TabType::Script(script) => script.path.clone().unwrap_or(format!("File #{}", tab.idx).into())
+            #[cfg(not(target_arch = "wasm32"))]
+            TabType::Script(script) => script.path.clone().unwrap_or(format!("File #{}", tab.idx).into()),
         };
         title.into()
     }

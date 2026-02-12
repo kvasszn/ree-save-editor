@@ -1,9 +1,9 @@
 use crate::rsz::rszserde::DeRsz;
 use crate::rsz::{Rsz, rszserde::StringU16};
 use crate::reerr::FileParseError::*;
+use crate::sdk::Vec4;
 use util::*;
 use std::io::{Read, Seek};
-use nalgebra_glm::Vec4;
 use serde::Serialize;
 use crate::file::{self, DefaultDump, StructRW};
 
@@ -103,9 +103,11 @@ impl StructRW for Pog {
 
             let mut points = Vec::with_capacity(num_points as usize);
             for _i in 0..num_points {
+                let a = Vec4::read(reader)?;
+                let b = Vec4::read(reader)?;
                 let point = PogPoint {
-                    a: reader.read_f32vec4()?,
-                    b: reader.read_f32vec4()?,
+                    a, 
+                    b,
                     c: (reader.read_i32()?, reader.read_i32()?, reader.read_i32()?, reader.read_i32()?),
                 };
                 points.push(point);

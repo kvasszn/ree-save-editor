@@ -22,10 +22,8 @@ system_save[1]._Data._SystemCommon.PalicoTicketsUsed:write_u64(0, 0);
 local slots = user_save[1]._Data
 if slots ~= nil then
 	for i = 1, #slots do
-		if slots[i] ~= nil then
-			slots[i]._FreeBuffer.BufferInt[18] = 0
-			slots[i]._FreeBuffer.BufferInt[19] = 0
-		end
+		slots[i]._FreeBuffer.BufferInt[18] = 0
+		slots[i]._FreeBuffer.BufferInt[19] = 0
 	end
 end
 

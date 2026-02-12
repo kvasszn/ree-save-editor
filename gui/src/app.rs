@@ -7,7 +7,10 @@ use eframe::{
 use egui_dock::{DockArea, DockState};
 use mhtame::{sdk::type_map::ContentLanguage};
 
-use crate::{Config, code_editor::CodeEditor, file::{FilePicker, FileView}, tab::Tab, viewer::Viewer};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::code_editor::CodeEditor;
+
+use crate::{Config, file::{FilePicker, FileView}, tab::Tab, viewer::Viewer};
 
 pub struct TameApp {
     viewer: Viewer,
@@ -46,6 +49,19 @@ impl eframe::App for TameApp {
             self.viewer.reload = false;
         }
         if let Some(path) = self.file_opener.take() {
+            #[cfg(target_arch = "wasm32")]
+            {
+                log::info!("Loading Save File From {path}");
+                let file_view = FileView::from_path(
+                    &self.viewer.config,
+                    path,
+                    self.viewer.num_tabs,
+                    self.viewer.default_language,
+                );
+                let tab = Tab::from(file_view);
+                self.add_tab(tab);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
             if path.ends_with("lua") {
                 log::info!("Loading Lua Script From {path}");
                 let tab = Tab::load_script(&path, self.viewer.num_tabs);
@@ -88,10 +104,12 @@ impl eframe::App for TameApp {
                         );
                         self.add_tab(Tab::from(file_view));
                     }
+                    #[cfg(not(target_arch = "wasm32"))]
                     if ui.button("New Script").clicked() {
                         self.add_tab(Tab::from(CodeEditor::new_default(self.viewer.num_tabs)));
-                    }
-                    if ui.button("Run Script").clicked() {
+                    } 
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if ui.button("Open Script").clicked() {
                         let cur = std::env::current_dir().unwrap_or(PathBuf::from("~"));
                         let file_path = rfd::FileDialog::new()
                             .set_title("Select Lua Script")
@@ -103,10 +121,26 @@ impl eframe::App for TameApp {
                         if let Some(file_path) = file_path {
                             let file_path = file_path.to_str();
                             if let Some(file_path) = file_path {
-                                self.viewer.run_script(&file_path);
+                                self.add_tab(Tab::from(CodeEditor::new(&file_path, self.viewer.num_tabs)));
                             }
                         }
                     }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    ui.menu_button("Run Script", |ui| {
+                        if let Ok(paths) = std::fs::read_dir("./scripts/") {
+                            for path in paths {
+                                if let Ok(path) = path {
+                                    let path = path.path().display().to_string();
+                                    if path.ends_with("lua") {
+                                        if ui.button(&path).clicked() {
+                                            self.add_tab(Tab::from(CodeEditor::new(&path, self.viewer.num_tabs)));
+                                            self.viewer.run_script(&path);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
                 });
                 ui.menu_button("Options", |ui| {
                     ui.menu_button(

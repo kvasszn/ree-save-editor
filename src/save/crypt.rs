@@ -45,7 +45,6 @@ mod backend {
 #[cfg(not(target_os = "linux"))]
 mod backend {
     pub use num_bigint::{BigInt as Integer, Sign};
-    pub use num_traits::{FromPrimitive, ToPrimitive};
     
     // Helper: Modular Exponentiation for Num-BigInt
     pub fn mod_exp(base: &Integer, exp: &Integer, modulus: &Integer) -> Integer {

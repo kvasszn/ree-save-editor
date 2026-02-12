@@ -1,12 +1,9 @@
-
 #[cfg(not(target_arch = "wasm32" ))]
 mod native {
-    use std::path::Path;
-
     use clap::Parser;
     use eframe::egui;
     use mhtame::rsz::dump::{ENUM_FILE, RSZ_FILE};
-    use mhtame_gui::{Config, app::TameApp, steam};
+    use mhtame_gui::{Config, app::TameApp};
 
     #[derive(Parser, Debug)]
     #[command(name = "mhtame-gui")]

@@ -3,7 +3,6 @@ use util::*;
 use crate::rsz::Rsz;
 use crate::reerr::{Result, FileParseError::*};
 use std::io::{Read, Seek};
-use nalgebra_glm::Vec4;
 use serde::Serialize;
 use uuid::Uuid;
 

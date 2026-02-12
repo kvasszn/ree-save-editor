@@ -1,12 +1,11 @@
 pub mod save;
 pub mod runner;
 
-use std::{cell::RefCell, fs::File, io::Write, path::PathBuf, rc::Rc, sync::{Arc, RwLock}};
+use std::{path::PathBuf,sync::{Arc, RwLock}};
 
-use eframe::egui::TextBuffer;
-use mlua::{MaybeSend, prelude::*};
+use mlua::{prelude::*};
 
-use crate::{bindings::save::set_fieldvalue_from_lua, save::{SaveFile, game::Game, types::{Array, Class, FieldValue}}, sdk::type_map::murmur3};
+use crate::{bindings::save::set_fieldvalue_from_lua, save::{SaveFile,types::{Array, Class, FieldValue}}};
 
 #[derive(Clone, Debug)]
 pub enum RefPath {
@@ -29,6 +28,7 @@ pub struct DataRef {
 }
 
 impl DataRef {
+    #[allow(unused)]
     fn traverse<'b, 'a: 'b> (&'a self) -> Option<FieldValue> {
         println!("traversing: {:?}", self.path);
         match &*self.root.write().unwrap() {
@@ -256,6 +256,7 @@ pub struct SaveDataRef {
 }
 
 impl SaveDataRef {
+    #[allow(unused)]
     fn get_value_with_path(&self, last_path: &RefPath) -> Option<FieldValue> {
         let mut target = self.get_value()?;
         target = match (target, last_path) {
@@ -294,6 +295,7 @@ impl SaveDataRef {
     }
 
 
+    #[allow(unused)]
     fn with_initial_class<F, R>(&self, func: F) -> LuaResult<R>
     where
         F: FnOnce(&Class) -> LuaResult<R>,
@@ -308,7 +310,7 @@ impl SaveDataRef {
             _ => None
         }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on root ref")))?;
 
-        let Some(initial_index) = path.next() else {
+        let Some(_) = path.next() else {
             return func(initial_class)
         };
 
