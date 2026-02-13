@@ -2,7 +2,7 @@ use std::io::{Cursor, Read, Seek, Write};
 use std::error::Error;
 use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
-use crate::sdk::type_map::{TypeInfo, TypeMap};
+use crate::sdk::type_map::{FieldInfo, TypeInfo, TypeMap};
 use crate::sdk::{types::*};
 
 use util::*;
@@ -30,6 +30,48 @@ pub enum FieldType {
     String = 0xf, // U16String
     Struct = 0x10,
     Class = 0x11,
+}
+
+impl FieldType {
+    pub fn from_field_info(info: &FieldInfo) -> Self {
+        if info.array {
+            return Self::Array
+        }
+
+        // enums
+        if info.original_type.starts_with("System.Enum") {
+            return Self::Enum
+        }
+        match info.r#type.as_str() {
+            "S16" | "S32" | "S64" | "U32" | "U64" => {
+                if !info.original_type.starts_with("System.") {
+                    return Self::Enum
+                }
+            }
+            _ => ()
+        }
+
+        match info.r#type.as_str() {
+            "Bool"  => return Self::Boolean,
+            "S8"  => return Self::S8,
+            "S16" => return Self::S16,
+            "S32" => return Self::S32,
+            "S64" => return Self::S64,
+            "U8"  => return Self::U8,
+            "U16" => return Self::U16,
+            "U32" => return Self::U32,
+            "U64" => return Self::U64,
+            "C8"  => return Self::C8,
+            "C16" => return Self::C16,
+            "F32" => return Self::F32,
+            "F64" => return Self::F64,
+            "Object" | "UserData" => return Self::Class,
+            "Struct" => return Self::Struct,
+            "String" => return Self::String,
+            _ => return Self::Struct, // probably?
+        }
+        //return Self::Unknown
+    }
 }
 
 #[derive(Debug, Clone)]

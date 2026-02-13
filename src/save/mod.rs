@@ -1,3 +1,4 @@
+pub mod corrupt;
 pub mod crypt;
 pub mod game;
 pub mod types;
@@ -115,6 +116,86 @@ impl SaveFile {
         f.write_all(&data)?;
         f.write_all(&file_hash.to_le_bytes())?;
         Ok(())
+    }
+    pub fn read_data<R: Read + Seek>(reader: &mut R, ctx: SaveContext) -> crate::file::Result<Vec<u8>> {
+        let magic = Magic::<4>::read(reader, &mut ())?;
+        if &magic != b"DSSS" {
+            return Err(format!("Magic {:#04X?}, != DSSS", &magic.0).into())
+        }
+        let version = u32::read(reader, &mut ())?;
+        if version != 2 {
+            return Err(format!("Save file version incorrect I think: {version}").into())
+        }
+        let flags = u32::read(reader, &mut ())?;
+        println!("Version={version}, Save Flags: {:034b}", flags); // theres flags for encryption type, compression,
+        let _save_or_user_i_think = u32::read(reader, &mut ())?;
+        //println!("{_save_or_user_i_think}");
+        let mandarin = flags & 0x10 != 0;
+        let blowfish = flags & 0x1 != 0;
+        let _autostrong = flags & 0x3 != 0;
+        let _citrus = flags & 0x4 != 0;
+        let deflate = flags & 0x8 != 0;
+        // 0x4 is something related to the usage of mandarin and deflate i think
+        println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={_citrus}, autostrong={_autostrong}");
+
+        let data_start = reader.tell()?;
+        reader.seek(std::io::SeekFrom::End(-12))?;
+        let decrypted_len = u64::read(reader, &mut ())?;
+        log::info!("decrypted_len={decrypted_len:x}");
+        let end_hash = u32::read(reader, &mut ())?;
+        log::info!("end_hash={end_hash:x}");
+        let len = reader.stream_position()?;
+        reader.seek(SeekFrom::Start(0))?;
+        let mut file_bytes: Vec<u8> = vec![];
+        reader.read_to_end(&mut file_bytes)?;
+        let file_hash = murmur3(&file_bytes[..(len as usize - 4)], 0xffffffff);
+        if end_hash != file_hash {
+            log::info!("[File Hash Check] Invalid File Hashes: target={:x}, calculated={:x}", end_hash, file_hash);
+        } else {
+            log::info!("[File Hash Check] File Hashes equal: target={:x}, calculated={:x}", end_hash, file_hash);
+        }
+
+        // Decryption
+        reader.seek(SeekFrom::Start(data_start))?;
+        let mut encrypted = vec![];
+        reader.read_to_end(&mut encrypted)?;
+        let data = if mandarin {
+            let mandarin = Mandarin::init_from_game(ctx.game)?;
+            let key = if ctx.key == 0 {
+                mandarin.brute_force_v2(&encrypted).unwrap_or(0)
+            } else {ctx.key};
+            let key = ctx.game.get_key_from_steamid(key);
+            let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
+            log::info!("[Decrypted]");
+            decrypted_buf
+        } else {
+            encrypted
+        };
+        let mut data = if deflate {
+            // Decompression
+            let mut decrypted_buf = Cursor::new(&data);
+            // this is so fucking stupid
+            let _compressed_size_from_afterthis = u64::read(&mut decrypted_buf, &mut ())?;
+            let _unk = u32::read(&mut decrypted_buf, &mut ())?; // this is just 1?
+            let compressed_buffer_size = u32::read(&mut decrypted_buf, &mut ())?;
+            let decompressed_size = u64::read(&mut decrypted_buf, &mut ())?;
+            let pos = decrypted_buf.position() as usize;
+            let compressed = &decrypted_buf.get_ref()[pos..pos+compressed_buffer_size as usize];
+            let mut decoder = DeflateDecoder::new(Vec::new());
+            decoder.write_all(&compressed)?;
+            let decompressed = decoder.finish()?;
+            if decompressed_size != decompressed.len() as u64 {
+                log::info!("[Decompression] expected size not equal to buffer size: continuing...");
+            }
+            log::info!("[Decompressed]");
+            decompressed
+        } else {data};
+
+        /*if ctx.repair {
+            let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
+            data[0..16].copy_from_slice(&good_header);
+        };*/
+        Ok(data)
     }
 }
 

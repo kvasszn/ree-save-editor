@@ -22,7 +22,7 @@ pub use pog::*;
 use std::{collections::HashSet, error::Error, fs::File, io::{BufReader, Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}};
 
 
-use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext, game::Game}};
+use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext, corrupt::CorruptSaveReader, game::Game}};
 use crate::save::SaveFile;
 use serde::Serialize;
 use util::*;

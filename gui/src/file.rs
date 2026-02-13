@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::{collections::HashSet, error::Error, io::{Cursor, Read, Seek}, sync::mpsc::{Receiver, Sender}, time::Duration};
 
 use eframe::{self, egui::{ComboBox, ScrollArea, TextEdit, Ui}};
+use mhtame::save::corrupt::CorruptSaveReader;
 use mhtame::{edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::{GAME_OPTIONS, Game}}, sdk::type_map::ContentLanguage};
 
 use crate::{Config, steam::{UserAccount, get_wilds_save_files}, viewer::GameCtx};
@@ -77,27 +78,27 @@ impl FileView {
         self.current_file = CurrentFile::Path(path);
     }
 
-    fn update_input_file(&mut self) {
+    fn update_input_file(&mut self, game: &mut GameCtx) {
         let res = self.input_file_picker.pending_result.take();
         if let Some(res) = res {
             match res {
                 FilePickResult::Native(p) => {
                     let file = CurrentFile::Path(p);
-                    self.load(file);
+                    self.load(file, game);
                 }
                 FilePickResult::Wasm { name, data } => {
                     let file = CurrentFile::FileData {
                         file_name: name,
                         bytes: data,
                     };
-                    self.load(file);
+                    self.load(file, game);
                 }
             }
         }
     }
 
     pub fn ui(&mut self, ui: &mut Ui, game_ctx: &mut GameCtx) {
-        self.update_input_file();
+        self.update_input_file(game_ctx);
         ui.horizontal(|ui| {
             self.input_file_picker.ui(ui);
             self.input_file_picker.update();
@@ -156,8 +157,8 @@ impl FileView {
                     self.input_file_picker.pending_result =
                         Some(FilePickResult::Native(self.input_file_picker.text.clone()));
                 }
-                self.update_input_file();
-                self.reload();
+                self.update_input_file(game_ctx);
+                self.reload(game_ctx);
             }
 
             ui.label("Game Profile");
@@ -180,7 +181,7 @@ impl FileView {
         ui.horizontal(|ui| {
             if let Some(path) = self.steam.found_file(ui) {
                 self.update_file_path(path);
-                self.reload();
+                self.reload(game_ctx);
             };
             #[cfg(not(target_arch = "wasm32"))]
             self.steam.edit_steam_path(ui);
@@ -249,8 +250,33 @@ impl FileView {
         self.show_popup = true;
     }
 
-    fn read_save<R: Read + Seek>(&mut self, reader: &mut R) -> Option<SaveFile> {
+    fn read_save_corrupt<R: Read + Seek>(&mut self, reader: &mut R, game_ctx: &mut GameCtx) -> Option<SaveFile> {
         if let Some(steamid) = self.steam.steam_id {
+            let data = SaveFile::read_data(reader, SaveContext{
+                key: steamid,
+                game: self.game,
+                repair: self.repair
+            }).ok()?;
+            let mut reader = Cursor::new(data);
+            let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
+            let save_file = corrupted_reader.read_missing(&mut reader);
+            return Some(save_file)
+        }
+        None
+    }
+    fn read_save<R: Read + Seek>(&mut self, reader: &mut R, game_ctx: &mut GameCtx) -> Option<SaveFile> {
+        if let Some(steamid) = self.steam.steam_id {
+            if self.repair {
+                let data = SaveFile::read_data(reader, SaveContext{
+                    key: steamid,
+                    game: self.game,
+                    repair: self.repair
+                }).ok()?;
+                let mut reader = Cursor::new(data);
+                let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
+                let save_file = corrupted_reader.read_missing(&mut reader);
+                return Some(save_file)
+            }
             let mut ctx = SaveContext { key: steamid , game: self.game , repair: false };
             match SaveFile::read(reader, &mut ctx) {
                 Ok(save) => {
@@ -266,7 +292,7 @@ impl FileView {
         None
     }
 
-    pub fn load(&mut self, current_file: CurrentFile) {
+    pub fn load(&mut self, current_file: CurrentFile, game_ctx: &mut GameCtx) {
         match current_file {
             CurrentFile::Path(path) => {
                 let expanded =
@@ -275,7 +301,7 @@ impl FileView {
                 if path.exists() {
                     match std::fs::File::open(&path) {
                         Ok(mut reader) => {
-                            let save = self.read_save(&mut reader);
+                            let save = self.read_save(&mut reader, game_ctx);
                             if let Some(save) = save {
                                 self.current_file = CurrentFile::Loaded {
                                     file_name: path.display().to_string(),
@@ -292,7 +318,8 @@ impl FileView {
             }
             CurrentFile::FileData { file_name, bytes } => {
                 let mut reader = Cursor::new(&bytes);
-                let save = self.read_save(&mut reader);
+
+                let save = self.read_save(&mut reader, game_ctx);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::LoadedWeb {
                         file_name,
@@ -313,7 +340,7 @@ impl FileView {
         }
     }
 
-    pub fn reload(&mut self) -> bool {
+    pub fn reload(&mut self, game_ctx: &mut GameCtx) -> bool {
         let current_file = std::mem::replace(&mut self.current_file, CurrentFile::Null);
         match current_file {
             CurrentFile::Path(path) => {
@@ -325,7 +352,7 @@ impl FileView {
                     if path.exists() {
                         match std::fs::File::open(&path) {
                             Ok(mut reader) => {
-                                let save = self.read_save(&mut reader);
+                                let save = self.read_save(&mut reader, game_ctx);
                                 if let Some(save) = save {
                                     self.current_file = CurrentFile::Loaded {
                                         file_name: path.display().to_string(),
@@ -345,7 +372,7 @@ impl FileView {
             },
             CurrentFile::FileData { file_name, bytes } => {
                 let mut reader = Cursor::new(bytes);
-                let save = self.read_save(&mut reader);
+                let save = self.read_save(&mut reader, game_ctx);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::Loaded {
                         file_name: file_name.to_string(),
@@ -356,7 +383,7 @@ impl FileView {
             },
             CurrentFile::LoadedWeb { file_name, original_bytes, .. } => {
                 let mut reader = Cursor::new(&original_bytes);
-                let save = self.read_save(&mut reader);
+                let save = self.read_save(&mut reader, game_ctx);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::LoadedWeb {
                         file_name: file_name.to_string(),
@@ -368,7 +395,7 @@ impl FileView {
             },
             CurrentFile::Loaded { .. } | CurrentFile::Null => {
                 self.current_file = CurrentFile::Path(self.input_file_picker.text.clone());
-                if self.reload() == false {
+                if self.reload(game_ctx) == false {
                     self.popup_msg = format!("Could not open file {:?}", self.input_file_picker.text);
                     self.show_popup = true;
                     return false;

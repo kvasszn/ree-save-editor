@@ -508,6 +508,16 @@ impl FieldInfo {
         map.get_by_hash(self.type_hash)
             //map.get_by_name(&self.original_type)
     }
+    pub fn get_original_type_array<'a>(&'a self, map: &'a TypeMap) -> Option<&'a TypeInfo> {
+        /*let base_name = match self.original_type.find('<') {
+          Some(idx) => &self.original_type[..idx],
+          None => &self.original_type
+          };*/
+        let n = self.name.replace("[]", "");
+        let hash = murmur3(&n, 0xffffffff);
+        map.get_by_hash(hash)
+            //map.get_by_name(&self.original_type)
+    }
 }
 
 #[repr(usize)]
