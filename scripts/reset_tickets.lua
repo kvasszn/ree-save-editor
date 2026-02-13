@@ -1,9 +1,6 @@
-local steamid = 76561198252339142
-local system_path = "~/.local/share/Steam/userdata/292073414/2246340/remote/win64_save/data00-1.bin"
-local user_path = "~/.local/share/Steam/userdata/292073414/2246340/remote/win64_save/data001Slot.bin"
----local steamid = ui.ask_integer("Enter your steamid")
----local system_path = ui.open_file("Select System Save File")
----local user_path = ui.open_file("Select User Save File")
+local steamid = ui.ask_integer("Enter your steamid")
+local system_path = ui.open_file("Select System Save File")
+local user_path = ui.open_file("Select User Save File")
 
 if user_path == nil then
 	return
@@ -27,5 +24,5 @@ if slots ~= nil then
 	end
 end
 
-system_save:save("./outputs/saves/modified_system.bin", steamid)
-user_save:save("./outputs/saves/modified_user.bin", steamid)
+system_save:save("./outputs/saves/reset_tickets/data00-1.bin", steamid)
+user_save:save("./outputs/saves/reset_tickets/data001Slot.bin", steamid)
