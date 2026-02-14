@@ -29,6 +29,8 @@ mod native {
 
         #[arg(long, default_value_t = String::from("assets/enum_text_mappings.json"))]
         mappings_path: String,
+        #[arg(long, default_value_t = String::from("assets/wilds_remap.json"))]
+        remap_path: String,
         #[cfg(target_os = "linux")]
         #[arg(long, default_value_t = shellexpand::full("~/.local/share/Steam/").unwrap_or_default().to_string())]
         steam_path: String,
@@ -58,6 +60,7 @@ mod native {
             msgs_path: args.msgs_path,
             mappings_path: args.mappings_path,
             steam_path: args.steam_path,
+            remap_path: args.remap_path,
         };
 
         eframe::run_native("mhtame",

@@ -49,8 +49,16 @@ impl Viewer {
     }
 
     pub fn update(&mut self, ctx: &eframe::egui::Context) {
+        if self.reload {
+            self.reload();
+        }
         #[cfg(not(target_arch = "wasm32"))]
         self.script_runner.update_dialogs(ctx);
+    }
+
+    pub fn reload(&mut self) {
+        self.game_ctx.reload_assets(&self.config);
+        self.reload = false;
     }
 }
 
@@ -99,7 +107,7 @@ impl GameCtx {
             serde_json::from_str(include_str!("../../assets/wilds_remap.json")).unwrap();
         #[cfg(not(target_arch = "wasm32"))]
         let remaps = {
-            let data = std::fs::read_to_string("./assets/wilds_remap.json");
+            let data = std::fs::read_to_string(&config.remap_path);
             data.map(|data| {
                 let remaps: HashMap<String, Remap> =
                     serde_json::from_str(&data).unwrap_or_default();
@@ -112,6 +120,21 @@ impl GameCtx {
             copy_buffer: CopyBuffer::Null,
             remaps,
         }
+    }
+
+    pub fn reload_assets(&mut self, config: &Config) {
+        let data = std::fs::read_to_string(&config.remap_path);
+        match data {
+            Ok(data) => {
+                let remaps = serde_json::from_str::<HashMap<String, Remap>>(&data);
+                match remaps {
+                    Ok(remaps) => self.remaps = remaps,
+                    Err(e) => log::error!("Error loading remap {e}"),
+                }
+            }
+            Err(e) => log::error!("Error reading remap {e}"),
+        }
+
     }
 }
 

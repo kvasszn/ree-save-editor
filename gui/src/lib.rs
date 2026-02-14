@@ -37,6 +37,7 @@ pub struct Config {
     pub enums_path: String,
     pub msgs_path: String,
     pub mappings_path: String,
+    pub remap_path: String,
     #[cfg(not(target_arch = "wasm32"))]
     pub steam_path: String,
 }
@@ -73,6 +74,7 @@ impl Default for Config {
             enums_path: "assets/enumsmhwilds.json".to_string(),
             msgs_path: "assets/combined_msgs.json".to_string(),
             mappings_path: "assets/enum_text_mappings.json".to_string(),
+            remap_path: "assets/wilds_remap.json".to_string(),
             #[cfg(target_os = "windows")]
             steam_path: "C:\\Program Files (x86)\\Steam".to_string(),
             #[cfg(target_os = "linux")]
