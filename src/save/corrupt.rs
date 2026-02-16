@@ -156,13 +156,14 @@ impl<'a> CorruptSaveReader<'a> {
 
     pub fn read_field<R: Read + Seek>(&mut self, reader: &mut R, parent: &TypeInfo, field: &FieldInfo) -> crate::file::Result<Field> {
         let _hash = reader.read_u32()?;
-        let mut field_type = FieldType::try_from(reader.read_i32()?)?;
+        let field_type_raw = reader.read_i32()?;
+        let mut field_type = FieldType::try_from(field_type_raw)?;
         let good_field_type = FieldType::from_field_info(field);
         if field_type != good_field_type {
-            eprintln!("[WARNING] Field type mismatch good={good_field_type:?}, read={field_type:?}");
+            eprintln!("[WARNING] Field type mismatch good={good_field_type:?}, read={field_type_raw:?} in field {} from class {}", field.name, parent.name);
             field_type = good_field_type;
         }
-        let value = FieldValue::read(reader, field_type)?;
+        let value = self.read_field_value(reader, field_type, field)?;
         seek_align_up(reader, 4)?;
         Ok(Field {
             hash: field.hash,
@@ -170,11 +171,23 @@ impl<'a> CorruptSaveReader<'a> {
             value
         })
     }
-    
+
     // this breaks on polymorphism
     pub fn read_class<R: Read + Seek>(&mut self, reader: &mut R, type_info: &TypeInfo) -> crate::file::Result<Class> {
-        let num_fields = reader.read_u32()?;
-        let mut hash = reader.read_u32()?;
+        let num_fields = match reader.read_u32() {
+            Err(e) => {
+                eprintln!("[WARNING] Could not read num fields in class {}: {e}", type_info.name);
+                return Ok(Class { num_fields: 0, fields: IndexMap::new(), hash: 0})
+            }
+            Ok(r) => r
+        };
+        let mut hash = match reader.read_u32() {
+            Err(e) => {
+                eprintln!("[WARNING] Could not read hash in class {}: {e}", type_info.name);
+                return Ok(Class { num_fields, fields: IndexMap::new(), hash: 0})
+            }
+            Ok(r) => r
+        };
         let correct_hash = murmur3(&type_info.name, 0xffffffff);
         if hash != correct_hash {
             hash = correct_hash;
@@ -191,17 +204,27 @@ impl<'a> CorruptSaveReader<'a> {
         // could also maybe just read in order of the RSZ, if its there, its there, otherwise just
         // ignore
         for (field_hash, field_info) in &type_info.fields {
-            let read_field_hash = reader.read_u32()?;
-            reader.seek_relative(-4)?;
-            if *field_hash != read_field_hash {
-                continue;
+            let read_field_hash = match reader.read_u32() {
+                Err(e) => {
+                    eprintln!("[WARNING] Could not read field hash in class {} for field {}: {e}", type_info.name, field_info.name);
+                    return Ok(Class {
+                        num_fields,
+                        hash,
+                        fields
+                    })
+                }
+                Ok(r) => r
+            };
+            let _ = reader.seek_relative(-4);
+            if *field_hash != read_field_hash && read_field_hash != 0 {
+                //continue;
             }
 
             let field = self.read_field(reader, type_info, field_info);
             match field {
                 Ok(field) => {fields.insert(field.hash, field);},
                 Err(e) => {
-                    eprintln!("[ERROR] Parsing error {e}");
+                    eprintln!("[ERROR] Parsing error on field {}, {e}", field_info.name);
                     return Ok(Class {
                         num_fields,
                         hash,
@@ -211,25 +234,25 @@ impl<'a> CorruptSaveReader<'a> {
             }
         }
 
-       /* for _ in 0..num_fields {
-            let field_hash = reader.read_u32()?;
-            // if the field hash is correct, read normally
-            if let Some(field_info) = type_info.fields.get(&field_hash) {
-                let field = self.read_field(reader, type_info, field_info);
-                match field {
-                    Ok(field) => {fields.insert(field.hash, field);},
-                    Err(e) => {
-                        eprintln!("[ERROR] Parsing error {e}");
-                        return Ok(Class {
-                            num_fields,
-                            hash,
-                            fields
-                        })
-                    }
-                }
-            } else {
-                break;
-            }
+        /* for _ in 0..num_fields {
+           let field_hash = reader.read_u32()?;
+        // if the field hash is correct, read normally
+        if let Some(field_info) = type_info.fields.get(&field_hash) {
+        let field = self.read_field(reader, type_info, field_info);
+        match field {
+        Ok(field) => {fields.insert(field.hash, field);},
+        Err(e) => {
+        eprintln!("[ERROR] Parsing error {e}");
+        return Ok(Class {
+        num_fields,
+        hash,
+        fields
+        })
+        }
+        }
+        } else {
+        break;
+        }
         }*/
         // Safely read up to a max of type_info 
         Ok(Class {
@@ -244,13 +267,32 @@ impl<'a> CorruptSaveReader<'a> {
         // TODO: rn just for wilds, add based on game later
         let type_info = self.type_map.get_by_name("app.savedata.cUserSaveData").unwrap();
         // need to add custom class readers that also have type information along side them when
-        let native_field_hash_one = reader.read_u32().unwrap();
-        let class_one = self.read_class(reader, type_info).unwrap();
+        let mut fields = Vec::new();
+        if let Ok(native_field_hash) = reader.read_u32() {
+            let class = self.read_class(reader, type_info).unwrap();
+            if native_field_hash == 0 {
+                fields.push((murmur3(&"app.savedata.cUserSaveData", 0xffffffff), class));
+            } else {
+                fields.push((native_field_hash, class));
+            }
+        }
         let type_info = self.type_map.get_by_name("via.storage.saveService.SaveFileDetail").unwrap();
-        let native_field_hash_two = reader.read_u32().unwrap();
-        let class_two = self.read_class(reader, type_info).unwrap();
+        if let Ok(native_field_hash) = reader.read_u32() {
+            let class = self.read_class(reader, type_info).unwrap();
+            if native_field_hash == 0 {
+                fields.push((murmur3(&"via.storage.saveService.SaveFileDetail", 0xffffffff), class));
+            } else {
+                fields.push((native_field_hash, class));
+            }
+        }
+        reader.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let scanned_classes = self.scan_classes(reader);
+        let mut scanned_classes: Vec<(u32, Class)> = scanned_classes.into_iter().enumerate().map(|(i, c)| {
+            (i as u32, c)
+        }).collect();
+        fields.append(&mut scanned_classes);
         SaveFile {
-            fields: vec![(native_field_hash_one, class_one), (native_field_hash_two, class_two)],
+            fields,
             game: self.game
         }
     }

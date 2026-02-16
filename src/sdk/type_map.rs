@@ -12,7 +12,7 @@ pub fn murmur3(data: impl AsRef<[u8]>, seed: u32) -> u32 {
 }
 
 // This can probably get optimized alot (msgs + enum_mappings)
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TypeMap {
     pub types: TypesWrapper,
     pub enums: EnumMap,
@@ -135,6 +135,79 @@ impl TypeMap {
         (matching_types, fields_to_expand)
     }
 
+    pub fn load_rsz_from_path(&mut self, rsz_path: &str) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let mut file = File::open(rsz_path)?;
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            let types = serde_json::from_slice(&mut data)?;
+            self.types = types;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            eprintln!("Failed to load RSZ from path {rsz_path}: {e}");
+        }
+    }
+
+    pub fn load_enums_from_path(&mut self, path: &str) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let mut file = File::open(path)?;
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            let enums = serde_json::from_slice(&mut data)?;
+            self.enums = enums;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            eprintln!("Failed to load enums from path {path}: {e}");
+        }
+    }
+
+    pub fn load_msg_from_path(&mut self, path: &str) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let mut file = File::open(path)?;
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            let msgs = serde_json::from_slice(&mut data)?;
+            self.msgs = msgs;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            eprintln!("Failed to load msg data from path {path}: {e}");
+        }
+    }
+
+    pub fn load_enum_mappings_from_path(&mut self, path: &str) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let mut file = File::open(path)?;
+            let mut data = Vec::new();
+            file.read_to_end(&mut data)?;
+            let enum_mappings = serde_json::from_slice(&mut data)?;
+            self.enum_mappings = enum_mappings;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            eprintln!("Failed to load enum text mappings from path {path}: {e}");
+        }
+    }
+
+    pub fn load_strings_from_path(&mut self, path: &str) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let data = std::fs::read_to_string(path)?;
+            let mut string_map = HashMap::new();
+            for line in data.lines() {
+                let hash = murmur3(&line, 0xffffffff);
+                string_map.insert(hash, line.to_string());
+            }
+            self.string_map = string_map;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            eprintln!("Failed to load raw string data from path {path}: {e}");
+        }
+    }
+
+
     pub fn load_string_map(mut self, strings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let mut file = File::open(strings_path)?;
         let mut string_map = HashMap::new();
@@ -147,6 +220,7 @@ impl TypeMap {
         self.string_map = string_map;
         Ok(self)
     }
+
     pub fn load_string_map_from_str(&mut self, data: &str) -> std::result::Result<(), Box<dyn Error>> {
         let mut string_map = HashMap::new();
         for line in data.lines() {
@@ -183,24 +257,24 @@ impl TypeMap {
     }
 
     /*pub fn load_from_file_compressed(rsz_path: &str, enum_path: &str, combined_msgs: &str, mappings: &str) -> std::result::Result<Self, Box<dyn Error>> {
-        let mut file = File::open(rsz_path)?;
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
-        let types = serde_json::from_slice(&mut data)?;
-        let mut file = File::open(enum_path)?;
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
-        let enums = serde_json::from_slice(&mut data)?;
-        let mut file = File::open(combined_msgs)?;
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
-        let msgs = serde_json::from_slice(&mut data)?;
-        let mut file = File::open(mappings)?;
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
-        let enum_mappings = serde_json::from_slice(&mut data)?;
-        Ok(TypeMap{types, enums, msgs, enum_mappings})
-    }*/
+      let mut file = File::open(rsz_path)?;
+      let mut data = Vec::new();
+      file.read_to_end(&mut data)?;
+      let types = serde_json::from_slice(&mut data)?;
+      let mut file = File::open(enum_path)?;
+      let mut data = Vec::new();
+      file.read_to_end(&mut data)?;
+      let enums = serde_json::from_slice(&mut data)?;
+      let mut file = File::open(combined_msgs)?;
+      let mut data = Vec::new();
+      file.read_to_end(&mut data)?;
+      let msgs = serde_json::from_slice(&mut data)?;
+      let mut file = File::open(mappings)?;
+      let mut data = Vec::new();
+      file.read_to_end(&mut data)?;
+      let enum_mappings = serde_json::from_slice(&mut data)?;
+      Ok(TypeMap{types, enums, msgs, enum_mappings})
+      }*/
 
     pub fn from_reader<R: Read + Seek>(rsz_reader: R, enum_reader: R) -> std::result::Result<Self, Box<dyn Error>> {
         let types: TypesWrapper = simd_json::from_reader(rsz_reader)?;
@@ -318,7 +392,7 @@ impl TypeMap {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 pub struct TypesWrapper(pub HashMap<u32, TypeInfo>);
 
 impl<'de> Deserialize<'de> for TypesWrapper {
@@ -513,7 +587,7 @@ impl FieldInfo {
           Some(idx) => &self.original_type[..idx],
           None => &self.original_type
           };*/
-        let n = self.name.replace("[]", "");
+        let n = self.original_type.replace("[]", "");
         let hash = murmur3(&n, 0xffffffff);
         map.get_by_hash(hash)
             //map.get_by_name(&self.original_type)
@@ -571,8 +645,8 @@ impl MsgCombined {
         self.msgs.get(guid).map(|e| e.content[language as usize].clone())
     }
     /*pub fn get_content_by_name(&self, name: &str, language: ContentLanguage) -> Option<String> {
-        None
-    }*/
+      None
+      }*/
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]

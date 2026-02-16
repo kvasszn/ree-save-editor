@@ -680,12 +680,12 @@ impl Class {
         let hash = reader.read_u32()?;
         //let name = RszDump::get_struct(hash).and_then(|x|Ok(x.name.clone())).unwrap_or("none".to_string());
         let mut fields = IndexMap::<u32, Field>::new();
-        for _ in 0..num_fields {
+        for i in 0..num_fields {
             let field = Field::read(reader);
             match field {
                 Ok(field) => {fields.insert(field.hash, field);},
                 Err(e) => {
-                    eprintln!("[ERROR] Parsing error {e}");
+                    eprintln!("[ERROR] Parsing Error in class {hash:010x} field #{}, returning early: {e}", i);
                     return Ok(Self {
                         num_fields,
                         hash,
@@ -781,5 +781,38 @@ impl TryFrom<&Struct> for Mandrake {
         Ok(Mandrake {
             v, m
         })
+    }
+}
+
+
+impl TryFrom<&Struct> for Vec2 {
+    type Error = Box<dyn Error>;
+    fn try_from(value: &Struct) -> Result<Self, Self::Error> {
+        let data: [u8; 16] = value.data.as_slice().try_into()?;
+        Ok(bytemuck::cast(data))
+    }
+}
+
+impl TryFrom<&Struct> for Vec3 {
+    type Error = Box<dyn Error>;
+    fn try_from(value: &Struct) -> Result<Self, Self::Error> {
+        let data: [u8; 16] = value.data.as_slice().try_into()?;
+        Ok(bytemuck::cast(data))
+    }
+}
+
+impl TryFrom<&Struct> for Vec4 {
+    type Error = Box<dyn Error>;
+    fn try_from(value: &Struct) -> Result<Self, Self::Error> {
+        let data: [u8; 16] = value.data.as_slice().try_into()?;
+        Ok(bytemuck::cast(data))
+    }
+}
+
+impl TryFrom<&Struct> for Color {
+    type Error = Box<dyn Error>;
+    fn try_from(value: &Struct) -> Result<Self, Self::Error> {
+        let data: [u8; 4] = value.data.as_slice().try_into()?;
+        Ok(bytemuck::cast(data))
     }
 }

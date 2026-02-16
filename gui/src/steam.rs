@@ -1,5 +1,6 @@
 use std::{collections::HashMap, error::Error, path::{Path, PathBuf}};
 
+use mhtame::save::game::Game;
 use serde::{self,Deserialize};
 
 #[derive(Deserialize, Debug, Clone)]
@@ -36,6 +37,30 @@ pub fn parse_accounts(path: &Path) -> Result<Vec<UserAccount>, Box<dyn Error>> {
         }
     }).collect::<Vec<_>>();
     Ok(users)
+}
+
+pub fn get_save_files(path: &Path, steamid64: u64, game: Game) -> Vec<PathBuf> {
+    let mut res = Vec::new();
+    let save_path = path
+        .join("userdata")
+        .join((steamid64 & 0xffffffff).to_string())
+        .join(game.get_appid().to_string())
+        .join("remote/win64_save/");
+    let paths = std::fs::read_dir(&save_path);
+    if let Ok(paths) = paths {
+        for path in paths {
+            if let Ok(path) = path {
+                let path = path.path();
+                if let Some(ext) = path.extension() {
+                    if ext == "bin" {
+                        res.push(path.clone());
+                    }
+                }
+            }
+        }
+    }
+    res.sort();
+    res
 }
 
 pub fn get_wilds_save_files(path: &Path, steamid64: u64) -> Vec<PathBuf> {

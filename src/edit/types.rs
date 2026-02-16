@@ -1,6 +1,7 @@
 use std::{collections::HashSet, fmt::Display, str::FromStr};
 
 use bitfield::BitMut;
+use bytemuck::Pod;
 use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, Ui};
 
 use crate::{edit::{EditContext, EditResponse, Editable, copy::CopyBuffer}, save::{remap::Remap, types::*}, sdk::{type_map::{TypeInfo, murmur3}, *}};
@@ -140,36 +141,38 @@ fn edit_enum_from_type(value: &mut i32, enum_type_str: &str, ui: &mut Ui, ctx: &
     let enum_type = ctx.type_map.enums.get(enum_type_str);
     let enum_str = enum_type.and_then(|e| e.get(&value.to_string()));
     let enum_text = enum_str.and_then(|enum_str| ctx.type_map.get_enum_text(enum_str, enum_type_str, ctx.language));
-    match enum_str {
-        Some(mut enum_str) => {
-            let enum_type = enum_type.unwrap();
-            let mut enum_list = enum_type.iter()
-                .filter_map(|x| if x.0.parse::<i32>().is_ok() {Some(x.1)} else {None})
-                .collect::<Vec<_>>();
-            enum_list.sort();
+    ui.horizontal(|ui| {
+        match enum_str {
+            Some(mut enum_str) => {
+                let enum_type = enum_type.unwrap();
+                let mut enum_list = enum_type.iter()
+                    .filter_map(|x| if x.0.parse::<i32>().is_ok() {Some(x.1)} else {None})
+                    .collect::<Vec<_>>();
+                enum_list.sort();
 
-            let preview = if let Some(ref enum_text) = enum_text {
-                format!("{enum_str}:\"{enum_text}\"")
-            } else { enum_str.to_string() };
-            ComboBox::from_id_salt(ctx.id)
-                .selected_text(preview)
-                .show_ui(ui, |ui|{
-                    for option in enum_list {
-                        let enum_text = ctx.type_map.get_enum_text(option, enum_type_str, ctx.language);
-                        let preview = if let Some(ref enum_text) = enum_text {
-                            format!("{option}:\"{enum_text}\"")
-                        } else { option.to_string() };
-                        ui.selectable_value(&mut enum_str, &option, preview);
-                    }
-                    if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
-                        *value = x;
-                    }
-                });
+                let preview = if let Some(ref enum_text) = enum_text {
+                    format!("{enum_str}:\"{enum_text}\"")
+                } else { enum_str.to_string() };
+                ComboBox::from_id_salt(ctx.id)
+                    .selected_text(preview)
+                    .show_ui(ui, |ui|{
+                        for option in enum_list {
+                            let enum_text = ctx.type_map.get_enum_text(option, enum_type_str, ctx.language);
+                            let preview = if let Some(ref enum_text) = enum_text {
+                                format!("{option}:\"{enum_text}\"")
+                            } else { option.to_string() };
+                            ui.selectable_value(&mut enum_str, &option, preview);
+                        }
+                        if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
+                            *value = x;
+                        }
+                    });
+            }
+            None => {
+            }
         }
-        None => {
-            value.edit(ui, ctx);
-        }
-    }
+        value.edit(ui, ctx);
+    });
     EditResponse::default()
 }
 
@@ -1188,22 +1191,6 @@ impl<T: Editable> Editable for Vec<T> {
 }
 
 
-pub trait TryEdit<T>: Editable {
-    fn try_edit(value: &mut T, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse;
-}
-
-impl TryEdit<Struct> for Mandrake {
-    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
-        let s = Mandrake::try_from(&*value);
-        if let Ok(mut s) = s {
-            let r = s.edit(ui, ctx);
-            value.data = s.to_buf().to_vec();
-            r
-        } else {
-            value.edit(ui, ctx)
-        }
-    }
-}
 
 impl Editable for Guid {
     fn edit(&mut self, ui: &mut Ui, _: &mut EditContext) -> EditResponse {
@@ -1220,36 +1207,17 @@ impl Editable for Guid {
     }
 }
 
-impl TryEdit<Struct> for Guid {
-    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
-        if value.data.len() > 16 {
-            return value.edit(ui, ctx)
-        }
-        let mut buf = [0u8; 16];
-        buf[0..].copy_from_slice(&value.data);
-        let mut guid = Guid(buf);
-        let resp = guid.edit(ui, ctx);
-        if resp.changed {
-            value.data = guid.0.to_vec();
-        }
-        resp
-    }
-}
-
 impl Editable for Struct {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         match ctx.cur_type {
             Some(t) => {
                 let r = match t.name.as_str() {
-                    "via.rds.Mandrake" => { 
-                        Mandrake::try_edit(self, ui, ctx)
-                    },
-                    "System.Guid" => { 
-                        Guid::try_edit(self, ui, ctx)
-                    },
-                    _ => {
-                        self.data.edit(ui, ctx)
-                    }
+                    "via.rds.Mandrake" => Mandrake::try_edit(self, ui, ctx),
+                    "System.Guid" => Guid::try_edit(self, ui, ctx),
+                    "via.vec2" => Vec2::try_edit(self, ui, ctx),
+                    "via.vec3" => Vec3::try_edit(self, ui, ctx),
+                    "via.vec4" => Vec4::try_edit(self, ui, ctx),
+                    _ => self.data.edit(ui, ctx)
                 };
                 r
             }
@@ -1281,5 +1249,152 @@ impl Editable for Mandrake {
             ui.label(format!("{}", self.m));
         });
         resp
+    }
+}
+
+impl Editable for Vec2 {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        ui.horizontal(|ui| {
+            ui.label("x");
+            self.0.edit(ui, ctx);
+            ui.label("y");
+            self.1.edit(ui, ctx);
+            ui.label("z");
+        });
+        EditResponse::default()
+    }
+}
+
+impl Editable for Vec3 {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        ui.horizontal(|ui| {
+            ui.label("x");
+            self.0.edit(ui, ctx);
+            ui.label("y");
+            self.1.edit(ui, ctx);
+            ui.label("z");
+            self.2.edit(ui, ctx);
+        });
+        EditResponse::default()
+    }
+}
+
+impl Editable for Vec4 {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        ui.horizontal(|ui| {
+            ui.label("x");
+            self.0.edit(ui, ctx);
+            ui.label("y");
+            self.1.edit(ui, ctx);
+            ui.label("z");
+            self.2.edit(ui, ctx);
+            ui.label("w");
+            self.3.edit(ui, ctx);
+        });
+        EditResponse::default()
+    }
+}
+
+impl Editable for Color {
+    fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        ui.horizontal(|ui| {
+            ui.label("r");
+            self.0.edit(ui, ctx);
+            ui.label("g");
+            self.1.edit(ui, ctx);
+            ui.label("b");
+            self.2.edit(ui, ctx);
+            ui.label("a");
+            self.3.edit(ui, ctx);
+        });
+        EditResponse::default()
+    }
+}
+
+pub trait TryEdit<T>: Editable {
+    fn try_edit(value: &mut T, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse;
+}
+
+
+
+impl TryEdit<Struct> for Mandrake {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let s = Mandrake::try_from(&*value);
+        if let Ok(mut s) = s {
+            let r = s.edit(ui, ctx);
+            value.data = s.to_buf().to_vec();
+            r
+        } else {
+            value.edit(ui, ctx)
+        }
+    }
+}
+
+
+impl TryEdit<Struct> for Guid {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        if value.data.len() > 16 {
+            return value.edit(ui, ctx)
+        }
+        let mut buf = [0u8; 16];
+        buf[0..].copy_from_slice(&value.data);
+        let mut guid = Guid(buf);
+        let resp = guid.edit(ui, ctx);
+        if resp.changed {
+            value.data = guid.0.to_vec();
+        }
+        resp
+    }
+}
+
+impl TryEdit<Struct> for Vec2 {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let v = Vec2::try_from(&*value);
+        if let Ok(mut v) = v {
+            v.edit(ui, ctx);
+            value.data = bytemuck::cast::<Vec2, [u8; 16]>(v).to_vec();
+        } else {
+            value.data.edit(ui, ctx);
+        }
+        EditResponse::default()
+    }
+}
+
+impl TryEdit<Struct> for Vec3 {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let v = Vec3::try_from(&*value);
+        if let Ok(mut v) = v {
+            v.edit(ui, ctx);
+            value.data = bytemuck::cast::<Vec3, [u8; 16]>(v).to_vec();
+        } else {
+            value.data.edit(ui, ctx);
+        }
+        EditResponse::default()
+    }
+}
+
+impl TryEdit<Struct> for Vec4 {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let v = Self::try_from(&*value);
+        if let Ok(mut v) = v {
+            v.edit(ui, ctx);
+            value.data = bytemuck::cast::<Self, [u8; 16]>(v).to_vec();
+        } else {
+            value.data.edit(ui, ctx);
+        }
+        EditResponse::default()
+    }
+}
+
+impl TryEdit<Struct> for Color {
+    fn try_edit(value: &mut Struct, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        let v = Self::try_from(&*value);
+        if let Ok(mut v) = v {
+            v.edit(ui, ctx);
+            value.data = bytemuck::cast::<Self, [u8; 4]>(v).to_vec();
+        } else {
+            value.data.edit(ui, ctx);
+        }
+        EditResponse::default()
     }
 }

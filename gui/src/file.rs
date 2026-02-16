@@ -1,11 +1,14 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{collections::HashSet, error::Error, io::{Cursor, Read, Seek}, sync::mpsc::{Receiver, Sender}, time::Duration};
 
+use eframe::egui::{self, Align2, Order, Window};
 use eframe::{self, egui::{ComboBox, ScrollArea, TextEdit, Ui}};
 use mhtame::save::corrupt::CorruptSaveReader;
 use mhtame::{edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::{GAME_OPTIONS, Game}}, sdk::type_map::ContentLanguage};
 
-use crate::{Config, steam::{UserAccount, get_wilds_save_files}, viewer::GameCtx};
+use crate::game_context::AssetPaths;
+use crate::{Config, steam::{UserAccount, get_wilds_save_files}, game_context::GameCtx};
 
 pub struct FileView {
     pub idx: u64,
@@ -97,7 +100,32 @@ impl FileView {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, game_ctx: &mut GameCtx) {
+    pub fn show_popup(&mut self, ui: &mut Ui) {
+        if self.show_popup {
+            let popup_id = ui.make_persistent_id((self.idx, "msg_popup"));
+            eframe::egui::Area::new(popup_id)
+                .order(Order::Foreground)
+                .anchor(Align2::CENTER_CENTER, eframe::egui::Vec2::ZERO)
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.add_space(10.0);
+                        ui.label(&self.popup_msg);
+                        ui.vertical_centered(|ui| {
+                            if ui.button("Close").clicked() {
+                                self.show_popup = false;
+                            }
+                        });
+                    });
+                });
+        }
+    }
+
+    pub fn ui(&mut self, ui: &mut Ui, game_contexts: &mut HashMap<Game, GameCtx>) {
+        self.show_popup(ui);
+        let game_ctx = game_contexts.entry(self.game).or_insert_with(|| {
+            let asset_paths = AssetPaths::from_game(self.game);
+            GameCtx::new(&asset_paths)
+        });
         self.update_input_file(game_ctx);
         ui.horizontal(|ui| {
             self.input_file_picker.ui(ui);
@@ -124,10 +152,10 @@ impl FileView {
                                     Ok(mut file) => {
                                         use std::io::Write;
                                         let _ = file.write_all(&data);
-                                        self.popup_msg = format!("Saved to {:?}", path)
+                                        self.set_popup(format!("Saved to {:?}", path));
                                     }
                                     Err(e) => {
-                                        self.popup_msg = format!("Could not create file {:?}: error: {e}", path)
+                                        self.set_popup(format!("Could not create file {:?}: error: {e}", path));
 
                                     }
                                 }
@@ -137,17 +165,16 @@ impl FileView {
                             {
                                 //save_file_dialog(&file_path, data);
                                 //self.popup_msg = "Saved/Downloaded".to_string();
+                                self.set_popup(format!("Saved/Downloaded"));
                             }
 
                         }
                         Err(e) => {
-                            self.popup_msg = format!("Error saving {}", e)
+                            self.set_popup(format!("Error saving {}", e));
                         }
                     }
-                    self.show_popup = true;
                 } else {
-                    self.popup_msg = String::from("Need a steamid to save");
-                    self.show_popup = true;
+                    self.set_popup(format!("Need a steamid to save"));
                 }
             }
 
@@ -179,7 +206,7 @@ impl FileView {
         });
 
         ui.horizontal(|ui| {
-            if let Some(path) = self.steam.found_file(ui) {
+            if let Some(path) = self.steam.found_file(ui, self.game) {
                 self.update_file_path(path);
                 self.reload(game_ctx);
             };
@@ -191,27 +218,27 @@ impl FileView {
             ui.label("Try Repairing Corruption (WIP)");
             ui.checkbox(&mut self.repair, "");
             /*if ui.button("Run Script").clicked() {
-                match &mut self.current_file {
-                    CurrentFile::Loaded { loaded, .. } => {
-                        let mut script_runner = ScriptRunner::new();
-                        let res = script_runner.set_save_file_context(loaded);
-                        match res {
-                            Ok(_) => {
-                                let res = script_runner.load_and_execute_from_file("scripts/foo.lua");
-                                println!("[INFO] lua res: {res:?}");
-                            }
-                            Err(e) => {
-                                eprintln!("[ERROR] Script Runner: {e}")
-                            }
-                        }
-                        let res = script_runner.get_save_file_context();
-                        if let Some(res) = res {
-                            *loaded = res;
-                        }
-                    }
-                    _ => {}
-                }
-            }*/
+              match &mut self.current_file {
+              CurrentFile::Loaded { loaded, .. } => {
+              let mut script_runner = ScriptRunner::new();
+              let res = script_runner.set_save_file_context(loaded);
+              match res {
+              Ok(_) => {
+              let res = script_runner.load_and_execute_from_file("scripts/foo.lua");
+              println!("[INFO] lua res: {res:?}");
+              }
+              Err(e) => {
+              eprintln!("[ERROR] Script Runner: {e}")
+              }
+              }
+              let res = script_runner.get_save_file_context();
+              if let Some(res) = res {
+             *loaded = res;
+              }
+              }
+              _ => {}
+              }
+              }*/
         });
 
         ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
@@ -272,6 +299,7 @@ impl FileView {
                     game: self.game,
                     repair: self.repair
                 }).ok()?;
+                println!("{:?}", &data[0..32]);
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
                 let save_file = corrupted_reader.read_missing(&mut reader);
@@ -310,8 +338,7 @@ impl FileView {
                             }
                         }
                         Err(e) => {
-                            self.popup_msg = format!("Failed to open file: {e}");
-                            self.show_popup = true;
+                            self.set_popup(format!("Failed to open file: {e}"));
                         }
                     }
                 }
@@ -334,8 +361,7 @@ impl FileView {
                 }
             }
             _ => {
-                self.popup_msg = format!("Need a file to load");
-                self.show_popup = true;
+                self.set_popup(format!("Need a file to load"));
             }
         }
     }
@@ -362,8 +388,7 @@ impl FileView {
                                 }
                             }
                             Err(e) => {
-                                self.popup_msg = format!("Failed to open file: {e}");
-                                self.show_popup = true;
+                                self.set_popup(format!("Failed to open file: {e}"));
                                 return true;
                             }
                         }
@@ -396,8 +421,7 @@ impl FileView {
             CurrentFile::Loaded { .. } | CurrentFile::Null => {
                 self.current_file = CurrentFile::Path(self.input_file_picker.text.clone());
                 if self.reload(game_ctx) == false {
-                    self.popup_msg = format!("Could not open file {:?}", self.input_file_picker.text);
-                    self.show_popup = true;
+                    self.set_popup(format!("Could not open file {:?}", self.input_file_picker.text));
                     return false;
                 };
             }
@@ -553,7 +577,7 @@ impl Steam {
         res
     }
 
-    pub fn found_file(&mut self, ui: &mut Ui) -> Option<String> {
+    pub fn found_file(&mut self, ui: &mut Ui, game: Game) -> Option<String> {
         let mut res = None;
         self.edit_steam_id(ui);
 
@@ -563,7 +587,9 @@ impl Steam {
         #[cfg(not(target_arch = "wasm32"))]
         if !self.users.is_empty() {
             if let Some(steam_id) = self.steam_id {
-                let save_files = get_wilds_save_files(&self.steam_path, steam_id);
+                use crate::steam::get_save_files;
+
+                let save_files = get_save_files(&self.steam_path, steam_id, game);
                 if !save_files.is_empty() {
                     ComboBox::from_id_salt("save_select")
                         .selected_text("Select Save File") 

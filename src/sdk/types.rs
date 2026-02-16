@@ -1,5 +1,6 @@
 use std::{fmt::{Debug, Display}, io::{self, Read}};
 
+use bytemuck::{Pod, Zeroable};
 use serde::Serialize;
 use half::f16;
 use util::ReadExt;
@@ -70,7 +71,8 @@ impl StringU16 {
 }
 pub type StringU16C = U16String<true>;
 
-#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct Guid(pub [u8; 16]);
 impl Display for Guid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -123,23 +125,26 @@ pub type Float2 = [f32; 2];
 pub type Float3 = [f32; 3];
 pub type Float4 = [f32; 4];
 
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct Vec2(f32, f32, f32, f32);
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable)]
+pub struct Vec2(pub f32, pub f32, pub f32, pub f32);
 impl Vec2 {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
         Ok(Self(r.read_f32()?,r.read_f32()?,r.read_f32()?,r.read_f32()?,))
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct Vec3(f32, f32, f32, f32);
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable)]
+pub struct Vec3(pub f32, pub f32, pub f32, pub f32);
 impl Vec3 {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
         Ok(Self(r.read_f32()?,r.read_f32()?,r.read_f32()?,r.read_f32()?,))
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable)]
 pub struct Vec4(pub f32, pub f32, pub f32, pub f32);
 impl Vec4 {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -147,7 +152,8 @@ impl Vec4 {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct Quaternion(f32, f32, f32, f32);
 impl Quaternion {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -155,7 +161,8 @@ impl Quaternion {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct Sphere(f32, f32, f32, f32);
 impl Sphere {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -163,7 +170,8 @@ impl Sphere {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct Position(f64, f64, f64);
 impl Position {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -171,24 +179,28 @@ impl Position {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
-pub struct Color(u8, u8, u8, u8);
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+pub struct Color(pub u8, pub u8, pub u8, pub u8);
 impl Color {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
         Ok(Self(r.read_u8()?, r.read_u8()?, r.read_u8()?, r.read_u8()?))
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct Mat4x4(pub [f32; 16]);
 
 #[derive(Debug, Serialize, Clone)]
 pub struct RuntimeType(pub String);
 
-#[derive(Debug, Serialize, Clone)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct GameObjectRef(pub Guid);
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct OBB {
     center: Vec3,
     half_extents: Vec3,
@@ -205,7 +217,8 @@ impl OBB {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct AABB(pub Vec4, pub Vec4);
 impl AABB {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -213,7 +226,8 @@ impl AABB {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct Rect {
     start: UInt2,
     end: UInt2,
@@ -238,7 +252,8 @@ impl Data {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct KeyFrame{
     time: f32,
     val: [f32; 3],
@@ -298,7 +313,8 @@ pub struct AnimationCurve {
 }
 
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[repr(C)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
 pub struct Mandrake {
     pub v: i64,
     pub m: i64, // maybe change to NonZeroU64

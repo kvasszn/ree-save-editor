@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Hash)]
 pub enum Game {
     MHWILDS = 0,
     DD2 = 1,
@@ -17,7 +17,6 @@ pub const GAME_OPTIONS: [(&'static str, Game); 4] = [
 ];
 
 impl Game {
-
     pub fn from_string(id: &str) -> Option<Game> {
         match id {
             "MHWILDS" => Some(Game::MHWILDS),
@@ -44,6 +43,15 @@ impl Game {
             Self::DD2 => steamid & 0xffffffff,
             Self::PRAGMATA => 19284827,
             Self::MHST3 => steamid,
+        }
+    }
+
+    pub fn get_appid(&self) -> u64 {
+        match self {
+            Self::MHWILDS => 2246340,
+            Self::DD2 => 2054970,
+            Self::PRAGMATA => 3357650,
+            Self::MHST3 => 2852190,
         }
     }
 }

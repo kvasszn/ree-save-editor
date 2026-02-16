@@ -18,19 +18,17 @@ mod native {
         #[arg(long)]
         steamid: Option<String>,
 
-        #[arg(long, default_value_t = String::from("assets/rszmhwilds_packed.json"))]
-        rsz_path: String,
+        #[arg(long)]
+        rsz_path: Option<String>,
+        #[arg(long)]
+        enums_path: Option<String>,
+        #[arg(long)]
+        msgs_path: Option<String>,
+        #[arg(long)]
+        mappings_path: Option<String>,
+        #[arg(long)]
+        remap_path: Option<String>,
 
-        #[arg(long, default_value_t = String::from("assets/enumsmhwilds.json"))]
-        enums_path: String,
-        
-        #[arg(long, default_value_t = String::from("assets/combined_msgs.json"))]
-        msgs_path: String,
-
-        #[arg(long, default_value_t = String::from("assets/enum_text_mappings.json"))]
-        mappings_path: String,
-        #[arg(long, default_value_t = String::from("assets/wilds_remap.json"))]
-        remap_path: String,
         #[cfg(target_os = "linux")]
         #[arg(long, default_value_t = shellexpand::full("~/.local/share/Steam/").unwrap_or_default().to_string())]
         steam_path: String,
@@ -47,9 +45,6 @@ mod native {
             viewport: egui::ViewportBuilder::default().with_drag_and_drop(true),
             .. Default::default()
         };
-
-        ENUM_FILE.set(args.enums_path.clone()).unwrap();
-        RSZ_FILE.set(args.rsz_path.clone()).unwrap();
 
         let config = Config { 
             file_name: args.file_name,

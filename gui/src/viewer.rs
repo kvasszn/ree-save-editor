@@ -1,6 +1,4 @@
-use std::{
-    collections::HashMap,
-};
+use std::collections::HashMap;
 
 use eframe::egui::{Ui};
 use egui_dock::tab_viewer::OnCloseResponse;
@@ -9,36 +7,33 @@ use egui_dock::tab_viewer::OnCloseResponse;
 use mhtame::bindings::runner::ScriptRunner;
 
 use mhtame::{
-    edit::copy::CopyBuffer,
-    save::remap::Remap,
-    sdk::type_map::{ContentLanguage, TypeMap},
+    save::game::Game, sdk::type_map::ContentLanguage
 };
 
-use crate::{Config, tab::{self, TabType}};
+use crate::{Config, game_context::{GameCtx}, tab::{self, TabType}};
 
 #[derive(Debug)]
 pub struct Viewer {
     pub num_tabs: u64,
-    game_ctx: GameCtx,
     pub config: Config,
     pub default_language: ContentLanguage,
 
     #[cfg(not(target_arch = "wasm32"))]
     pub script_runner: ScriptRunner,
     pub reload: bool,
+    game_contexts: HashMap<Game, GameCtx>,
 }
 
 impl Viewer {
     pub fn new(config: Config) -> Self {
-        let game_ctx = GameCtx::new(&config);
         Self {
-            game_ctx,
             config,
             num_tabs: 0,
             default_language: ContentLanguage::English,
             #[cfg(not(target_arch = "wasm32"))]
             script_runner: ScriptRunner::new(),
             reload: true,
+            game_contexts: HashMap::new()
         }
     }
 
@@ -57,84 +52,7 @@ impl Viewer {
     }
 
     pub fn reload(&mut self) {
-        self.game_ctx.reload_assets(&self.config);
         self.reload = false;
-    }
-}
-
-#[derive(Debug)]
-pub struct GameCtx {
-    pub type_map: TypeMap,
-    pub copy_buffer: CopyBuffer,
-    pub remaps: HashMap<String, Remap>,
-}
-
-impl GameCtx {
-    pub fn new(config: &Config) -> Self {
-       #[cfg(not(target_arch = "wasm32"))]
-        let type_map = TypeMap::load_with_msgs(
-            &config.rsz_path,
-            &config.enums_path,
-            &config.msgs_path,
-            &config.mappings_path,
-        )
-        .expect("Could not load assets for the editor, make sure your assets are in the right place")
-        .load_string_map("assets/mhst3_strings.txt")
-        .expect("Error loading mhst3_strings.txt map");
-       #[cfg(target_arch = "wasm32")]
-        let type_map = {
-            use mhtame::rsz::dump::decompress;
-            const RSZ_JSON: &[u8] = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
-            const ENUMS_JSON: &[u8] = include_bytes!("../../assets/enumsmhwilds.json.gz");
-            const MSGS_JSON: &[u8] = include_bytes!("../../assets/combined_msgs.json.gz");
-            const ENUM_MAPPINGS_JSON: &str = include_str!("../../assets/enum_text_mappings.json");
-            const MHST3_STRINGS: &str = include_str!("../../assets/mhst3_strings.txt");
-            let rsz = decompress(RSZ_JSON);
-            let enums = decompress(ENUMS_JSON);
-            let msgs = decompress(MSGS_JSON);
-            let mut res = TypeMap::parse_str(&rsz, &enums)
-                .expect("Could not load type map")
-                .load_msg(&msgs, ENUM_MAPPINGS_JSON);
-            match res.load_string_map_from_str(&MHST3_STRINGS) {
-                Err(e) => eprintln!("[ERROR] Could not load MHST3 Strings"),
-                _ => ()
-            };
-            res
-        };
-
-        #[cfg(target_arch = "wasm32")]
-        let remaps: HashMap<String, Remap> =
-            serde_json::from_str(include_str!("../../assets/wilds_remap.json")).unwrap();
-        #[cfg(not(target_arch = "wasm32"))]
-        let remaps = {
-            let data = std::fs::read_to_string(&config.remap_path);
-            data.map(|data| {
-                let remaps: HashMap<String, Remap> =
-                    serde_json::from_str(&data).unwrap_or_default();
-                remaps
-            })
-            .unwrap_or_default()
-        };
-        Self {
-            type_map,
-            copy_buffer: CopyBuffer::Null,
-            remaps,
-        }
-    }
-
-    pub fn reload_assets(&mut self, config: &Config) {
-        let data = std::fs::read_to_string(&config.remap_path);
-        match data {
-            Ok(data) => {
-                let remaps = serde_json::from_str::<HashMap<String, Remap>>(&data);
-                match remaps {
-                    Ok(remaps) => self.remaps = remaps,
-                    Err(e) => log::error!("Error loading remap {e}"),
-                }
-            }
-            Err(e) => log::error!("Error reading remap {e}"),
-        }
-
     }
 }
 
@@ -144,7 +62,7 @@ impl egui_dock::TabViewer for Viewer {
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
         ui.push_id(tab.idx, |ui| {
             match &mut tab.tab {
-                TabType::SaveFileView(save_file) => save_file.ui(ui, &mut self.game_ctx),
+                TabType::SaveFileView(save_file) => save_file.ui(ui, &mut self.game_contexts),
                 #[cfg(not(target_arch = "wasm32"))]
                 TabType::Script(script) => {
                     if script.ui(ui) {
