@@ -13,11 +13,16 @@ cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu  --release
 echo "Building Windows..."
 cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release
 
+ASSETS="combined_msgs.json empty_user_save.bin enums_mappings_mhwilds.json enumsmhwilds.json remapmhwilds.json rszmhwilds_packed.json"
 
-mkdir -p $WINDOWS_PATH
-mkdir -p $LINUX_PATH
-cp -r assets $WINDOWS_PATH/
-cp -r assets $LINUX_PATH/
+mkdir -p "$WINDOWS_PATH/assets/mhwilds"
+mkdir -p "$LINUX_PATH/assets/mhwilds"
+
+for file in $ASSETS; do
+    echo "Copying $file..."
+    cp "assets/mhwilds/$file" "$WINDOWS_PATH/assets/mhwilds/"
+    cp "assets/mhwilds/$file" "$LINUX_PATH/assets/mhwilds/"
+done
 
 mkdir -p $LINUX_PATH/scripts
 mkdir -p $WINDOWS_PATH/scripts

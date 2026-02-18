@@ -12,7 +12,7 @@ pub fn murmur3(data: impl AsRef<[u8]>, seed: u32) -> u32 {
 }
 
 // This can probably get optimized alot (msgs + enum_mappings)
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct TypeMap {
     pub types: TypesWrapper,
     pub enums: EnumMap,
@@ -452,7 +452,7 @@ impl TypeMap {
     }
 }
 
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize, Default, Clone)]
 pub struct TypesWrapper(pub HashMap<u32, TypeInfo>);
 
 impl<'de> Deserialize<'de> for TypesWrapper {
@@ -499,7 +499,7 @@ impl<'de> Deserialize<'de> for TypesWrapper {
 pub type EnumMap = HashMap<String, IndexMap<String, String>>;
 
 // having functions for getting things like generics could be really useful
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct TypeInfo {
     pub crc: u32,
     pub name: String,

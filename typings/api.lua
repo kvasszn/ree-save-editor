@@ -8,6 +8,11 @@ ui = {}
 ---@return string|nil path
 function ui.open_file(title) end
 
+--- Returns a file path to save a file to later
+---@param title string
+---@return string|nil path
+function ui.save_file(title) end
+
 --- Open a folder dialog to return a folder path
 ---@param title string
 ---@return string|nil path
@@ -174,7 +179,7 @@ function Array:__len() end
 
 ---@class SaveFile
 ---@field [integer] Class|Array
-local SaveFile = {}
+SaveFile = {}
 
 --- Returns the number of top level object in the save file
 ---@operator len: number
@@ -187,6 +192,18 @@ function SaveFile:__len() end
 ---@return string|nil error
 function SaveFile:save(path, steamid) end
 
+--- Scans for all valid classes in the save and returns them in a SaveFile object @param path string
+---@param steamid integer
+---@param game GameID
+---@return SaveFile
+function SaveFile.scan_classes(path, steamid, game) end
+
+--- Attempts to recover missing classes based on known hashes
+---@param path string
+---@param steamid integer
+---@param game GameID
+---@return SaveFile
+function SaveFile.scan_missing(path, steamid, game) end
 
 ---@class fs
 fs = {}

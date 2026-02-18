@@ -1,6 +1,6 @@
 use std::{collections::HashMap};
 
-use mhtame::{edit::copy::CopyBuffer, save::{game::Game, remap::Remap}, sdk::type_map::{TypeMap}};
+use crate::{edit::copy::CopyBuffer, save::{game::Game, remap::Remap}, sdk::type_map::{TypeMap}};
 
 #[derive(Debug, Clone, Default)]
 pub struct AssetPaths {

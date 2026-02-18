@@ -1,6 +1,5 @@
 pub mod app;
 pub mod file;
-pub mod game_context;
 pub mod steam;
 pub mod tab;
 pub mod viewer;

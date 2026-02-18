@@ -4,11 +4,12 @@ use std::{collections::HashSet, error::Error, io::{Cursor, Read, Seek}, sync::mp
 
 use eframe::egui::{self, Align2, Order};
 use eframe::{self, egui::{ComboBox, ScrollArea, TextEdit, Ui}};
+use mhtame::game_context::GameCtx;
 use mhtame::save::corrupt::CorruptSaveReader;
-use mhtame::sdk::type_map::{self, TypeMap};
+use mhtame::sdk::type_map::{TypeMap};
 use mhtame::{edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::{GAME_OPTIONS, Game}}, sdk::type_map::ContentLanguage};
 
-use crate::{Config, steam::{UserAccount}, game_context::GameCtx};
+use crate::{Config, steam::{UserAccount}};
 
 pub struct FileView {
     pub idx: u64,
@@ -320,7 +321,7 @@ impl FileView {
                 }).ok()?;
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
-                let save_file = corrupted_reader.read_missing(&mut reader);
+                let save_file = corrupted_reader.read_missing_and_scan(&mut reader);
                 return Some(save_file)
             }
             let mut ctx = SaveContext { key: steamid , game: self.game , repair: false };
@@ -406,6 +407,7 @@ impl FileView {
                                 }
                             }
                             Err(e) => {
+                                eprintln!("[ERROR] opening file {e:?}");
                                 //self.set_popup(format!("Failed to open file: {e}"));
                                 return true;
                             }

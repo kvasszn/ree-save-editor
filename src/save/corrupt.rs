@@ -260,7 +260,7 @@ impl<'a> CorruptSaveReader<'a> {
         })
     }
 
-    pub fn read_missing<R: Read + Seek>(&mut self, reader: &mut R) -> SaveFile {
+    pub fn read_missing_and_scan<R: Read + Seek>(&mut self, reader: &mut R) -> SaveFile {
         // First get the top level struct for each game/file
         // TODO: rn just for wilds, add based on game later
         let type_info = self.type_map.get_by_name("app.savedata.cUserSaveData").unwrap();
@@ -289,6 +289,34 @@ impl<'a> CorruptSaveReader<'a> {
             (i as u32, c)
         }).collect();
         fields.append(&mut scanned_classes);
+        SaveFile {
+            fields,
+            game: self.game
+        }
+    }
+    pub fn read_missing<R: Read + Seek>(&mut self, reader: &mut R) -> SaveFile {
+        // First get the top level struct for each game/file
+        // TODO: rn just for wilds, add based on game later
+        let type_info = self.type_map.get_by_name("app.savedata.cUserSaveData").unwrap();
+        // need to add custom class readers that also have type information along side them when
+        let mut fields = Vec::new();
+        if let Ok(native_field_hash) = reader.read_u32() {
+            let class = self.read_class(reader, type_info).unwrap();
+            if native_field_hash == 0 {
+                fields.push((murmur3(&"app.savedata.cUserSaveData", 0xffffffff), class));
+            } else {
+                fields.push((native_field_hash, class));
+            }
+        }
+        let type_info = self.type_map.get_by_name("via.storage.saveService.SaveFileDetail").unwrap();
+        if let Ok(native_field_hash) = reader.read_u32() {
+            let class = self.read_class(reader, type_info).unwrap();
+            if native_field_hash == 0 {
+                fields.push((murmur3(&"via.storage.saveService.SaveFileDetail", 0xffffffff), class));
+            } else {
+                fields.push((native_field_hash, class));
+            }
+        }
         SaveFile {
             fields,
             game: self.game

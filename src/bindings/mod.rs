@@ -518,6 +518,25 @@ impl LuaUserData for SaveDataRef {
         });
 
         methods.add_meta_method(LuaMetaMethod::Len, |_, this, ()| {
+            if this.path.is_empty() {
+                let root = this.root.read().unwrap();
+                return Ok(root.fields.len())
+            }
+            if this.path.len() == 1 {
+                let root = this.root.read().unwrap();
+                let index = &this.path[0];
+                let initial_class = match index {
+                    RefPath::Index(i) => root.fields.get(*i),
+                    _ => None
+                };
+                if let Some(initial_class) = initial_class {
+                    return Ok(initial_class.1.fields.len())
+                } else {
+                    return Err(LuaError::RuntimeError(format!("Could not find first class with path {:?}", this.path)))
+
+                }
+            }
+
             return this.with_target(|target| {
                 if let FieldValue::Array(array) = target {
                     return Ok(array.values.len())

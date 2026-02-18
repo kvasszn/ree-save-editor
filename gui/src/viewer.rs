@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, sync::mpsc::{self, Receiver, Sender}};
+use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLock, mpsc::{self, Receiver, Sender}}};
 
 use eframe::egui::{Ui};
 use egui_dock::tab_viewer::OnCloseResponse;
@@ -7,10 +7,10 @@ use egui_dock::tab_viewer::OnCloseResponse;
 use mhtame::bindings::runner::ScriptRunner;
 
 use mhtame::{
-    save::game::Game, sdk::type_map::ContentLanguage
+    game_context::{GameCtx, AssetPaths}, save::game::Game, sdk::type_map::ContentLanguage
 };
 
-use crate::{Config, game_context::{AssetPaths, GameCtx}, tab::{self, TabType}};
+use crate::{Config, tab::{self, TabType}};
 
 #[derive(Debug)]
 pub struct Viewer {
@@ -21,7 +21,7 @@ pub struct Viewer {
     #[cfg(not(target_arch = "wasm32"))]
     pub script_runner: ScriptRunner,
     pub reload: bool,
-    game_contexts: HashMap<Game, GameCtx>,
+    game_contexts: Arc<RwLock<HashMap<Game, GameCtx>>>,
     pub loading_games: HashSet<Game>,
     pub rx: Receiver<(Game, GameCtx)>, 
     pub tx: Sender<(Game, GameCtx)>,
@@ -37,7 +37,7 @@ impl Viewer {
             #[cfg(not(target_arch = "wasm32"))]
             script_runner: ScriptRunner::new(),
             reload: true,
-            game_contexts: HashMap::new(),
+            game_contexts: Arc::new(RwLock::new(HashMap::new())),
             loading_games: HashSet::new(),
             rx, tx
         }
@@ -45,6 +45,7 @@ impl Viewer {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn run_script(&mut self, path: &str) {
+        self.script_runner.lua.set_app_data(self.game_contexts.clone());
         let res = self.script_runner.load_and_execute_from_file(path);
         println!("[INFO] run_script {res:?}");
     }
@@ -59,7 +60,7 @@ impl Viewer {
 
     pub fn reload(&mut self) {
         println!("[INFO] Reloaded");
-        self.game_contexts = HashMap::new();
+        self.game_contexts = Arc::new(RwLock::new(HashMap::new()));
         self.reload = false;
     }
 }
@@ -73,7 +74,8 @@ impl egui_dock::TabViewer for Viewer {
             ui.label("Loading Assets...");
             while let Ok((game, ctx)) = self.rx.try_recv() {
                 log::info!("[INFO] Received game context for {game:?}");
-                self.game_contexts.insert(game, ctx);
+                let mut game_contexts = self.game_contexts.write().unwrap();
+                game_contexts.insert(game, ctx);
                 self.loading_games.remove(&game);
             }
         }
@@ -82,19 +84,20 @@ impl egui_dock::TabViewer for Viewer {
                 TabType::SaveFileView(save_file) => {
                     save_file.language = self.default_language;
                     let game = save_file.game;
+                    let mut game_contexts = self.game_contexts.write().unwrap();
                     #[cfg(target_arch = "wasm32")]
-                    if !self.game_contexts.contains_key(&game) && !self.loading_games.contains(&game) {
+                    if !game_contexts.contains_key(&game) && !self.loading_games.contains(&game) {
                         let assets = AssetPaths::from_game(game);
                         GameCtx::start_loading_wasm(self.tx.clone(), game, assets);
                         self.loading_games.insert(game);
                     }
                     
                     #[cfg(not(target_arch = "wasm32"))]
-                    self.game_contexts.entry(game).or_insert_with(|| {
+                    game_contexts.entry(game).or_insert_with(|| {
                         let asset_paths = AssetPaths::from_game(game);
                         GameCtx::new(&asset_paths)
                     });
-                    save_file.ui(ui, &mut self.game_contexts)
+                    save_file.ui(ui, &mut *game_contexts)
                 },
                 #[cfg(not(target_arch = "wasm32"))]
                 TabType::Script(script) => {
