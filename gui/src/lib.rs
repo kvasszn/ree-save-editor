@@ -46,36 +46,6 @@ impl Default for Config {
     }
 }
 
-// Thanks Gemini :D
-fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
-    let Some(start_bracket) = input.find('[') else {
-        return (input.to_string(), 0..usize::MAX);
-    };
-
-    let Some(end_bracket) = input.find(']') else {
-        return (input.to_string(), 0..usize::MAX);
-    };
-
-    let name = input[0..start_bracket].to_string();
-    let content = &input[start_bracket + 1..end_bracket];
-
-    if let Some(colon_pos) = content.find(':') {
-        let start_str = &content[0..colon_pos];
-        let end_str = &content[colon_pos + 1..];
-
-        let start = start_str.parse::<usize>().unwrap_or(0);
-        let end = end_str.parse::<usize>().unwrap_or(usize::MAX);
-
-        (name, start..end)
-    } else {
-        if let Ok(idx) = content.parse::<usize>() {
-            (name, idx..idx + 1)
-        } else {
-            (name, 0..usize::MAX)
-        }
-    }
-}
-
 pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
     let name = default_name.to_string();
 
@@ -98,7 +68,6 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
     {
         use wasm_bindgen::JsCast;
 
-        // 1. Create a Blob (File in memory)
         let array = js_sys::Array::new();
         let uint8_array = unsafe { js_sys::Uint8Array::view(&data) };
         array.push(&uint8_array);
@@ -109,10 +78,8 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
         )
         .unwrap();
 
-        // 2. Create a URL for that Blob
         let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
 
-        // 3. Create a hidden <a> tag and click it
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
         let a = document
@@ -125,7 +92,6 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
         a.set_download(&name);
         a.click();
 
-        // 4. Clean up
         web_sys::Url::revoke_object_url(&url).ok();
     }
 }
@@ -168,7 +134,10 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
         .start(
             canvas,
             web_options,
-            Box::new(|cc| Ok(Box::new(TameApp::new(config)))),
+            Box::new(|cc| {
+                configure_fonts(&cc.egui_ctx);
+                Ok(Box::new(TameApp::new(config)))
+            }),
         )
         .await
 }

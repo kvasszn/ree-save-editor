@@ -3,12 +3,12 @@ import json
 
 
 mappings = {}
-msgs = json.load(open("./assets/combined_msgs.json"))["msgs"]
-enums = json.load(open("./assets/enumsmhwilds.json"))
+msgs = json.load(open("./assets/mhwilds/combined_msgs.json"))["msgs"]
+enums = json.load(open("./assets/mhwilds/enumsmhwilds.json"))
 
 def gen_mapping_for_excel_data(enum_type:str, enum_field:str, name_field: str, file_name: str):
     mappings = {enum_type: {}}
-    items = json.load(open(f"./outputs/wilds_files/{file_name}"))["rsz"]["rsz"][0]
+    items = json.load(open(f"../wilds_json/{file_name}"))["rsz"]["rsz"][0]
     for value in items["_Values"]:
         enum = str(value[enum_field])
         name = value[name_field]
@@ -17,7 +17,7 @@ def gen_mapping_for_excel_data(enum_type:str, enum_field:str, name_field: str, f
 
 def gen_mapping_for_excel_data_v2(enum_type:str, enum_field:str, name_field: str, file_name: str):
     mappings = {enum_type: {}}
-    items = json.load(open(f"./outputs/wilds_files/{file_name}"))["rsz"]["rsz"][0]
+    items = json.load(open(f"../wilds_json/{file_name}"))["rsz"]["rsz"][0]
     for value in items["_Values"]:
         enum = value[enum_field]["_Value"]
         name = value[name_field]
@@ -27,7 +27,7 @@ def gen_mapping_for_excel_data_v2(enum_type:str, enum_field:str, name_field: str
 
 def gen_mapping_for_excel_data_custom(enum_type:str, enum_field:str, enum_field2:str, name_field: str, file_name: str):
     mappings = {enum_type: {}}
-    items = json.load(open(f"./outputs/wilds_files/{file_name}"))["rsz"]["rsz"][0]
+    items = json.load(open(f"../wilds_json/{file_name}"))["rsz"]["rsz"][0]
     for value in items["_Values"]:
         enum1 = value[enum_field]["_Value"]
         enum2 = value[enum_field2]["_Value"]
@@ -100,7 +100,7 @@ mappings.update(gen_mapping_for_excel_data_v2(f"app.ArtianDef.BONUS_ID", f"_Bonu
 def gen_mapping_for_artian_skills(enum_type:str, file_name: str):
     global mappings
     res_mappings = {enum_type: {}}
-    items = json.load(open(f"./outputs/wilds_files/{file_name}"))["rsz"]["rsz"][0]
+    items = json.load(open(f"../wilds_json/{file_name}"))["rsz"]["rsz"][0]
     for value in items["_Values"]:
         art_enum = value["_ArtianSkillType"]
         skill1_enum = value["_GroupSkillId"]

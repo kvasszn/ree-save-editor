@@ -58,6 +58,8 @@ impl Viewer {
     }
 
     pub fn reload(&mut self) {
+        println!("[INFO] Reloaded");
+        self.game_contexts = HashMap::new();
         self.reload = false;
     }
 }
@@ -68,6 +70,7 @@ impl egui_dock::TabViewer for Viewer {
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
         #[cfg(target_arch = "wasm32")]
         if !self.loading_games.is_empty() {
+            ui.label("Loading Assets...");
             while let Ok((game, ctx)) = self.rx.try_recv() {
                 log::info!("[INFO] Received game context for {game:?}");
                 self.game_contexts.insert(game, ctx);
@@ -77,6 +80,7 @@ impl egui_dock::TabViewer for Viewer {
         ui.push_id(tab.idx, |ui| {
             match &mut tab.tab {
                 TabType::SaveFileView(save_file) => {
+                    save_file.language = self.default_language;
                     let game = save_file.game;
                     #[cfg(target_arch = "wasm32")]
                     if !self.game_contexts.contains_key(&game) && !self.loading_games.contains(&game) {

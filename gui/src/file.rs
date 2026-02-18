@@ -42,6 +42,27 @@ impl FileView {
         }
     }
 
+
+    pub fn from_data(config: &Config, file_name: String, bytes: Vec<u8>, idx: u64, language: ContentLanguage) -> Self {
+        let mut input_file_picker = FilePicker::<false>::new("File");
+        input_file_picker.text = file_name.clone();
+        let current_file = CurrentFile::FileData{file_name, bytes};
+        Self {
+            idx,
+            input_file_picker,
+            output_path_picker: FilePicker::new("Output Path"),
+            current_file,
+            language,
+            game: Game::MHWILDS,
+            search: Search::default(),
+            steam: Steam::new(config),
+            show_popup: false,
+            popup_msg: "".to_string(),
+            repair: false,
+
+        }
+    }
+
     pub fn from_path(config: &Config, file_path: String, idx: u64, language: ContentLanguage) -> Self {
         let mut input_file_picker = FilePicker::<false>::new("File");
         input_file_picker.text = file_path.clone();
@@ -192,15 +213,18 @@ impl FileView {
             }
 
             ui.label("Game Profile");
-            ComboBox::from_id_salt("GameProfilePicker")
+            let changed_game = ComboBox::from_id_salt("GameProfilePicker")
                 .selected_text(GAME_OPTIONS[self.game as usize].0)
                 .show_ui(ui, |ui| {
                     for option in GAME_OPTIONS {
                         ui.selectable_value(&mut self.game, option.1, option.0);
                     }
-                });
-
-
+                }).response.changed();
+            if let Some(game_ctx) = game_ctx.as_deref_mut() {
+                if changed_game {
+                    self.reload(game_ctx);
+                }
+            }
         });
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -294,7 +318,6 @@ impl FileView {
                     game: self.game,
                     repair: self.repair
                 }).ok()?;
-                println!("{:?}", &data[0..32]);
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
                 let save_file = corrupted_reader.read_missing(&mut reader);
@@ -391,14 +414,35 @@ impl FileView {
                 }
             },
             CurrentFile::FileData { file_name, bytes } => {
-                let mut reader = Cursor::new(bytes);
+                let mut reader = Cursor::new(&bytes);
                 let save = self.read_save(&mut reader, game_ctx);
+                #[cfg(target_arch = "wasm32")]
                 if let Some(save) = save {
-                    self.current_file = CurrentFile::Loaded {
-                        file_name: file_name.to_string(),
-                        loaded: save 
+                    self.current_file = CurrentFile::LoadedWeb {
+                        file_name,
+                        original_bytes: bytes,
+                        loaded: save,
                     };
                     return true;
+                } else {
+                    self.current_file = CurrentFile::FileData {
+                        file_name,
+                        bytes: bytes,
+                    };
+                }
+
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Some(save) = save {
+                    self.current_file = CurrentFile::Loaded {
+                        file_name,
+                        loaded: save,
+                    };
+                    return true;
+                } else {
+                    self.current_file = CurrentFile::FileData {
+                        file_name,
+                        bytes: bytes,
+                    };
                 }
             },
             CurrentFile::LoadedWeb { file_name, original_bytes, .. } => {
@@ -754,12 +798,23 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
         None
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn take(&mut self) -> Option<String> {
         let res = self.get();
         if res.is_some() {
             self.pending_result = None
         }
         res
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn take(&mut self) -> Option<FilePickResult> {
+        let res = self.get();
+        if res.is_some() {
+            let res = self.pending_result.take();
+            return res;
+        }
+        None
     }
 
     pub fn button_open(&mut self, ui: &mut Ui) {

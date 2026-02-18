@@ -45,22 +45,24 @@ impl TameApp {
 
 impl eframe::App for TameApp {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        if self.viewer.reload {
-            self.viewer.reload = false;
-        }
-        if let Some(path) = self.file_opener.take() {
-            #[cfg(target_arch = "wasm32")]
-            {
-                log::info!("Loading Save File From {path}");
-                let file_view = FileView::from_path(
+        #[cfg(target_arch = "wasm32")]
+        if let Some(file_pick_res) = self.file_opener.take() {
+            use crate::file::FilePickResult;
+
+            if let FilePickResult::Wasm {name, data} = file_pick_res {
+                log::info!("Loading Save File {name}");
+                let file_view = FileView::from_data(
                     &self.viewer.config,
-                    path,
+                    name, data,
                     self.viewer.num_tabs,
                     self.viewer.default_language,
                 );
                 let tab = Tab::from(file_view);
                 self.add_tab(tab);
             }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(path) = self.file_opener.take() {
             #[cfg(not(target_arch = "wasm32"))]
             if path.ends_with("lua") {
                 log::info!("Loading Lua Script From {path}");
@@ -146,7 +148,7 @@ impl eframe::App for TameApp {
                     ui.menu_button(
                         format!("Language ({})", LANGUAGE_OPTIONS[self.viewer.default_language as usize].0),
                         |ui| {
-                            for option in LANGUAGE_OPTIONS {
+                            for option in LANGUAGE_OPTIONS.iter().filter(|x| INGAME_LANGUAGES.contains(&x.1)) {
                                 ui.selectable_value(
                                     &mut self.viewer.default_language,
                                     option.1,
@@ -157,6 +159,7 @@ impl eframe::App for TameApp {
                     );
                 });
                 if ui.button("Reload").clicked() {
+                    println!("[INFO] Requested Full Reload");
                     self.viewer.reload = true;
                 }
             });
@@ -179,6 +182,24 @@ impl eframe::App for TameApp {
                 });
     }
 }
+
+const INGAME_LANGUAGES: [ContentLanguage; 15] = [
+    ContentLanguage::Japanese,
+    ContentLanguage::English,
+    ContentLanguage::French,
+    ContentLanguage::German,
+    ContentLanguage::Italian,
+    ContentLanguage::Spanish,
+    ContentLanguage::Russian,
+    ContentLanguage::Polish,
+    ContentLanguage::PortugueseBr,
+    ContentLanguage::Korean,
+    ContentLanguage::TransitionalChinese,
+    ContentLanguage::SimplelifiedChinese,
+    ContentLanguage::Arabic,
+    ContentLanguage::Thai,
+    ContentLanguage::LatinAmericanSpanish,
+];
 
 const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
     ("Japanese", ContentLanguage::Japanese),

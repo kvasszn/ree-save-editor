@@ -130,9 +130,10 @@ fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> 
                 });
         }
         None => {
-            value.edit(ui, ctx);
         }
     }
+    ui.label("Raw Enum Value: ");
+    value.edit(ui, ctx);
     EditResponse::default()
 }
 
@@ -170,6 +171,7 @@ fn edit_enum_from_type(value: &mut i32, enum_type_str: &str, ui: &mut Ui, ctx: &
             None => {
             }
         }
+        ui.label("Raw Enum Value: ");
         value.edit(ui, ctx);
     });
     EditResponse::default()
