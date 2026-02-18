@@ -51,10 +51,10 @@ struct Args {
     #[arg(short('o'), long, default_value_t = String::from("outputs"))]
     out_dir: String,
     
-    #[arg(long, default_value_t = String::from("assets/rszmhwilds.json"))]
+    #[arg(long, default_value_t = String::from("assets/mhwilds/rszmhwilds.json"))]
     rsz: String,
     
-    #[arg(long, default_value_t = String::from("assets/enumsmhwilds.json"))]
+    #[arg(long, default_value_t = String::from("assets/mhwilds/enumsmhwilds.json"))]
     enums: String,
 
     #[arg(long)]

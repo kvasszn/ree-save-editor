@@ -165,6 +165,8 @@ pub enum MandarinError {
     InvalidIV{target: [u8; 16], real: [u8; 16]},
     GameNotSupported{game: Game},
     AuthFailed,
+    // (index, len)
+    OutOfBounds(usize, usize),
 }
 
 impl Error for MandarinError {}
@@ -186,6 +188,9 @@ impl Display for MandarinError {
             }
             Self::AuthFailed => {
                 write!(f, "Auth Failed idk")
+            }
+            Self::OutOfBounds(index, len) => {
+                write!(f, "{index} out of bounds for buffer of len {len}")
             }
         }
     }
@@ -229,11 +234,9 @@ impl Mandarin {
         let n = bytes_to_int(&n);
         let e = Integer::from(65537);
 
-        //let mut state_a: u64 = 0xBFACF76C3F96;
         let mut state_a: u64 = self.seed_for_rsa_rand;
         let mut static_rands = [0u8; 32];
 
-        // Run the PRNG to fill the buffer
         for i in 0..32 {
             state_a = SplitMix64::next_int(&mut state_a);
             static_rands[i] = state_a as u8;
@@ -242,9 +245,6 @@ impl Mandarin {
             static_rands[i] = 0;
         }
 
-        // 3. Convert this "Upper Mask" to a BigInt ONCE
-        // Since bytes_to_int uses Little Endian (Lsf), the zeros at the start
-        // correctly place the constant data in the upper bits (from bit 64 onwards).
         let high_part_int = bytes_to_int(&static_rands);
 
         let start = 0x00000000u64;
@@ -323,9 +323,6 @@ impl Mandarin {
     pub fn decrypt(&self, encrypted: &[u8], decrypted_len: u64, key: u64) -> Result<Vec<u8>, MandarinError>{
         // This is different for dif games, i think it actually just gets generated somehow before
         // the module gets launched, but whatever values you find work for anyone
-        //let mut state_a: u64 = 0x90EDB79172FDBE51; // dd2
-        //let mut state_a: u64 = 0x3F90D767F13ABE2E; // pargamata
-        //let mut state_a: u64 = 0xBFACF76C3F96; // wilds
         let mut state_a: u64 = self.seed_for_rsa_rand;
         let mut rands: [u8; 0x20] = [0u8; 0x20];
         for i in 0..32 {
@@ -341,9 +338,6 @@ impl Mandarin {
                                                                         // allocated, its on the stack
                                                                         // but like variable size
 
-        //let mut state_p: u64 = 0x7A36955255266CED; // wilds
-        //let mut state_p: u64 = 0x7DA24A9E1479F3D7; // pragmata
-        //let mut state_p: u64 = 0x5EC646997D69AE1B; // dd2
         let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
@@ -363,7 +357,6 @@ impl Mandarin {
             encryption_len_leftover -= b * 0x4000;
         }
 
-        //state_p = state_p.wrapping_add(unsafe{*(rands.as_ptr() as *const u64)});
         state_p = state_p.wrapping_add(!key);
 
         // loop through each real block that fits in the decrypted length
@@ -378,7 +371,14 @@ impl Mandarin {
             //println!("BLOCK {} out of {num_real_blocks}", i + 1);
             let block_size = block_sizes[i] as usize * 0x4000;
             let encrypted_read_size = block_size + 0x210;
-            buf[0..encrypted_read_size].copy_from_slice(&encrypted[encrypted_start..encrypted_start+encrypted_read_size]);
+            let encrypted_end = encrypted_start + encrypted_read_size;
+            if encrypted_end > encrypted.len() {
+                return Err(MandarinError::OutOfBounds(encrypted_end, encrypted.len()))
+            }
+            if encrypted_read_size > buf.len() {
+                return Err(MandarinError::OutOfBounds(encrypted_read_size, buf.len()))
+            }
+            buf[0..encrypted_read_size].copy_from_slice(&encrypted[encrypted_start..encrypted_end]);
 
             // generate key and iv
             let mut key = [0u8; 16];

@@ -161,7 +161,7 @@ impl SaveFile {
         reader.read_to_end(&mut encrypted)?;
         let data = if mandarin {
             let mandarin = Mandarin::init_from_game(ctx.game)?;
-            let key = if ctx.key == 0 {
+            let key = if ctx.key == u64::MAX {
                 mandarin.brute_force_v2(&encrypted).unwrap_or(0)
             } else {ctx.key};
             let key = ctx.game.get_key_from_steamid(key);
@@ -171,7 +171,7 @@ impl SaveFile {
         } else {
             encrypted
         };
-        let mut data = if deflate {
+        let data = if deflate {
             // Decompression
             let mut decrypted_buf = Cursor::new(&data);
             // this is so fucking stupid
@@ -256,7 +256,7 @@ impl StructRW<SaveContext> for SaveFile {
             } else {
                 encrypted
             };
-            let mut data = if deflate {
+            let data = if deflate {
                 // Decompression
                 let mut decrypted_buf = Cursor::new(&data);
                 // this is so fucking stupid

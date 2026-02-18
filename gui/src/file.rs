@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{collections::HashSet, error::Error, io::{Cursor, Read, Seek}, sync::mpsc::{Receiver, Sender}, time::Duration};
 
-use eframe::egui::{self, Align2, Order, Window};
+use eframe::egui::{self, Align2, Order};
 use eframe::{self, egui::{ComboBox, ScrollArea, TextEdit, Ui}};
 use mhtame::save::corrupt::CorruptSaveReader;
+use mhtame::sdk::type_map::{self, TypeMap};
 use mhtame::{edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::{GAME_OPTIONS, Game}}, sdk::type_map::ContentLanguage};
 
-use crate::game_context::AssetPaths;
-use crate::{Config, steam::{UserAccount, get_wilds_save_files}, game_context::GameCtx};
+use crate::{Config, steam::{UserAccount}, game_context::GameCtx};
 
 pub struct FileView {
     pub idx: u64,
@@ -122,11 +122,13 @@ impl FileView {
 
     pub fn ui(&mut self, ui: &mut Ui, game_contexts: &mut HashMap<Game, GameCtx>) {
         self.show_popup(ui);
-        let game_ctx = game_contexts.entry(self.game).or_insert_with(|| {
-            let asset_paths = AssetPaths::from_game(self.game);
-            GameCtx::new(&asset_paths)
-        });
-        self.update_input_file(game_ctx);
+
+        let mut game_ctx = game_contexts.get_mut(&self.game);
+
+        if let Some(game_ctx) = game_ctx.as_deref_mut() {
+            self.update_input_file(game_ctx);
+        }
+
         ui.horizontal(|ui| {
             self.input_file_picker.ui(ui);
             self.input_file_picker.update();
@@ -163,8 +165,7 @@ impl FileView {
 
                             #[cfg(target_arch = "wasm32")]
                             {
-                                //save_file_dialog(&file_path, data);
-                                //self.popup_msg = "Saved/Downloaded".to_string();
+                                crate::save_file_dialog(&file_path, data);
                                 self.set_popup(format!("Saved/Downloaded"));
                             }
 
@@ -184,8 +185,10 @@ impl FileView {
                     self.input_file_picker.pending_result =
                         Some(FilePickResult::Native(self.input_file_picker.text.clone()));
                 }
-                self.update_input_file(game_ctx);
-                self.reload(game_ctx);
+                if let Some(game_ctx) = game_ctx.as_deref_mut() {
+                    self.update_input_file(game_ctx);
+                    self.reload(game_ctx);
+                }
             }
 
             ui.label("Game Profile");
@@ -208,11 +211,17 @@ impl FileView {
         ui.horizontal(|ui| {
             if let Some(path) = self.steam.found_file(ui, self.game) {
                 self.update_file_path(path);
-                self.reload(game_ctx);
+                if let Some(game_ctx) = game_ctx.as_deref_mut() {
+                    self.reload(game_ctx);
+                }
             };
             #[cfg(not(target_arch = "wasm32"))]
             self.steam.edit_steam_path(ui);
         });
+
+        if let Some(game_ctx) = game_ctx.as_deref_mut() {
+            self.search.ui(ui, &self.current_file, &game_ctx.type_map);
+        }
 
         ui.horizontal(|ui| {
             ui.label("Try Repairing Corruption (WIP)");
@@ -240,36 +249,36 @@ impl FileView {
               }
               }*/
         });
-
-        ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
-
-            ui.style_mut().spacing.item_spacing *= 1.5;
-            ui.style_mut().spacing.button_padding *= 1.5;
-            for (_style, font_id) in ui.style_mut().text_styles.iter_mut() {
-                font_id.size *= 1.2;
-            }
-            match &mut self.current_file {
-                CurrentFile::LoadedWeb { loaded, .. } | CurrentFile::Loaded { loaded, .. } => {
-                    let mut edit_ctx = EditContext::new(
-                        &game_ctx.type_map,
-                        &self.search.fields,
-                        &self.search.leaf_nodes,
-                        &self.search.range,
-                        &mut game_ctx.copy_buffer,
-                        self.language,
-                        &game_ctx.remaps
-                    );
-                    loaded.edit(ui, &mut edit_ctx);
+        if let Some(game_ctx) = game_ctx {
+            ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
+                ui.style_mut().spacing.item_spacing *= 1.5;
+                ui.style_mut().spacing.button_padding *= 1.5;
+                for (_style, font_id) in ui.style_mut().text_styles.iter_mut() {
+                    font_id.size *= 1.2;
                 }
-                _ => {
-                    ui.label("No File Loaded.");
-                    #[cfg(target_arch = "wasm32")]
-                    ui.label("Drag and Drop or use the file dialog");
-                    #[cfg(target_os = "windows")]
-                    ui.label("Drag and Drop or use the file dialog");
+                match &mut self.current_file {
+                    CurrentFile::LoadedWeb { loaded, .. } | CurrentFile::Loaded { loaded, .. } => {
+                        let mut edit_ctx = EditContext::new(
+                            &game_ctx.type_map,
+                            &self.search.fields,
+                            &self.search.leaf_nodes,
+                            &self.search.range,
+                            &mut game_ctx.copy_buffer,
+                            self.language,
+                            &game_ctx.remaps
+                        );
+                        loaded.edit(ui, &mut edit_ctx);
+                    }
+                    _ => {
+                        ui.label("No File Loaded.");
+                        #[cfg(target_arch = "wasm32")]
+                        ui.label("Drag and Drop or use the file dialog");
+                        #[cfg(target_os = "windows")]
+                        ui.label("Drag and Drop or use the file dialog");
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     fn set_popup(&mut self, msg: String) {
@@ -277,20 +286,6 @@ impl FileView {
         self.show_popup = true;
     }
 
-    fn read_save_corrupt<R: Read + Seek>(&mut self, reader: &mut R, game_ctx: &mut GameCtx) -> Option<SaveFile> {
-        if let Some(steamid) = self.steam.steam_id {
-            let data = SaveFile::read_data(reader, SaveContext{
-                key: steamid,
-                game: self.game,
-                repair: self.repair
-            }).ok()?;
-            let mut reader = Cursor::new(data);
-            let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
-            let save_file = corrupted_reader.read_missing(&mut reader);
-            return Some(save_file)
-        }
-        None
-    }
     fn read_save<R: Read + Seek>(&mut self, reader: &mut R, game_ctx: &mut GameCtx) -> Option<SaveFile> {
         if let Some(steamid) = self.steam.steam_id {
             if self.repair {
@@ -388,7 +383,7 @@ impl FileView {
                                 }
                             }
                             Err(e) => {
-                                self.set_popup(format!("Failed to open file: {e}"));
+                                //self.set_popup(format!("Failed to open file: {e}"));
                                 return true;
                             }
                         }
@@ -421,7 +416,7 @@ impl FileView {
             CurrentFile::Loaded { .. } | CurrentFile::Null => {
                 self.current_file = CurrentFile::Path(self.input_file_picker.text.clone());
                 if self.reload(game_ctx) == false {
-                    self.set_popup(format!("Could not open file {:?}", self.input_file_picker.text));
+                    //self.set_popup(format!("Could not open file {:?}", self.input_file_picker.text));
                     return false;
                 };
             }
@@ -451,7 +446,77 @@ impl Default for Search {
             leaf_nodes: HashSet::new(),
         }
     }
+}
 
+impl Search {
+    pub fn ui(&mut self, ui: &mut Ui, current_file: &CurrentFile, type_map: &TypeMap) {
+        ui.horizontal(|ui| {
+            ui.label("Search: ");
+            if ui.text_edit_singleline(&mut self.buffer).changed() {
+                let (search_buffer, range) = Self::parse_query(&self.buffer);
+                self.range = range;
+                self.fields.clear();
+                self.leaf_nodes.clear();
+                if !self.buffer.is_empty() {
+                    let start = web_time::Instant::now();
+                    match &current_file {
+                        CurrentFile::Loaded { loaded, .. }
+                        | CurrentFile::LoadedWeb { loaded, .. } => {
+                            for field in &loaded.fields {
+                                if let Some(type_info) = type_map.get_by_hash(field.1.hash)
+                                {
+                                    let fs = type_map.search(
+                                        type_info,
+                                        &search_buffer,
+                                        self.max_depth as usize,
+                                    );
+                                    self.fields.extend(fs.0);
+                                    self.leaf_nodes.extend(fs.1);
+                                }
+                            }
+                        }
+                        _ => {
+                            ();
+                        }
+                    }
+                    self.time = Some(start.elapsed());
+                } else {
+                    self.time = None;
+                }
+            }
+            if let Some(t) = &self.time {
+                ui.label(format!("{} ms", t.as_millis()));
+            }
+        });
+    }
+    fn parse_query(input: &str) -> (String, core::ops::Range<usize>) {
+        let Some(start_bracket) = input.find('[') else {
+            return (input.to_string(), 0..usize::MAX);
+        };
+
+        let Some(end_bracket) = input.find(']') else {
+            return (input.to_string(), 0..usize::MAX);
+        };
+
+        let name = input[0..start_bracket].to_string();
+        let content = &input[start_bracket + 1..end_bracket];
+
+        if let Some(colon_pos) = content.find(':') {
+            let start_str = &content[0..colon_pos];
+            let end_str = &content[colon_pos + 1..];
+
+            let start = start_str.parse::<usize>().unwrap_or(0);
+            let end = end_str.parse::<usize>().unwrap_or(usize::MAX);
+
+            (name, start..end)
+        } else {
+            if let Ok(idx) = content.parse::<usize>() {
+                (name, idx..idx + 1)
+            } else {
+                (name, 0..usize::MAX)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

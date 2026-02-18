@@ -145,9 +145,22 @@ impl TypeMap {
             Ok(())
         })();
         if let Err(e) = res {
-            eprintln!("Failed to load RSZ from path {rsz_path}: {e}");
+            log::error!("Failed to load RSZ from path {rsz_path}: {e}");
         }
     }
+
+    pub fn load_rsz_from_data(&mut self, data: &[u8]) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let types = serde_json::from_slice(data)?;
+            self.types = types;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            log::error!("Failed to load RSZ from data: {e}");
+        }
+    }
+
+
 
     pub fn load_enums_from_path(&mut self, path: &str) {
         let res: Result<(), Box<dyn std::error::Error>> = (|| {
@@ -159,7 +172,18 @@ impl TypeMap {
             Ok(())
         })();
         if let Err(e) = res {
-            eprintln!("Failed to load enums from path {path}: {e}");
+            log::error!("Failed to load enums from path {path}: {e}");
+        }
+    }
+
+    pub fn load_enums_from_data(&mut self, data: &[u8]) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let enums = serde_json::from_slice(data)?;
+            self.enums = enums;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            log::error!("Failed to load enums from data: {e}");
         }
     }
 
@@ -173,7 +197,18 @@ impl TypeMap {
             Ok(())
         })();
         if let Err(e) = res {
-            eprintln!("Failed to load msg data from path {path}: {e}");
+            log::error!("Failed to load msg data from path {path}: {e}");
+        }
+    }
+
+    pub fn load_msgs_from_data(&mut self, data: &[u8]) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let msgs = serde_json::from_slice(data)?;
+            self.msgs = msgs;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            log::error!("Failed to load msgs from data: {e}");
         }
     }
 
@@ -187,7 +222,18 @@ impl TypeMap {
             Ok(())
         })();
         if let Err(e) = res {
-            eprintln!("Failed to load enum text mappings from path {path}: {e}");
+            log::error!("Failed to load enum text mappings from path {path}: {e}");
+        }
+    }
+
+    pub fn load_enum_mappings_from_data(&mut self, data: &[u8]) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let data = serde_json::from_slice(data)?;
+            self.enum_mappings = data;
+            Ok(())
+        })();
+        if let Err(e) = res {
+            log::error!("Failed to load enums mappings from data: {e}");
         }
     }
 
@@ -203,10 +249,24 @@ impl TypeMap {
             Ok(())
         })();
         if let Err(e) = res {
-            eprintln!("Failed to load raw string data from path {path}: {e}");
+            log::error!("Failed to load raw string data from path {path}: {e}");
         }
     }
 
+    pub fn load_strings_from_data(&mut self, data: &str) {
+        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+            let mut string_map = HashMap::new();
+            for line in data.lines() {
+                let hash = murmur3(&line, 0xffffffff);
+                string_map.insert(hash, line.to_string());
+            }
+            self.string_map = string_map;
+           Ok(())
+        })();
+        if let Err(e) = res {
+            log::error!("Failed to load strings from data: {e}");
+        }
+    }
 
     pub fn load_string_map(mut self, strings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
         let mut file = File::open(strings_path)?;

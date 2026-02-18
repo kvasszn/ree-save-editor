@@ -1,7 +1,6 @@
 use std::{collections::HashSet, fmt::Display, str::FromStr};
 
 use bitfield::BitMut;
-use bytemuck::Pod;
 use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, Ui};
 
 use crate::{edit::{EditContext, EditResponse, Editable, copy::CopyBuffer}, save::{remap::Remap, types::*}, sdk::{type_map::{TypeInfo, murmur3}, *}};

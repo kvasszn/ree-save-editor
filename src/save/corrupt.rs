@@ -3,7 +3,7 @@ use std::{error::Error, io::{Read, Seek}};
 use indexmap::IndexMap;
 use util::{ReadExt, SeekExt, seek_align_up};
 
-use crate::{save::{SaveFile, game::{self, Game}, types::{Array, ArrayType, Class, Field, FieldType, FieldValue, Struct}}, sdk::{StringU16, type_map::{FieldInfo, TypeInfo, TypeMap, murmur3}}};
+use crate::{save::{SaveFile, game::{Game}, types::{Array, ArrayType, Class, Field, FieldType, FieldValue, Struct}}, sdk::{StringU16, type_map::{FieldInfo, TypeInfo, TypeMap, murmur3}}};
 
 // There are two types of corruption that I think can be fixed
 // The first is missing data/incorrect headers, where the size of the data has not changed
@@ -19,7 +19,6 @@ use crate::{save::{SaveFile, game::{self, Game}, types::{Array, ArrayType, Class
 // Also, It's important to note that saves corrupted at the deflate or encryption level are
 // probably unrecoverable (definitely for encryption, maybe possible for deflate?)
 pub struct CorruptSaveReader<'a> {
-    good_save: Option<&'a SaveFile>,
     type_map: &'a TypeMap,
     game: Game,
 }
@@ -27,7 +26,6 @@ pub struct CorruptSaveReader<'a> {
 impl<'a> CorruptSaveReader<'a> {
     pub fn new(type_map: &'a TypeMap, game: Game) -> Self {
         Self {
-            good_save: None,
             type_map,
             game
         }

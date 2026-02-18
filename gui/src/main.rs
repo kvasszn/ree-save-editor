@@ -2,8 +2,7 @@
 mod native {
     use clap::Parser;
     use eframe::egui;
-    use mhtame::rsz::dump::{ENUM_FILE, RSZ_FILE};
-    use mhtame_gui::{Config, app::TameApp};
+    use mhtame_gui::{Config, app::TameApp, configure_fonts};
 
     #[derive(Parser, Debug)]
     #[command(name = "mhtame-gui")]
@@ -61,6 +60,7 @@ mod native {
         eframe::run_native("mhtame",
             options,
             Box::new(|_cc| {
+                configure_fonts(&_cc.egui_ctx);
                 //Ok(Box::new(TameApp::new(config, _cc)))
                 Ok(Box::new(TameApp::new(config)))
             }),
@@ -73,11 +73,7 @@ fn main() -> eframe::Result<()> {
     native::main()
 }
 
-// This dummy main is required because Cargo still checks the binary target 
-// even when compiling for WASM. This prevents the "missing main" error.
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    // This function never actually runs in the browser. 
-    // The browser uses the 'start' function in lib.rs instead.
     panic!("This binary cannot be run on WASM. Use the library entry point.");
 }

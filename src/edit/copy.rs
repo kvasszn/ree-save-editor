@@ -5,3 +5,9 @@ pub enum CopyBuffer {
     Array(Class),
     Field(Field),
 }
+
+impl Default for CopyBuffer {
+    fn default() -> Self {
+        CopyBuffer::Null
+    }
+}

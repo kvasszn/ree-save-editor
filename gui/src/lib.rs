@@ -1,6 +1,6 @@
 pub mod app;
-pub mod game_context;
 pub mod file;
+pub mod game_context;
 pub mod steam;
 pub mod tab;
 pub mod viewer;
@@ -8,25 +8,7 @@ pub mod viewer;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod code_editor;
 
-use mhtame::edit::{EditContext, Editable};
-use mhtame::file::StructRW;
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
-use std::io::{Cursor, Read, Seek};
-use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
-
-use eframe::egui::{self, ComboBox, ScrollArea, TextEdit, Ui, Vec2};
-
-use crate::steam::*;
-use mhtame::save::game::{GAME_OPTIONS, Game};
-use mhtame::save::remap::Remap;
-use mhtame::sdk::type_map::{ContentLanguage, TypeMap};
-use mhtame::{
-    edit::copy::CopyBuffer,
-    save::{SaveContext, SaveFile},
-};
+use eframe::egui::{self};
 
 // We need a common config struct that works for both CLI (Clap) and Web
 #[derive(Debug, Clone)]
@@ -41,28 +23,6 @@ pub struct Config {
     pub remap_path: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
     pub steam_path: String,
-}
-
-impl Config {
-    #[cfg(not(target_arch = "wasm32"))]
-    fn edit_asset_paths(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.label("rsz_path:");
-            //ui.text_edit_singleline(&mut self.rsz_path);
-        });
-        ui.horizontal(|ui| {
-            ui.label("enums_path:");
-            //ui.text_edit_singleline(&mut self.enums_path);
-        });
-        ui.horizontal(|ui| {
-            ui.label("msgs_path:");
-            //ui.text_edit_singleline(&mut self.msgs_path);
-        });
-        ui.horizontal(|ui| {
-            ui.label("mappings_path:");
-            //ui.text_edit_singleline(&mut self.mappings_path);
-        });
-    }
 }
 
 impl Default for Config {
@@ -84,177 +44,6 @@ impl Default for Config {
                 .to_string(),
         }
     }
-}
-
-#[derive(Debug)]
-pub enum CurrentFile {
-    Null,
-    Path(String),
-    FileData {
-        file_name: String,
-        bytes: Vec<u8>,
-    },
-    Loaded {
-        file_name: String,
-        loaded: SaveFile,
-    },
-    LoadedWeb {
-        file_name: String,
-        original_bytes: Vec<u8>,
-        loaded: SaveFile,
-    },
-}
-
-impl CurrentFile {
-    pub fn write_save_to_buf(&self, key: u64) -> Result<(String, Vec<u8>), Box<dyn Error>> {
-        match self {
-            CurrentFile::Null | CurrentFile::Path(_) | CurrentFile::FileData { .. } => {
-                Err("Can't save unloaded file".into())
-            }
-            CurrentFile::Loaded { file_name, loaded }
-            | CurrentFile::LoadedWeb {
-                file_name, loaded, ..
-            } => Ok((file_name.clone(), loaded.to_bytes(key)?)),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum FilePickResult {
-    Native(String),
-    Wasm { name: String, data: Vec<u8> },
-}
-
-// could make name a const generic
-pub struct FilePicker<const FOLDER: bool> {
-    tx: Sender<FilePickResult>,
-    rx: Receiver<FilePickResult>,
-    label: String,
-    text: String,
-    pending_result: Option<FilePickResult>,
-}
-
-impl<const FOLDER: bool> FilePicker<FOLDER> {
-    pub fn new(label: &str) -> Self {
-        let (tx, rx) = mpsc::channel();
-
-        Self {
-            label: label.to_string(),
-            text: String::new(),
-            tx,
-            rx,
-            pending_result: None,
-        }
-    }
-
-    pub fn update(&mut self) {
-        if let Ok(result) = self.rx.try_recv() {
-            match &result {
-                FilePickResult::Native(p) => self.text = p.clone(),
-                FilePickResult::Wasm { name, .. } => self.text = name.clone(),
-            }
-            self.pending_result = Some(result);
-        }
-    }
-
-    pub fn ui(&mut self, ui: &mut Ui) {
-        ui.label(format!("{}:", &self.label));
-        ui.add(TextEdit::singleline(&mut self.text));
-        if ui.button("Browse").clicked() {
-            self.spawn_dialog();
-        }
-    }
-
-    fn spawn_dialog(&self) {
-        let tx = self.tx.clone();
-        let title = self.label.clone();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        std::thread::spawn(move || {
-            let dialog = rfd::FileDialog::new().set_title(&title);
-            let result = if FOLDER {
-                dialog.pick_folder()
-            } else {
-                dialog.pick_file()
-            };
-            if let Some(path) = result {
-                let _ = tx.send(FilePickResult::Native(path.display().to_string()));
-            }
-        });
-
-        #[cfg(target_arch = "wasm32")]
-        wasm_bindgen_futures::spawn_local(async move {
-            let dialog = rfd::AsyncFileDialog::new().set_title(&title);
-            let file_handle = dialog.pick_file().await;
-            if let Some(file) = file_handle {
-                let name = file.file_name();
-                let data = file.read().await;
-                let _ = tx.send(FilePickResult::Wasm { name, data });
-            }
-        });
-    }
-}
-
-const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
-    ("Japanese", ContentLanguage::Japanese),
-    ("English", ContentLanguage::English),
-    ("French", ContentLanguage::French),
-    ("Italian", ContentLanguage::Italian),
-    ("German", ContentLanguage::German),
-    ("Spanish", ContentLanguage::Spanish),
-    ("Russian", ContentLanguage::Russian),
-    ("Polish", ContentLanguage::Polish),
-    ("Dutch", ContentLanguage::Dutch),
-    ("Portuguese", ContentLanguage::Portuguese),
-    ("Portuguese (Brazil)", ContentLanguage::PortugueseBr),
-    ("Korean", ContentLanguage::Korean),
-    ("Traditional Chinese", ContentLanguage::TransitionalChinese),
-    ("Simplified Chinese", ContentLanguage::SimplelifiedChinese),
-    ("Finnish", ContentLanguage::Finnish),
-    ("Swedish", ContentLanguage::Swedish),
-    ("Danish", ContentLanguage::Danish),
-    ("Norwegian", ContentLanguage::Norwegian),
-    ("Czech", ContentLanguage::Czech),
-    ("Hungarian", ContentLanguage::Hungarian),
-    ("Slovak", ContentLanguage::Slovak),
-    ("Arabic", ContentLanguage::Arabic),
-    ("Turkish", ContentLanguage::Turkish),
-    ("Bulgarian", ContentLanguage::Bulgarian),
-    ("Greek", ContentLanguage::Greek),
-    ("Romanian", ContentLanguage::Romanian),
-    ("Thai", ContentLanguage::Thai),
-    ("Ukrainian", ContentLanguage::Ukrainian),
-    ("Vietnamese", ContentLanguage::Vietnamese),
-    ("Indonesian", ContentLanguage::Indonesian),
-    ("Fiction", ContentLanguage::Fiction),
-    ("Hindi", ContentLanguage::Hindi),
-    (
-        "Spanish (Latin America)",
-        ContentLanguage::LatinAmericanSpanish,
-    ),
-    ("Unknown", ContentLanguage::Unknown),
-];
-
-fn configure_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-
-    fonts.font_data.insert(
-        "my_font".to_owned(),
-        egui::FontData::from_static(include_bytes!("../../assets/NotoSansCJK-Regular.ttc")).into(),
-    );
-    fonts
-        .families
-        .entry(egui::FontFamily::Proportional)
-        .or_default()
-        .insert(0, "my_font".to_owned());
-
-    fonts
-        .families
-        .entry(egui::FontFamily::Monospace)
-        .or_default()
-        .push("my_font".to_owned());
-
-    ctx.set_fonts(fonts);
 }
 
 // Thanks Gemini :D
@@ -382,4 +171,26 @@ pub async fn start() -> Result<(), wasm_bindgen::JsValue> {
             Box::new(|cc| Ok(Box::new(TameApp::new(config)))),
         )
         .await
+}
+
+pub fn configure_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "my_font".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../assets/NotoSansCJK-Regular.ttc")).into(),
+    );
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "my_font".to_owned());
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .push("my_font".to_owned());
+
+    ctx.set_fonts(fonts);
 }

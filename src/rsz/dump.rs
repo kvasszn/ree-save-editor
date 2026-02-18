@@ -107,7 +107,7 @@ impl RszDump {
         #[cfg(not(target_arch = "wasm32"))]
         return HASHMAP.get_or_init(|| {
             RSZ_FILE.get_or_init(|| {
-                "assets/rszmhwilds.json".to_string()
+                "assets/mhwilds/rszmhwilds.json".to_string()
             });
             let file = std::fs::read_to_string(RSZ_FILE.get().unwrap()).unwrap();
             let m: RszMapType = serde_json::from_str(&file).unwrap();
@@ -115,7 +115,7 @@ impl RszDump {
         });
         #[cfg(target_arch = "wasm32")]
         return HASHMAP.get_or_init(|| {
-            let data = include_bytes!("../../assets/rszmhwilds_packed.json.gz");
+            let data = include_bytes!("../../assets/mhwilds/rszmhwilds_packed.json.gz");
             let data = decompress(data);
             let m: RszMapType = serde_json::from_str(&data).unwrap();
             RszMap(m)
@@ -183,7 +183,7 @@ pub fn enum_map() -> &'static EnumMap {
         #[cfg(not(target_arch = "wasm32"))]
         return {
             ENUM_FILE.get_or_init(|| {
-                "assets/enumsmhwilds.json".to_string()
+                "assets/mhwilds/enumsmhwilds.json".to_string()
             });
             let json_data = std::fs::read_to_string(ENUM_FILE.get().unwrap()).unwrap();
             let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();
@@ -191,7 +191,7 @@ pub fn enum_map() -> &'static EnumMap {
         };
         #[cfg(target_arch = "wasm32")]
         return {
-            let json_data = include_bytes!("../../assets/enumsmhwilds.json.gz");
+            let json_data = include_bytes!("../../assets/mhwilds/enumsmhwilds.json.gz");
             let json_data = decompress(json_data);
             let hashmap: EnumMap = serde_json::from_str(&json_data).unwrap();
             hashmap
