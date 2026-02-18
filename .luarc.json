@@ -1,11 +1,3 @@
-{
-    "workspace": {
-        "library": [
-            "typings"
-        ],
-        "checkThirdParty": false
-    },
-	"runtime": {
-		"version": "Lua 5.4"
-	}
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:1e95717120f940262aceeb4977c9f4221ad5062f12820836f64cd6412e8fee88
+size 157
