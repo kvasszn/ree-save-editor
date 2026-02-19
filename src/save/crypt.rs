@@ -223,6 +223,7 @@ impl Mandarin {
     // THIS IS BORKED AF RN IDK IF I KNOW WHAT IT'S ACTUALLY DOING
     // decrypts by brute forcing the RSA encrypted key (not brute forcing RSA itself, brute forcing
     // the plaintext)
+    #[deprecated]
     pub fn brute_force_v2(&self, encrypted: &[u8]) -> Option<u64> {
 
         let len = encrypted.len();
@@ -247,7 +248,7 @@ impl Mandarin {
             static_rands[i] = 0;
         }
 
-        let high_part_int = bytes_to_int(&static_rands);
+        let _high_part_int = bytes_to_int(&static_rands);
 
         let start = 0x00000000;
         let end = 0xffffffffu64;

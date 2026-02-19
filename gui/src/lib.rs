@@ -51,9 +51,7 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         std::thread::spawn(move || {
-            // 1. Open System Dialog
             if let Some(path) = rfd::FileDialog::new().set_file_name(&name).save_file() {
-                // 2. Write to Disk
                 if let Err(e) = std::fs::write(&path, &data) {
                     eprintln!("Failed to save file: {}", e);
                 } else {
@@ -71,11 +69,14 @@ pub fn save_file_dialog(default_name: &str, data: Vec<u8>) {
         let uint8_array = unsafe { js_sys::Uint8Array::view(&data) };
         array.push(&uint8_array);
 
-        let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(
+        let mut options = web_sys::BlobPropertyBag::new();
+
+        options.set_type("application/octet-stream");
+
+        let blob = web_sys::Blob::new_with_blob_sequence_and_options(
             &array,
-            web_sys::BlobPropertyBag::new().type_("application/octet-stream"),
-        )
-        .unwrap();
+            &options, 
+        ).unwrap();
 
         let url = web_sys::Url::create_object_url_with_blob(&blob).unwrap();
 

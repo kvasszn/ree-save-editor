@@ -162,7 +162,7 @@ impl SaveFile {
         let data = if mandarin {
             let mandarin = Mandarin::init_from_game(ctx.game)?;
             let key = if ctx.key == u64::MAX {
-                mandarin.brute_force_v2(&encrypted).unwrap_or(0)
+                mandarin.brute_force(&encrypted, decrypted_len)
             } else {ctx.key};
             let key = ctx.game.get_key_from_steamid(key);
             let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;

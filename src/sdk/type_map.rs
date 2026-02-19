@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{borrow::Cow, collections::{HashMap, HashSet, VecDeque}, error::Error, fmt::Display, fs::File, io::{BufWriter, Cursor, Read, Seek, Write}, result::Result};
+use std::{borrow::Cow, collections::{HashMap, HashSet, VecDeque}, error::Error, fmt::Display, fs::File, io::{BufWriter, Cursor, Read, Seek, Write}};
 
 use bitcode;
 use indexmap::IndexMap;
@@ -10,6 +10,8 @@ use murmur3::murmur3_32;
 pub fn murmur3(data: impl AsRef<[u8]>, seed: u32) -> u32 {
     murmur3_32(&mut Cursor::new(data), seed).unwrap()
 }
+
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 // This can probably get optimized alot (msgs + enum_mappings)
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -135,137 +137,85 @@ impl TypeMap {
         (matching_types, fields_to_expand)
     }
 
-    pub fn load_rsz_from_path(&mut self, rsz_path: &str) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let mut file = File::open(rsz_path)?;
-            let mut data = Vec::new();
-            file.read_to_end(&mut data)?;
-            let types = serde_json::from_slice(&mut data)?;
-            self.types = types;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load RSZ from path {rsz_path}: {e}");
-        }
+    pub fn load_rsz_from_path(&mut self, rsz_path: &str) -> Result<()> {
+        let mut file = File::open(rsz_path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let types = serde_json::from_slice(&mut data)?;
+        self.types = types;
+        Ok(())
     }
 
-    pub fn load_rsz_from_data(&mut self, data: &[u8]) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let types = serde_json::from_slice(data)?;
-            self.types = types;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load RSZ from data: {e}");
-        }
+    pub fn load_rsz_from_data(&mut self, data: &[u8]) -> Result<()> {
+        let types = serde_json::from_slice(data)?;
+        self.types = types;
+        Ok(())
     }
 
-
-
-    pub fn load_enums_from_path(&mut self, path: &str) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let mut file = File::open(path)?;
-            let mut data = Vec::new();
-            file.read_to_end(&mut data)?;
-            let enums = serde_json::from_slice(&mut data)?;
-            self.enums = enums;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load enums from path {path}: {e}");
-        }
+    pub fn load_enums_from_path(&mut self, path: &str) -> Result<()> {
+        let mut file = File::open(path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let enums = serde_json::from_slice(&mut data)?;
+        self.enums = enums;
+        Ok(())
     }
 
-    pub fn load_enums_from_data(&mut self, data: &[u8]) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let enums = serde_json::from_slice(data)?;
-            self.enums = enums;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load enums from data: {e}");
-        }
+    pub fn load_enums_from_data(&mut self, data: &[u8]) -> Result<()> {
+        let enums = serde_json::from_slice(data)?;
+        self.enums = enums;
+        Ok(())
     }
 
-    pub fn load_msg_from_path(&mut self, path: &str) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
+    pub fn load_msg_from_path(&mut self, path: &str) -> Result<()> {
             let mut file = File::open(path)?;
             let mut data = Vec::new();
             file.read_to_end(&mut data)?;
             let msgs = serde_json::from_slice(&mut data)?;
             self.msgs = msgs;
             Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load msg data from path {path}: {e}");
-        }
     }
 
-    pub fn load_msgs_from_data(&mut self, data: &[u8]) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let msgs = serde_json::from_slice(data)?;
-            self.msgs = msgs;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load msgs from data: {e}");
-        }
+    pub fn load_msgs_from_data(&mut self, data: &[u8]) -> Result<()> {
+        let msgs = serde_json::from_slice(data)?;
+        self.msgs = msgs;
+        Ok(())
     }
 
-    pub fn load_enum_mappings_from_path(&mut self, path: &str) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let mut file = File::open(path)?;
-            let mut data = Vec::new();
-            file.read_to_end(&mut data)?;
-            let enum_mappings = serde_json::from_slice(&mut data)?;
-            self.enum_mappings = enum_mappings;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load enum text mappings from path {path}: {e}");
-        }
+    pub fn load_enum_mappings_from_path(&mut self, path: &str) -> Result<()> {
+        let mut file = File::open(path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let enum_mappings = serde_json::from_slice(&mut data)?;
+        self.enum_mappings = enum_mappings;
+        Ok(())
     }
 
-    pub fn load_enum_mappings_from_data(&mut self, data: &[u8]) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let data = serde_json::from_slice(data)?;
-            self.enum_mappings = data;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load enums mappings from data: {e}");
-        }
+    pub fn load_enum_mappings_from_data(&mut self, data: &[u8]) -> Result<()> {
+        let data = serde_json::from_slice(data)?;
+        self.enum_mappings = data;
+        Ok(())
     }
 
-    pub fn load_strings_from_path(&mut self, path: &str) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let data = std::fs::read_to_string(path)?;
-            let mut string_map = HashMap::new();
-            for line in data.lines() {
-                let hash = murmur3(&line, 0xffffffff);
-                string_map.insert(hash, line.to_string());
-            }
-            self.string_map = string_map;
-            Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load raw string data from path {path}: {e}");
+    pub fn load_strings_from_path(&mut self, path: &str) -> Result<()> {
+        let data = std::fs::read_to_string(path)?;
+        let mut string_map = HashMap::new();
+        for line in data.lines() {
+            let hash = murmur3(&line, 0xffffffff);
+            string_map.insert(hash, line.to_string());
         }
+        self.string_map = string_map;
+        Ok(())
     }
 
-    pub fn load_strings_from_data(&mut self, data: &str) {
-        let res: Result<(), Box<dyn std::error::Error>> = (|| {
-            let mut string_map = HashMap::new();
-            for line in data.lines() {
-                let hash = murmur3(&line, 0xffffffff);
-                string_map.insert(hash, line.to_string());
-            }
-            self.string_map = string_map;
-           Ok(())
-        })();
-        if let Err(e) = res {
-            log::error!("Failed to load strings from data: {e}");
+    pub fn load_strings_from_data(&mut self, data: &str) -> Result<()> {
+        let mut string_map = HashMap::new();
+        for line in data.lines() {
+            let hash = murmur3(&line, 0xffffffff);
+            string_map.insert(hash, line.to_string());
         }
+        self.string_map = string_map;
+        Ok(())
     }
 
     pub fn load_string_map(mut self, strings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
@@ -291,7 +241,7 @@ impl TypeMap {
         Ok(())
     }
 
-    pub fn load_with_msgs(rsz_path: &str, enum_path: &str, msg_path: &str, mappings_path: &str) -> std::result::Result<Self, Box<dyn Error>> {
+    pub fn load_with_msgs(rsz_path: &str, enum_path: &str, msg_path: &str, mappings_path: &str) -> Result<Self> {
         let mut type_map =  TypeMap::load_from_file(rsz_path, enum_path)?;
         let mut file = File::open(msg_path)?;
         let mut data = Vec::new();
@@ -456,7 +406,7 @@ impl TypeMap {
 pub struct TypesWrapper(pub HashMap<u32, TypeInfo>);
 
 impl<'de> Deserialize<'de> for TypesWrapper {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -472,7 +422,7 @@ impl<'de> Deserialize<'de> for TypesWrapper {
                 formatter.write_str("a map with hex-string keys")
             }
 
-            fn visit_map<M>(self, mut access: M) -> Result<Self::Value, M::Error>
+            fn visit_map<M>(self, mut access: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: MapAccess<'de>,
             {

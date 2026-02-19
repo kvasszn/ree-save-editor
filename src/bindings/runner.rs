@@ -10,7 +10,7 @@ use eframe::egui::Window;
 use mlua::{Lua, Thread};
 
 use crate::{
-    bindings::SaveDataRef, file::StructRW, save::{SaveContext, SaveFile, corrupt::CorruptSaveReader, game::Game}, sdk::type_map::{self, TypeMap}
+    bindings::SaveDataRef, file::StructRW, save::{SaveContext, SaveFile, corrupt::CorruptSaveReader, game::Game}, sdk::type_map::{TypeMap}
 };
 use crate::game_context::GameCtx;
 
@@ -366,11 +366,8 @@ impl ScriptRunner {
                     let _ = tx.send(path.display().to_string());
                 }
             });
-            loop {
-                if let Ok(result) = rx.try_recv() {
-                    return Ok(result);
-                }
-            }
+            rx.recv()
+                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to get file from open file dialog {e}")))
         })?;
 
         let save_file = self.lua.create_function(move |_, title: String| {
@@ -382,17 +379,15 @@ impl ScriptRunner {
                 let path = rfd::FileDialog::new()
                     .set_title(&title)
                     .set_directory(cur)
+                    //.set_file_name(&name)
                     .save_file();
 
                 if let Some(path) = path {
                     let _ = tx.send(path.display().to_string());
                 }
             });
-            loop {
-                if let Ok(result) = rx.try_recv() {
-                    return Ok(result);
-                }
-            }
+            rx.recv()
+                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to get file from save file dialog {e}")))
         })?;
 
         let open_folder = self.lua.create_function(move |_, title: String| {
@@ -410,11 +405,8 @@ impl ScriptRunner {
                     let _ = tx.send(path.display().to_string());
                 }
             });
-            loop {
-                if let Ok(result) = rx.try_recv() {
-                    return Ok(result);
-                }
-            }
+            rx.recv()
+                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to get file from open folder dialog {e}")))
         })?;
 
         let ui_table = self.lua.create_table()?;

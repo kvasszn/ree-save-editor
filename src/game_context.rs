@@ -67,9 +67,9 @@ impl AssetPaths {
         match game {
             Game::MHWILDS => {
                 Self {
-                    rsz: Some("assets/mhwilds/rszmhwilds_packed.json".to_string()),
-                    enums: Some("assets/mhwilds/enumsmhwilds.json".to_string()),
-                    msgs: Some("assets/mhwilds/combined_msgs.json".to_string()),
+                    rsz: Some("assets/mhwilds/rszmhwilds_packed.json.gz".to_string()),
+                    enums: Some("assets/mhwilds/enumsmhwilds.json.gz".to_string()),
+                    msgs: Some("assets/mhwilds/combined_msgs.json.gz".to_string()),
                     mappings: Some("assets/mhwilds/enums_mappings_mhwilds.json".to_string()),
                     strings: None,
                     remap: Some("assets/mhwilds/remapmhwilds.json".to_string())
@@ -122,19 +122,24 @@ impl GameCtx {
     pub fn new(paths: &AssetPaths) -> Self {
         let mut type_map = TypeMap::default();
         if let Some(path) = &paths.rsz {
-            type_map.load_rsz_from_path(path);
+            let _ = type_map.load_rsz_from_path(path)
+                .inspect_err(|e| log::error!("[ERROR] Could not load rsz from {path}: {e}"));
         }
         if let Some(path) = &paths.enums {
-            type_map.load_enums_from_path(path);
+            let _ = type_map.load_enums_from_path(path)
+                .inspect_err(|e| log::error!("[ERROR] Could not load enums from {path}: {e}"));
         }
         if let Some(path) = &paths.msgs {
-            type_map.load_msg_from_path(path);
+            let _ = type_map.load_msg_from_path(path)
+                .inspect_err(|e| log::error!("[ERROR] Could not load msgs from {path}: {e}"));
         }
         if let Some(path) = &paths.mappings {
-            type_map.load_enum_mappings_from_path(path);
+            let _ = type_map.load_enum_mappings_from_path(path)
+                .inspect_err(|e| log::error!("[ERROR] Could not load mappigns from {path}: {e}"));
         }
         if let Some(path) = &paths.strings {
-            type_map.load_strings_from_path(path);
+            let _ = type_map.load_strings_from_path(path)
+                .inspect_err(|e| log::error!("[ERROR] Could not load strings from {path}: {e}"));
         }
 
         let remaps = if let Some(remap_path) = &paths.remap {
@@ -164,79 +169,37 @@ impl GameCtx {
             let mut type_map = TypeMap::default();
             log::info!("[INFO] loading assets {:?}", &assets);
             if let Some(path) = &assets.rsz {
-                let path = resolve_url(path);
-                match reqwest::get(&path).await {
-                    Ok(response) => {
-                        if let Ok(data) = response.text().await {
-                            type_map.load_rsz_from_data(&data.as_bytes());
-                        }
-                    } 
-                    Err(e) => log::error!("[ERROR] Could not load file from {path}: {e}")
-                }
+                let _ = crate::load_from_url(path, |e| type_map.types = e).await
+                    .inspect_err(|e| log::error!("[ERROR] Could not load rsz from url {path}: {e}"));
             }
             if let Some(path) = &assets.enums {
-                let path = resolve_url(path);
-                match reqwest::get(&path).await {
-                    Ok(response) => {
-                        if let Ok(data) = response.text().await {
-                            type_map.load_enums_from_data(&data.as_bytes());
-                        }
-                    } 
-                    Err(e) => log::error!("[ERROR] Could not load file from {path}: {e}")
-                }
+                let _ = crate::load_from_url(path, |e| type_map.enums= e).await
+                    .inspect_err(|e| log::error!("[ERROR] Could not load enums from url {path}: {e}"));
             }
-
             if let Some(path) = &assets.msgs {
-                let path = resolve_url(path);
-                match reqwest::get(&path).await {
-                    Ok(response) => {
-                        if let Ok(data) = response.text().await {
-                            type_map.load_msgs_from_data(&data.as_bytes());
-                        } else {
-                            log::error!("idk what happen");
-
-                        }
-                    } 
-                    Err(e) => log::error!("[ERROR] Could not load file from {path}: {e}")
-                }
+                let _ = crate::load_from_url(path, |e| type_map.msgs = e).await
+                    .inspect_err(|e| log::error!("[ERROR] Could not load msgs from url {path}: {e}"));
             }
-
             if let Some(path) = &assets.mappings {
-                let path = resolve_url(path);
-                match reqwest::get(&path).await {
-                    Ok(response) => {
-                        if let Ok(data) = response.text().await {
-                            type_map.load_enum_mappings_from_data(&data.as_bytes());
-                        }
-                    } 
-                    Err(e) => log::error!("[ERROR] Could not load file from {path}: {e}")
-                }
+                let _ = crate::load_from_url(path, |e| type_map.enum_mappings = e).await
+                    .inspect_err(|e| log::error!("[ERROR] Could not load mappings from url {path}: {e}"));
             }
 
             if let Some(path) = &assets.strings {
-                let path = resolve_url(path);
-                match reqwest::get(&path).await {
-                    Ok(response) => {
-                        if let Ok(data) = response.text().await {
-                            type_map.load_strings_from_data(&data);
-                        }
-                    } 
-                    Err(e) => log::error!("[ERROR] Could not load file from {path}: {e}")
-                }
+                let _ = crate::with_str_loaded_from_url(path, |data| {
+                    type_map.load_strings_from_data(data)?;
+                    Ok(())
+                }).await
+                    .inspect_err(|e| log::error!("[ERROR] Could not load strings from url {path}: {e}"));
             }
-
 
             let mut remaps: HashMap<String, Remap> = HashMap::new();
             if let Some(path) = &assets.remap {
-                let path = resolve_url(path);
-                match reqwest::get(&path).await {
-                    Ok(response) => {
-                        if let Ok(data) = response.text().await {
-                            remaps = serde_json::from_str(&data).unwrap_or_default();
-                        }
-                    } 
-                    Err(e) => log::error!("[ERROR] Could not load file from {path}: {e}")
-                }
+                let _ = crate::with_str_loaded_from_url(path, |data| {
+                    remaps = serde_json::from_str(data)?;
+                    Ok(())
+                }).await
+                    .inspect_err(|e| log::error!("[ERROR] Could not load remaps from url {path}: {e}"));
             }
 
             let game_ctx = Self {
@@ -247,13 +210,4 @@ impl GameCtx {
             let _ = tx.send((game, game_ctx));
         });
     }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn resolve_url(path: &str) -> String {
-    let window = web_sys::window().unwrap();
-    let document = window.document().unwrap();
-    let base_uri = document.base_uri().unwrap().unwrap();
-    let url = web_sys::Url::new_with_base(path, &base_uri).unwrap();
-    url.href()
 }

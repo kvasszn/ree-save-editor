@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -26,11 +28,10 @@ jobs:
 
       - name: Compress Assets
         run: |
-          # -9 = Best compression
-          # -k = Keep original file (optional, but good for debugging)
-          # -f = Force overwrite if exists
+          rm assets/mhwilds/rszmhwilds.json # need to do this bc its >100mb
           gzip -9 -f assets/mhwilds/rszmhwilds_packed.json
           gzip -9 -f assets/mhwilds/enumsmhwilds.json
+          gzip -9 -f assets/mhwilds/combined_msgs.json
           ls -lh assets/
 
       - name: Build with Trunk

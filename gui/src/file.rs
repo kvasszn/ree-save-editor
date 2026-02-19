@@ -9,7 +9,11 @@ use mhtame::save::corrupt::CorruptSaveReader;
 use mhtame::sdk::type_map::{TypeMap};
 use mhtame::{edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::{GAME_OPTIONS, Game}}, sdk::type_map::ContentLanguage};
 
-use crate::{Config, steam::{UserAccount}};
+
+use crate::Config;
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::steam::UserAccount;
 
 pub struct FileView {
     pub idx: u64,
@@ -389,7 +393,6 @@ impl FileView {
         let current_file = std::mem::replace(&mut self.current_file, CurrentFile::Null);
         match current_file {
             CurrentFile::Path(path) => {
-                // do this on wasm too?
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     let expanded = shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
@@ -414,6 +417,8 @@ impl FileView {
                         }
                     }
                 }
+                #[cfg(target_arch = "wasm32")]
+                log::error!("Cannot load as path {path} on web, there should be no way to get here");
             },
             CurrentFile::FileData { file_name, bytes } => {
                 let mut reader = Cursor::new(&bytes);
@@ -660,8 +665,8 @@ impl Steam {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn select_user(&mut self, ui: &mut Ui) {
-        #[cfg(not(target_arch = "wasm32"))]
         if !self.users.is_empty() {
             ui.label("Users");
             let label = self.selected_user_name.clone().unwrap_or("Select User".to_string());
@@ -688,8 +693,11 @@ impl Steam {
         res
     }
 
-    pub fn found_file(&mut self, ui: &mut Ui, game: Game) -> Option<String> {
+    pub fn found_file(&mut self, ui: &mut Ui, _game: Game) -> Option<String> {
+        #[cfg(not(target_arch = "wasm32"))]
         let mut res = None;
+        #[cfg(target_arch = "wasm32")]
+        let res = None;
         self.edit_steam_id(ui);
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -700,7 +708,7 @@ impl Steam {
             if let Some(steam_id) = self.steam_id {
                 use crate::steam::get_save_files;
 
-                let save_files = get_save_files(&self.steam_path, steam_id, game);
+                let save_files = get_save_files(&self.steam_path, steam_id, _game);
                 if !save_files.is_empty() {
                     ComboBox::from_id_salt("save_select")
                         .selected_text("Select Save File") 

@@ -15,6 +15,76 @@ pub mod bindings;
 #[cfg(feature = "tdb")]
 pub mod tdb;
 
+#[cfg(target_arch = "wasm32")]
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+#[cfg(target_arch = "wasm32")]
+use serde::de::DeserializeOwned;
+
+
+
+#[cfg(target_arch = "wasm32")]
+pub fn resolve_url(path: &str) -> String {
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    let base_uri = document.base_uri().unwrap().unwrap();
+    let url = web_sys::Url::new_with_base(path, &base_uri).unwrap();
+    url.href()
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_and_decompress(path: &str) -> Result<Vec<u8>> {
+    use std::io::Read;
+    let path = resolve_url(path);
+    let response = reqwest::get(&path).await?;
+    let bytes = response.bytes().await?;
+
+    if bytes.len() >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B {
+        let mut gz = flate2::read::GzDecoder::new(&bytes[..]);
+        let mut decompressed = Vec::new();
+        gz.read_to_end(&mut decompressed)?;
+        Ok(decompressed)
+    } else {
+        Ok(bytes.to_vec())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn load_from_url<T,F>(path: &str, func: F) -> Result<()>
+where
+    T: DeserializeOwned,
+    F: FnOnce(T)
+{
+    let data = fetch_and_decompress(path).await?;
+    let deserialized = serde_json::from_slice(&data)?;
+    func(deserialized);
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn with_bytes_loaded_from_url<F>(path: &str, func: F) -> Result<()>
+where
+    F: FnOnce(&[u8]) -> Result<()>
+{
+    let data = fetch_and_decompress(path).await?;
+    func(&data)?;
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn with_str_loaded_from_url<F>(path: &str, func: F) -> Result<()>
+where
+    F: FnOnce(&str) -> Result<()>
+{
+    let path = resolve_url(path);
+    let response = reqwest::get(&path).await?;
+    let data = response.text().await?;
+    func(&data)?;
+    Ok(())
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use std::{env, io::Cursor};

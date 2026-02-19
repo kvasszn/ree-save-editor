@@ -50,12 +50,12 @@ impl Viewer {
         println!("[INFO] run_script {res:?}");
     }
 
-    pub fn update(&mut self, ctx: &eframe::egui::Context) {
+    pub fn update(&mut self, _ctx: &eframe::egui::Context) {
         if self.reload {
             self.reload();
         }
         #[cfg(not(target_arch = "wasm32"))]
-        self.script_runner.update_dialogs(ctx);
+        self.script_runner.update_dialogs(_ctx);
     }
 
     pub fn reload(&mut self) {
