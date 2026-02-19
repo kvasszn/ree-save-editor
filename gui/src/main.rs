@@ -61,6 +61,7 @@ mod native {
             options,
             Box::new(|_cc| {
                 configure_fonts(&_cc.egui_ctx);
+                egui_extras::install_image_loaders(&_cc.egui_ctx);
                 //Ok(Box::new(TameApp::new(config, _cc)))
                 Ok(Box::new(TameApp::new(config)))
             }),

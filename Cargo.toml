@@ -26,7 +26,7 @@ util = { path = "./util" }
 rsz_macros = { path = "./rsz_macros" }
 file_macros = { path = "./file_macros" }
 clap = { version = "4.5.20", features = ["derive"] }
-image = "0.25.5"
+image = {version = "0.25.5", features = ["webp"]}
 log = "0.4.27"
 env_logger = "0.11.8"
 proc-macro2 = "1.0.94"
@@ -75,6 +75,7 @@ half = { version = "2.7.1", features = ["serde"] }
 
 # ui
 eframe = "0.33.0"
+egui_extras = { version = "0.33.3", features = ["syntect", "image"] }
 rfd = "0.17.2"
 
 

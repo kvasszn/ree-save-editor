@@ -457,6 +457,19 @@ impl<'a> TryFromValueMut<'a> for &'a mut Array {
     }
 }
 
+impl<'a> TryFromValue<'a> for Vec<u8> {
+    fn try_from_value(value: &'a FieldValue) -> Option<Self> {
+        match value {
+            FieldValue::Array(arr) if arr.member_type == FieldType::U8 => {
+                Some(arr.values.iter().filter_map(|v| v.as_u8()).collect())
+            }
+            FieldValue::Struct(s) => Some(s.data.clone()),
+            _ => None,
+        }
+    }
+}
+
+
 impl<'a> TryFromValue<'a> for &'a Vec<u16> {
     fn try_from_value(value: &'a FieldValue) -> Option<Self> {
         match value {

@@ -1,7 +1,6 @@
-use std::{collections::HashSet, fmt::Display, str::FromStr};
-
+use std::{collections::HashSet, fmt::Display, str::FromStr, sync::Arc};
 use bitfield::BitMut;
-use eframe::egui::{self, CollapsingHeader, ComboBox, ScrollArea, TextEdit, Ui};
+use eframe::egui::{self, CollapsingHeader, ComboBox, Image, ScrollArea, TextEdit, Ui};
 
 use crate::{edit::{EditContext, EditResponse, Editable, copy::CopyBuffer}, save::{remap::Remap, types::*}, sdk::{type_map::{TypeInfo, murmur3}, *}};
 
@@ -1105,6 +1104,34 @@ impl Editable for Class {
                     }
                 }
                 match ti.name.as_str() {
+                    "app.savedata.cPhoto" => {
+                        let serialize_data = self.get_array("SerializeData");
+                        if let Some(serialize_data) = serialize_data {
+
+                            let ptr_address = serialize_data.values.as_ptr() as usize;
+                            let cache_id = ui.make_persistent_id(("SerializeData", ctx.id, ptr_address));
+                            let image_bytes: Arc<[u8]> = ui.data_mut(|data| {
+                                let bytes: &mut Arc<[u8]> = data.get_temp_mut_or_insert_with(cache_id, || {
+                                    self.get::<Vec<u8>>("SerializeData")
+                                        .unwrap_or_default()
+                                        .into()
+                                });
+                                bytes.clone()
+                            });
+
+                            if !image_bytes.is_empty() {
+                                let avail_width = ui.available_width();
+                                ui.add(
+                                    Image::from_bytes(
+                                        format!("bytes://{}_{}.webp", ctx.id, ptr_address), 
+                                        image_bytes
+                                    )
+                                    .fit_to_original_size(1.0)
+                                    .max_width(avail_width * 0.98)
+                                );
+                            }
+                        }
+                    }
                     "ace.Bitset" => {
                         let bitset = ctx.field_info.and_then(|f| {
                             let x = ctx.parent_type.and_then(|t| {

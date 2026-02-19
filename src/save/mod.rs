@@ -217,14 +217,21 @@ impl StructRW<SaveContext> for SaveFile {
             //println!("{_save_or_user_i_think}");
             let mandarin = flags & 0x10 != 0;
             let blowfish = flags & 0x1 != 0;
-            let _autostrong = flags & 0x3 != 0;
+            let image_save = flags & 0x2 != 0;
             let _citrus = flags & 0x4 != 0;
             let deflate = flags & 0x8 != 0;
+            //let _autostrong = flags & 0x16 != 0;
             // 0x4 is something related to the usage of mandarin and deflate i think
-            println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={_citrus}, autostrong={_autostrong}");
+            println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={_citrus}, image_save={image_save}");
+
+            if image_save {
+                let _steamid32 = reader.read_u32()?;
+                let _null = reader.read_u32()?;
+            }
 
             let data_start = reader.tell()?;
             reader.seek(std::io::SeekFrom::End(-12))?;
+            let real_data_len = reader.stream_position()? - data_start;
             let decrypted_len = u64::read(reader, &mut ())?;
             log::info!("decrypted_len={decrypted_len:x}");
             let end_hash = u32::read(reader, &mut ())?;
@@ -242,8 +249,10 @@ impl StructRW<SaveContext> for SaveFile {
 
             // Decryption
             reader.seek(SeekFrom::Start(data_start))?;
-            let mut encrypted = vec![];
-            reader.read_to_end(&mut encrypted)?;
+            // TODO: figure out the magical + 8
+            let mut encrypted = vec![0; real_data_len as usize + 8];
+            reader.read_exact(&mut encrypted)?;
+            //reader.read_to_end(&mut encrypted)?;
             let data = if mandarin {
                 let mandarin = Mandarin::init_from_game(ctx.game)?;
                 let key = if ctx.key == 0 {
@@ -282,11 +291,13 @@ impl StructRW<SaveContext> for SaveFile {
             //std::fs::write("./outputs/tests/ghguyv2.bin", &data)?;
             let data = &mut Cursor::new(&data);
             let mut fields = Vec::new();
+            // TODO: Figure out if tehre's a count for this, surely there is one right? surely, i
+            // dont think its just always 2?
             while let Ok(h) = u32::read(data, &mut ()) {
                 match types::Class::read(data) {
                     Ok(field_value) => fields.push((h, field_value)),
                     Err(e) => {
-                        println!("Error reading class {e}")
+                        println!("[ERROR] Error reading class native_field_hash={h:010x}: {e}")
                     }
                 }
             }
