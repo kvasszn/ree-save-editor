@@ -220,12 +220,14 @@ impl Mandarin {
             }
         }
     }
+    // THIS IS BORKED AF RN IDK IF I KNOW WHAT IT'S ACTUALLY DOING
     // decrypts by brute forcing the RSA encrypted key (not brute forcing RSA itself, brute forcing
     // the plaintext)
     pub fn brute_force_v2(&self, encrypted: &[u8]) -> Option<u64> {
 
         let len = encrypted.len();
         let encrypted_key = &encrypted[len - 0x80-12..len-12];
+        println!("{encrypted_key:?}");
         let encrypted_key = bytes_to_int(encrypted_key);
 
         println!("Found encrypted_key={encrypted_key:?}");
@@ -247,16 +249,27 @@ impl Mandarin {
 
         let high_part_int = bytes_to_int(&static_rands);
 
-        let start = 0x00000000u64;
-        let end = 0x00ffffffu64;
+        let start = 0x00000000;
+        let end = 0xffffffffu64;
         let base = 0x0110000100000000;
         let count = end - start;
         let start_time = std::time::SystemTime::now();
         println!("trying {} keys", count);
-        let good_key = (base+start..base+end).into_par_iter().find_first(|x| {
-            let key_inv = !x;
+        /*/let good_key = (base+start..base+end).into_par_iter().find_first(|x| {
             let guess_int = &high_part_int + Integer::from(key_inv);
             let encrypted_key_guess = mod_exp(&guess_int, &e, &n);
+            encrypted_key_guess == encrypted_key
+        });*/
+
+        let good_key = (base+start..base+end).find(|x| {
+            let key_inv = !x;
+            let mut buf = static_rands.clone();
+            buf[0..8].copy_from_slice(&(key_inv).to_le_bytes());
+            //let guess_int = &high_part_int + Integer::from(key_inv);
+            let guess_int = bytes_to_int(&buf);
+            let encrypted_key_guess = mod_exp(&guess_int, &e, &n);
+            println!("key={x:?}");
+            println!("guess={encrypted_key_guess:?}");
             encrypted_key_guess == encrypted_key
         });
         println!("checked {count} keys in {}ms", start_time.elapsed().unwrap().as_millis());
@@ -268,10 +281,10 @@ impl Mandarin {
     }
 
     // this is not very feasible unless i optimize the fuck out of it somehow
-    pub fn brute_force(encrypted: &[u8], decrypted_len: u64) -> u64 {
+    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
-        let mut state_p: u64 = 0x7A36955255266CED;
+        let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
             state_p = SplitMix64::next_int(&mut state_p);
@@ -279,15 +292,17 @@ impl Mandarin {
 
         let initial_state_p = state_p;
         //let block_size = block_sizes[0] as usize * 0x4000;
-        let start = 0x10000000u64;
+        let start = 0x00000000u64;
         let end = 0xffffffffu64;
         let count = end - start;
         println!("trying {} keys", count);
         let good_key = (start..end).into_par_iter().find_first(|i| {
             let mut buf = [0u8; 0x210];
-            let auth = AuthCtx::init(!i).unwrap();
             let key = 0x0110000100000000 + i;
+            let auth = AuthCtx::init(!key).unwrap();
+            //println!("key={key:?}");
             let mut state_p = initial_state_p.wrapping_add(!key);
+            //println!("state_p={state_p:?}");
             buf[0..0x210].copy_from_slice(&encrypted[0..0x210]);
 
             // generate key and iv
@@ -308,6 +323,8 @@ impl Mandarin {
 
             let auth_block = bytemuck::from_bytes::<Block>(&buf[..0x210]);
             let key_iv2 = auth.decrypt_block(*auth_block);
+            //println!("mul={:?}", auth_block.chunks[0].0);
+            //println!("ct={:?}", auth_block.chunks[0].1);
             key_iv2[0..16] == key && key_iv2[16..32] == iv
         });
 
@@ -331,6 +348,9 @@ impl Mandarin {
         }
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
+        let len = encrypted.len();
+        let encrypted_key = &encrypted[len - 0x80-12..len-12];
+        println!("{encrypted_key:?}");
 
         // calculate the block sizes >> 0xe for each "potential block"
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
@@ -437,6 +457,10 @@ impl Mandarin {
             //println!("remaining_bytes={remaining_bytes:#x}");
         }
 
+        //let integer_buf = &encrypted[encrypted_start..encrypted_start+0x80];
+        //let integer = bytes_to_int(&integer_buf);
+        //println!("RSA Integer={integer:?}");
+        //println!("encrypted_key={encrypted_key:?}, {integer:?}");
         Ok(decrypted)
     }
 
@@ -548,6 +572,7 @@ impl Mandarin {
             //println!("remaining_bytes={remaining_bytes:#x}");
         }
         let integer = int_to_bytes_le::<0x80>(&encrypted_key);
+        println!("[ENCRYPTION] RSA Integer={encrypted_key:?}");
         //println!("encrypted_key={encrypted_key:?}, {integer:?}");
         encrypted[encrypted_start..encrypted_start+0x80].copy_from_slice(&integer);
         Ok(encrypted[..encrypted_start+0x80].to_vec())

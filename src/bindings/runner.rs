@@ -10,8 +10,9 @@ use eframe::egui::Window;
 use mlua::{Lua, Thread};
 
 use crate::{
-    bindings::{SaveDataRef}, file::StructRW, game_context::GameCtx, save::{SaveContext, SaveFile, corrupt::CorruptSaveReader, game::Game}, sdk::type_map::{self, TypeMap}
+    bindings::SaveDataRef, file::StructRW, save::{SaveContext, SaveFile, corrupt::CorruptSaveReader, game::Game}, sdk::type_map::{self, TypeMap}
 };
+use crate::game_context::GameCtx;
 
 #[derive(Debug)]
 pub struct PendingDialog<T> {
