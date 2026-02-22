@@ -519,8 +519,8 @@ impl Array {
                     }
                 },
                 ArrayType::Class => {
-                    let class = Class::read(reader);
-                    if class.is_err() {
+                    let class = Class::read(reader)?;
+                    /*if class.is_err() {
                         eprintln!("[ERROR] in array class element {class:?}");
                         broken = true;
                         let last_value = values[0].clone();
@@ -528,11 +528,12 @@ impl Array {
                     } else {
                         let class = class.unwrap();
                         FieldValue::Class(class.into())
-                    }
+                    }*/
+                    FieldValue::Class(class.into())
                 },
             };
 
-            if broken { 
+            /*if broken { 
                 //eprintln!("[WARNING] Replacing Array Elements");
                 for _ in _i..len {
                     //values.push(value.clone());
@@ -540,7 +541,8 @@ impl Array {
                 break;
             } else {
                 values.push(value);
-            }
+            }*/
+            values.push(value);
         }
         reader.seek_align_up(4)?;
         Ok(Self {
@@ -693,10 +695,11 @@ impl Class {
         let hash = reader.read_u32()?;
         //let name = RszDump::get_struct(hash).and_then(|x|Ok(x.name.clone())).unwrap_or("none".to_string());
         let mut fields = IndexMap::<u32, Field>::new();
-        for i in 0..num_fields {
-            let field = Field::read(reader);
-            match field {
-                Ok(field) => {fields.insert(field.hash, field);},
+        for _ in 0..num_fields {
+            let field = Field::read(reader)?;
+            fields.insert(field.hash, field);
+            /*match field {
+                Ok(field) => {},
                 Err(e) => {
                     eprintln!("[ERROR] Parsing Error in class {hash:010x} field #{}, returning early: {e}", i);
                     return Ok(Self {
@@ -705,7 +708,7 @@ impl Class {
                         fields
                     })
                 }
-            }
+            }*/
         }
         /*let fields = (0..num_fields).filter_map(|_| {
             let field = Field::read(reader);
@@ -763,6 +766,22 @@ impl Class {
 
     pub fn get_value_mut<'a>(&'a mut self, name: &'a str) -> Option<&'a mut FieldValue> {
         self.get_field_mut(name).map(|f| &mut f.value)
+    }
+
+    pub fn get_index<'a>(&'a self, index: usize) -> Option<&'a Field> {
+        self.fields.get_index(index).map(|f| f.1)
+    }
+
+    pub fn get_index_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut Field> {
+        self.fields.get_index_mut(index).map(|f| f.1)
+    }
+
+    pub fn get_index_value<'a>(&'a self, index: usize) -> Option<&'a FieldValue> {
+        self.fields.get_index(index).map(|(_, f)| &f.value)
+    }
+
+    pub fn get_index_value_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut FieldValue> {
+        self.fields.get_index_mut (index).map(|(_, f)| &mut f.value)
     }
 
     pub fn get_subclass<'a>(&'a self, name: &'a str) -> Option<&'a Class> {

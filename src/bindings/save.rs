@@ -92,7 +92,7 @@ pub fn set_fieldvalue_from_lua(_lua: &Lua, lhs: &mut FieldValue, value: LuaValue
         }
         FieldValue::Class(v) => {
             if let LuaValue::UserData(ud) = value {
-                println!("class: {ud:?}");
+                //println!("class: {ud:?}");
                 let incoming = ud.borrow::<SaveDataRef>()?;
                 let inc_class = incoming.get_value()
                     .ok_or(LuaError::RuntimeError("Could not Traverse Ref to Class".to_string())).unwrap();
@@ -108,7 +108,7 @@ pub fn set_fieldvalue_from_lua(_lua: &Lua, lhs: &mut FieldValue, value: LuaValue
         }
         FieldValue::Array(v) => {
             if let LuaValue::UserData(ud) = value {
-                println!("arr: {ud:?}");
+                //println!("arr: {ud:?}");
                 let incoming = ud.borrow::<SaveDataRef>()?;
                 let inc = incoming.get_value().ok_or(LuaError::UserDataTypeMismatch)?;
                 if let FieldValue::Array(a) = inc {

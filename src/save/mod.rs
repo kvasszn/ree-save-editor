@@ -171,7 +171,7 @@ impl SaveFile {
         } else {
             encrypted
         };
-        let data = if deflate {
+        let mut data = if deflate {
             // Decompression
             let mut decrypted_buf = Cursor::new(&data);
             // this is so fucking stupid
@@ -191,10 +191,8 @@ impl SaveFile {
             decompressed
         } else {data};
 
-        /*if ctx.repair {
-            let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
-            data[0..16].copy_from_slice(&good_header);
-        };*/
+        //let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
+        //data[0..16].copy_from_slice(&good_header);
         Ok(data)
     }
 }

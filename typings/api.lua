@@ -170,6 +170,22 @@ local Class = {}
 ---@operator len: number
 function Class:__len() end
 
+---@return string|nil error
+
+---@return integer|nil error
+function Class:field_hash() end
+
+---@return integer|nil error
+function Class:class_hash() end
+
+---@param game GameID
+---@return string|nil error
+function Class:field_name(game) end
+
+---@param game GameID
+---@return string|nil error
+function Class:class_name(game) end
+
 ---@class Array
 ---@field [integer] SaveNode
 local Array = {}
@@ -204,6 +220,16 @@ function SaveFile.scan_classes(path, steamid, game) end
 ---@param game GameID
 ---@return SaveFile
 function SaveFile.scan_missing(path, steamid, game) end
+
+--- Attempts to recover a number of classes based on a name
+--- Scans for first instance of field names, count times
+---@param path string
+---@param class_name string
+---@param count integer
+---@param steamid integer
+---@param game GameID
+---@return SaveFile
+function SaveFile.scan_n_objects(path, class_name, count, steamid, game) end
 
 ---@class fs
 fs = {}

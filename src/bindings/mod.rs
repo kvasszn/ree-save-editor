@@ -1,11 +1,11 @@
 pub mod save;
 pub mod runner;
 
-use std::{path::PathBuf,sync::{Arc, RwLock}};
+use std::{collections::HashMap, path::PathBuf, sync::{Arc, RwLock}};
 
 use mlua::{prelude::*};
 
-use crate::{bindings::save::set_fieldvalue_from_lua, save::{SaveFile,types::{Array, Class, FieldValue}}};
+use crate::{bindings::save::set_fieldvalue_from_lua, game_context::GameCtx, save::{SaveFile, game::Game, types::{Array, Class, Field, FieldValue}}, sdk::type_map};
 
 #[derive(Clone, Debug)]
 pub enum RefPath {
@@ -267,6 +267,44 @@ impl SaveDataRef {
         Some(target)
     }
 
+    fn next_field<'a>(class: &'a Class, path: &'a RefPath) -> Option<&'a FieldValue> {
+        let next = match path {
+            RefPath::FieldName(name) => class.get_value(name),
+            RefPath::Index(i) => class.get_index_value(*i),
+            _ => None
+        };
+        next
+    }
+
+    fn next_field_mut<'a>(class: &'a mut Class, path: &'a RefPath) -> Option<&'a mut FieldValue> {
+        let next = match path {
+            RefPath::FieldName(name) => class.get_value_mut(name),
+            RefPath::Index(i) => class.get_index_value_mut(*i),
+            _ => None
+        };
+        next
+    }
+
+    fn next_value<'a>(value: &'a FieldValue, path: &'a RefPath) -> Option<&'a FieldValue> {
+        let next = match (value, path) {
+            (FieldValue::Class(class), RefPath::FieldName(name)) => class.get_value(name),
+            (FieldValue::Class(class), RefPath::Index(i)) => { class.get_index_value(*i) },
+            (FieldValue::Array(array), RefPath::Index(index)) => array.get_value(*index),
+            _ => None
+        };
+        next
+    }
+
+    fn next_value_mut<'a>(value: &'a mut FieldValue, path: &'a RefPath) -> Option<&'a mut FieldValue> {
+        let next = match (value, path) {
+            (FieldValue::Class(class), RefPath::FieldName(name)) => class.get_value_mut(name),
+            (FieldValue::Class(class), RefPath::Index(i)) => { class.get_index_value_mut(*i) },
+            (FieldValue::Array(array), RefPath::Index(index)) => array.get_value_mut(*index),
+            _ => None
+        };
+        next
+    }
+
     fn get_value(&self) -> Option<FieldValue> {
         let mut path = self.path.iter();
         let initial_class_index = path.next()?;
@@ -279,23 +317,12 @@ impl SaveDataRef {
         let Some(initial_index) = path.next() else {
             return Some(FieldValue::Class(Box::new(initial_class)))
         };
-        let mut target = match initial_index {
-            RefPath::FieldName(name) => initial_class.get_value(name),
-            _ => None,
-        }?;
-
+        let mut target = Self::next_field(&initial_class, initial_index)?;
         while let Some(path_ref) = path.next() {
-            target = match (target, path_ref) {
-                (FieldValue::Class(class), RefPath::FieldName(name)) => class.get_value(name),
-                (FieldValue::Array(array), RefPath::Index(index)) => array.get_value(*index),
-                _ => None
-            }?;
+            target = Self::next_value(target, path_ref)?;
         }
         Some(target.clone())
     }
-
-
-    #[allow(unused)]
     fn with_initial_class<F, R>(&self, func: F) -> LuaResult<R>
     where
         F: FnOnce(&Class) -> LuaResult<R>,
@@ -309,28 +336,35 @@ impl SaveDataRef {
             RefPath::Index(i) => root.fields.get(*i).map(|x| &x.1),
             _ => None
         }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on root ref")))?;
+        func(initial_class)
+    }
 
-        let Some(_) = path.next() else {
+    fn with_target_class<F, R>(&self, func: F) -> LuaResult<R>
+    where
+        F: FnOnce(&Class) -> LuaResult<R>,
+    {
+        let mut path = self.path.iter();
+        let initial_class_index = path.next()
+            .ok_or(LuaError::RuntimeError("First path segment empty on savefile ref".to_string()))?;
+
+        let root = self.root.read().unwrap();
+        let initial_class = match initial_class_index {
+            RefPath::Index(i) => root.fields.get(*i).map(|x| &x.1),
+            _ => None
+        }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on root ref")))?;
+        let Some(initial_index) = path.next() else {
             return func(initial_class)
         };
 
-        /*let mut target = match initial_index {
-          RefPath::FieldName(name) => initial_class.get_value(name),
-          _ => None,
-          }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on root ref")))?;
-
-          while let Some(path_ref) = path.next() {
-          target = match (target, path_ref) {
-          (FieldValue::Class(class), RefPath::FieldName(name)) => class.get_value(name),
-          (FieldValue::Array(array), RefPath::Index(index)) => array.get_value(*index),
-          _ => None
-          }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {path_ref:?} on root ref")))?;
-          }
-
-          if let FieldValue::Class(class) = target {
-          return func(class)
-          };*/
-        Err(LuaError::RuntimeError(format!("Final Ref is not a Class")))
+        let mut target = Self::next_field(initial_class, initial_index)
+            .ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on initial_class")))?;
+        while let Some(path_ref) = path.next() {
+            target = Self::next_value(target, path_ref)
+                .ok_or(LuaError::RuntimeError(format!("Could not find PathRef {path_ref:?} on root ref")))?;
+        }
+        let target = target.as_class()
+            .ok_or(LuaError::RuntimeError(format!("Final ref is not a class {:?}", self.path)))?;
+        func(target)
     }
 
     fn with_target<F, R>(&self, func: F) -> LuaResult<R>
@@ -345,27 +379,22 @@ impl SaveDataRef {
         let initial_class = match initial_class_index {
             RefPath::Index(i) => root.fields.get(*i).map(|x| &x.1),
             _ => None
-        }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on root ref")))?;
+        }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on 2nd root ref")))?;
 
         let initial_index = path.next()
             .ok_or(LuaError::RuntimeError("Second path segment empty on savefile ref".to_string()))?;
 
-        let mut target = match initial_index {
-            RefPath::FieldName(name) => initial_class.get_value(name),
-            _ => None,
-        }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on root ref")))?;
+        let mut target = Self::next_field(initial_class, initial_index)
+            .ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on root ref")))?;
 
         while let Some(path_ref) = path.next() {
-            target = match (target, path_ref) {
-                (FieldValue::Class(class), RefPath::FieldName(name)) => class.get_value(name),
-                (FieldValue::Array(array), RefPath::Index(index)) => array.get_value(*index),
-                _ => None
-            }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {path_ref:?} on root ref")))?;
+            target = Self::next_value(target, path_ref)
+                .ok_or(LuaError::RuntimeError(format!("Could not find PathRef {path_ref:?} on root ref")))?;
         }
         func(target)
     }
 
-    fn with_target_mut<F, R>(&self, func: F) -> LuaResult<R>
+    fn with_target_mut<F, R>(&mut self, func: F) -> LuaResult<R>
     where
         F: FnOnce(&mut FieldValue) -> LuaResult<R>,
     {
@@ -377,24 +406,111 @@ impl SaveDataRef {
         let initial_class = match initial_class_index {
             RefPath::Index(i) => root.fields.get_mut(*i).map(|x| &mut x.1),
             _ => None
+        }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on 2nd root ref")))?;
+
+        let initial_index = path.next()
+            .ok_or(LuaError::RuntimeError("Second path segment empty on savefile ref".to_string()))?;
+
+        let mut target = Self::next_field_mut(initial_class, initial_index)
+            .ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on root ref")))?;
+
+        while let Some(path_ref) = path.next() {
+            target = Self::next_value_mut(target, path_ref)
+                .ok_or(LuaError::RuntimeError(format!("Could not find PathRef {path_ref:?} on root ref")))?;
+        }
+        func(target)
+    }
+
+    fn get_parent_class_hash(&self) -> LuaResult<u32> {
+        let mut path = self.path.iter().peekable();
+        let initial_class_index = path.next()
+            .ok_or(LuaError::RuntimeError("First path segment empty on savefile ref".to_string()))?;
+
+        let root = self.root.read().unwrap();
+        let initial_class = match initial_class_index {
+            RefPath::Index(i) => root.fields.get(*i).map(|x| &x.1),
+            _ => None
+        }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on root ref")))?;
+
+        let Some(initial_index) = path.next() else {
+            return Ok(initial_class.hash)
+        };
+
+        let mut target = match initial_index {
+            RefPath::FieldName(name) => {
+                initial_class.get_value(name)
+            },
+            RefPath::Index(i) => {
+                initial_class.get_index_value(*i)
+            },
+            _ => None,
+        }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on 2nd root ref")))?;
+
+        let mut last_class = Some(initial_class);
+        while let Some(path_ref) = path.next() {
+            target = match (target, path_ref) {
+                (FieldValue::Class(class), RefPath::FieldName(name)) => {
+                    last_class = Some(&*class);
+                    class.get_value(name)
+                },
+                (FieldValue::Class(class), RefPath::Index(i)) => {
+                    last_class = Some(&*class);
+                    class.get_index_value(*i)
+                },
+                (FieldValue::Array(array), RefPath::Index(index)) => array.get_value(*index),
+                _ => None
+            }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {path_ref:?} on root ref")))?;
+        }
+        match last_class {
+            Some(class) => Ok(class.hash),
+            _ => Err(LuaError::RuntimeError(format!("No parent class in path {:?}", self.path)))
+        }
+    }
+
+    fn get_field_hash(&self) -> LuaResult<u32> {
+        let mut path = self.path.iter();
+        let initial_class_index = path.next()
+            .ok_or(LuaError::RuntimeError("First path segment empty on savefile ref".to_string()))?;
+
+        let root = self.root.read().unwrap();
+        let initial_class = match initial_class_index {
+            RefPath::Index(i) => root.fields.get(*i).map(|x| &x.1),
+            _ => None
         }.ok_or(LuaError::RuntimeError(format!("Could not find Index {initial_class_index:?} on root ref")))?;
 
         let initial_index = path.next()
             .ok_or(LuaError::RuntimeError("Second path segment empty on savefile ref".to_string()))?;
 
+        let mut last_field = None;
         let mut target = match initial_index {
-            RefPath::FieldName(name) => initial_class.get_value_mut(name),
+            RefPath::FieldName(name) => {
+                last_field = initial_class.get_field(name);
+                initial_class.get_value(name)
+            },
+            RefPath::Index(i) => {
+                last_field = initial_class.get_index(*i);
+                initial_class.get_index_value(*i)
+            },
             _ => None,
-        }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on root ref")))?;
+        }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {initial_index:?} on 2nd root ref from {:08x}", initial_class.hash)))?;
 
         while let Some(path_ref) = path.next() {
             target = match (target, path_ref) {
-                (FieldValue::Class(class), RefPath::FieldName(name)) => class.get_value_mut(name),
-                (FieldValue::Array(array), RefPath::Index(index)) => array.get_value_mut(*index),
+                (FieldValue::Class(class), RefPath::FieldName(name)) => {
+                    last_field = class.get_field(name);
+                    class.get_value(name)
+                },
+                (FieldValue::Class(class), RefPath::Index(i)) => {
+                    last_field = class.get_index(*i);
+                    class.get_index_value(*i)
+                },
+                (FieldValue::Array(array), RefPath::Index(index)) => array.get_value(*index),
                 _ => None
             }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {path_ref:?} on root ref")))?;
         }
-        func(target)
+        last_field
+            .map(|f| f.hash)
+            .ok_or(LuaError::RuntimeError(format!("Could not find any fields in the path {:?}", self.path)))
     }
 }
 
@@ -408,7 +524,7 @@ macro_rules! register_struct_accessors {
                     if let FieldValue::Struct(s) = target {
                         let bytes = s.data.get(offset..offset + $size)
                             .ok_or_else(|| mlua::Error::RuntimeError(
-                                format!("Out of bounds on read_{} at offset {}", stringify!($name), offset)
+                                    format!("Out of bounds on read_{} at offset {}", stringify!($name), offset)
                             ))?;
                         Ok(<$type>::from_le_bytes(bytes.try_into().unwrap()))
                     } else {
@@ -423,7 +539,7 @@ macro_rules! register_struct_accessors {
                     if let FieldValue::Struct(s) = target {
                         let bytes = s.data.get_mut(offset..offset + $size)
                             .ok_or_else(|| mlua::Error::RuntimeError(
-                                format!("Out of bounds on write_{} at offset {}", stringify!($name), offset)
+                                    format!("Out of bounds on write_{} at offset {}", stringify!($name), offset)
                             ))?;
                         bytes.copy_from_slice(&value.to_le_bytes());
                         Ok(())
@@ -432,7 +548,7 @@ macro_rules! register_struct_accessors {
                     }
                 })
             });
-        )*
+            )*
     };
 }
 
@@ -467,6 +583,42 @@ impl LuaUserData for SaveDataRef {
                 .map_err(|e| mlua::Error::RuntimeError(format!("Failed to save file: {e}")))?;
             Ok(path_og)
         });
+
+        methods.add_method("field_hash_indexed", |_, this, index: u64| {
+            let mut new_path = this.path.clone();
+            new_path.push(RefPath::Index(index as usize - 1));
+            SaveDataRef { root: this.root.clone(), path: new_path }.get_field_hash()
+        });
+        methods.add_method("field_hash", |_, this, name: String| {
+            let mut new_path = this.path.clone();
+            new_path.push(RefPath::FieldName(name));
+            SaveDataRef { root: this.root.clone(), path: new_path }.get_field_hash()
+        });
+        methods.add_method("field_name", |lua, this, (index, game): (u64, String)| {
+            let mut new_path = this.path.clone();
+            new_path.push(RefPath::Index(index as usize - 1));
+            let field_hash = SaveDataRef { root: this.root.clone(), path: new_path }.get_field_hash()?;
+            let class_hash = this.get_parent_class_hash()?;
+            let game = Game::from_string(&game).unwrap_or_else(|| {
+                eprintln!("[LUA ERROR] Unknown Game {game}, defaulting to MHWILDS");
+                Game::MHWILDS
+            });
+            let game_contexts = {
+                let app_data_guard = lua.app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>().ok_or_else(|| {
+                    mlua::Error::RuntimeError("TypeMap not loaded in Lua context".into())
+                })?;
+                Arc::clone(&*app_data_guard)
+            };
+            let binding = game_contexts.read().unwrap();
+            let type_map = &binding.get(&game).ok_or_else(||{
+                mlua::Error::RuntimeError(format!("Game Context not loaded for game {game:?}"))
+            })?.type_map;
+            let type_info = type_map.get_by_hash(class_hash)
+                .ok_or(mlua::Error::RuntimeError(format!("Class does not exist in type map {class_hash:010x}")))?;
+            let field_info = type_info.get_by_hash(field_hash)
+                .ok_or(mlua::Error::RuntimeError(format!("Class does contain field with hash {field_hash:010x}")))?;
+            Ok(field_info.name.clone())
+        });
         methods.add_meta_method(LuaMetaMethod::Index, |lua, this, key: LuaValue| {
             let index = match key {
                 LuaValue::String(s) => Some(RefPath::FieldName(s.to_str()?.to_string())),
@@ -488,14 +640,28 @@ impl LuaUserData for SaveDataRef {
                     }
                 }
                 if this.path.len() == 1 {
-                    let mut new_path = this.path.clone();
-                    new_path.push(index.clone());
-                    return Ok(SaveDataRef { root: this.root.clone(), path: new_path }.into_lua(lua)?);
+                    return this.with_initial_class(|class| {
+                        let target = Self::next_field(class, &index)
+                            .ok_or(LuaError::RuntimeError(format!("Could not find next field {index:?} on root ref")))?;
+                        match target {
+                            FieldValue::Class(_) | FieldValue::Array(_) | FieldValue::Struct(_) => {
+                                let mut new_path = this.path.clone();
+                                new_path.push(index.clone());
+                                return Ok(SaveDataRef { root: this.root.clone(), path: new_path }.into_lua(lua)?);
+                            },
+                            _ => {
+                                let res = target.clone().into_lua(lua);
+                                //println!("path={:?}, {target:?}, {res:?}", this.path);
+                                return res;
+                            }
+                        }
+                    })
                 }
 
                 return this.with_target(|target| {
                     let target = match (target, &index) {
                         (FieldValue::Class(class), RefPath::FieldName(name)) => class.get_value(name),
+                        (FieldValue::Class(class), RefPath::Index(i)) => { class.get_index_value(*i) },
                         (FieldValue::Array(array), RefPath::Index(index)) => array.get_value(*index),
                         _ => None
                     }.ok_or(LuaError::RuntimeError(format!("Could not find PathRef {index:?} on root ref")))?;
@@ -557,7 +723,7 @@ impl LuaUserData for SaveDataRef {
             };
             let mut new_path = this.path.clone();
             new_path.push(index);
-            let new_this = SaveDataRef {
+            let mut new_this = SaveDataRef {
                 root: this.root.clone(),
                 path: new_path
             };
@@ -571,9 +737,9 @@ impl LuaUserData for SaveDataRef {
             let path_str = this.path.iter().map(|p| match p {
                 RefPath::FieldName(k) => format!(".{}", k),
                 RefPath::FieldHash(k) => format!(".{}", k),
-                RefPath::Index(i) => format!("{}", i + 1),
+                RefPath::Index(i) => format!("[{}]", i + 1),
             }).collect::<String>();
-            lua.create_string(&format!("Ref(root[{}])", path_str))
+            lua.create_string(&format!("Ref(root{})", path_str))
         });
     }
 }

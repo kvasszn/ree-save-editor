@@ -138,7 +138,13 @@ impl Editable for SaveFile {
                 id: child_id.value(),
                 ..*ctx
             };
-            CollapsingHeader::new(format!("{:08x}", field.0))
+            let type_info = ctx.type_map.get_by_hash(field.1.hash);
+            let header = if let Some(type_info) = type_info {
+                format!("{:08x}: {}: {:08x}", field.0, type_info.name, field.1.hash)
+            } else {
+                format!("{:08x}: {:08x}", field.0, field.1.hash)
+            };
+            CollapsingHeader::new(header)
                 .id_salt(child_id)
                 .default_open(true)
                 .show(ui, |ui| {

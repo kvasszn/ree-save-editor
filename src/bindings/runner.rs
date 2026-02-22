@@ -275,9 +275,57 @@ impl ScriptRunner {
                 Ok(save_ref)
             })?;
 
+        let scan_n_objects =
+            lua.create_function(move |lua, (path, class_name, count, steamid, game): (String, String, u64, u64, String)| {
+                println!("[INFO] Loading Save File {path}");
+                let path = shellexpand::full(&path).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Failed to load save file {e}"))
+                })?;
+                let game = Game::from_string(&game).unwrap_or_else(|| {
+                    eprintln!("[LUA ERROR] Unknown Game {game}, defaulting to MHWILDS");
+                    Game::MHWILDS
+                });
+
+                let game_contexts = {
+                    let app_data_guard = lua.app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>().ok_or_else(|| {
+                        mlua::Error::RuntimeError("TypeMap not loaded in Lua context for scan".into())
+                    })?;
+                    Arc::clone(&*app_data_guard)
+                };
+                let binding = game_contexts.read().unwrap();
+                let type_map = &binding.get(&game).ok_or_else(||{
+                    mlua::Error::RuntimeError(format!("Game Context not loaded for game {game:?}"))
+                })?.type_map;
+
+                let mut reader = File::open(path.as_ref())?;
+                let data = SaveFile::read_data(
+                    &mut reader,
+                    SaveContext {
+                        key: steamid,
+                        game: game,
+                        repair: true,
+                    },
+                )
+                .map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
+                })?;
+
+                let mut reader = Cursor::new(data);
+                let mut corrupted_reader = CorruptSaveReader::new(&*type_map, game);
+                println!("[INFO] scanning {count} classes of {class_name}");
+                let save_file = corrupted_reader.read_n_objects(&mut reader, &class_name, count);
+                let save_ref = SaveDataRef {
+                    root: Arc::new(RwLock::new(save_file)),
+                    path: vec![],
+                };
+                println!("[INFO] Loaded Save File");
+                Ok(save_ref)
+            })?;
+
         let save_file_table = lua.create_table()?;
         save_file_table.set("scan_classes", scan_classes)?;
         save_file_table.set("scan_missing", scan_missing)?;
+        save_file_table.set("scan_n_objects", scan_n_objects)?;
         lua.globals().set("SaveFile", save_file_table)?;
         println!("[INFO] Registered SaveFile Table");
         Ok(())

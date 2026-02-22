@@ -325,7 +325,7 @@ impl FileView {
                 }).ok()?;
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
-                let save_file = corrupted_reader.read_missing_and_scan(&mut reader);
+                let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);
                 return Some(save_file)
             }
             let mut ctx = SaveContext { key: steamid , game: self.game , repair: false };
