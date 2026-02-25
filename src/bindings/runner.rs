@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::Cursor,
+    iter::zip,
     path::PathBuf,
     sync::{Arc, RwLock},
 };
@@ -9,10 +10,13 @@ use std::{
 use eframe::egui::Window;
 use mlua::{Lua, Thread};
 
-use crate::{
-    bindings::SaveDataRef, file::StructRW, save::{SaveContext, SaveFile, corrupt::CorruptSaveReader, game::Game}, sdk::type_map::{TypeMap}
-};
 use crate::game_context::GameCtx;
+use crate::{
+    bindings::SaveDataRef,
+    file::StructRW,
+    save::{SaveContext, SaveFile, corrupt::CorruptSaveReader, game::Game},
+    sdk::type_map::TypeMap,
+};
 
 #[derive(Debug)]
 pub struct PendingDialog<T> {
@@ -200,21 +204,27 @@ impl ScriptRunner {
                     Game::MHWILDS
                 });
 
-                let game_contexts = lua.app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>().ok_or_else(|| {
-                    mlua::Error::RuntimeError("TypeMap not loaded in Lua context".into())
-                })?;
+                let game_contexts = lua
+                    .app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>()
+                    .ok_or_else(|| {
+                        mlua::Error::RuntimeError("TypeMap not loaded in Lua context".into())
+                    })?;
                 let binding = game_contexts.read().unwrap();
-                let type_map = &binding.get(&game).ok_or_else(||{
-                    mlua::Error::RuntimeError(format!("Game Context not loaded for game {game:?}"))
-                })?.type_map;
+                let type_map = &binding
+                    .get(&game)
+                    .ok_or_else(|| {
+                        mlua::Error::RuntimeError(format!(
+                            "Game Context not loaded for game {game:?}"
+                        ))
+                    })?
+                    .type_map;
 
                 let mut reader = File::open(path.as_ref())?;
                 let data = SaveFile::read_data(
                     &mut reader,
-                    SaveContext {
-                        key: steamid,
+                    &mut SaveContext {
+                        key: Some(steamid),
                         game: game,
-                        repair: true,
                     },
                 )
                 .map_err(|e| {
@@ -232,8 +242,15 @@ impl ScriptRunner {
                 Ok(save_ref)
             })?;
 
-        let scan_missing =
-            lua.create_function(move |lua, (path, steamid, game): (String, u64, String)| {
+        let scan_missing = lua.create_function(
+            move |lua,
+                  (path, hashes, names, steamid, game): (
+                String,
+                Vec<u32>,
+                Vec<String>,
+                u64,
+                String,
+            )| {
                 println!("[INFO] Loading Save File {path}");
                 let path = shellexpand::full(&path).map_err(|e| {
                     mlua::Error::RuntimeError(format!("Failed to load save file {e}"))
@@ -243,88 +260,118 @@ impl ScriptRunner {
                     Game::MHWILDS
                 });
 
-                let game_contexts = lua.app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>().ok_or_else(|| {
-                    mlua::Error::RuntimeError("TypeMap not loaded in Lua context".into())
-                })?;
+                let game_contexts = lua
+                    .app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>()
+                    .ok_or_else(|| {
+                        mlua::Error::RuntimeError("TypeMap not loaded in Lua context".into())
+                    })?;
                 let binding = game_contexts.read().unwrap();
-                let type_map = &binding.get(&game).ok_or_else(||{
-                    mlua::Error::RuntimeError(format!("Game Context not loaded for game {game:?}"))
-                })?.type_map;
+                let type_map = &binding
+                    .get(&game)
+                    .ok_or_else(|| {
+                        mlua::Error::RuntimeError(format!(
+                            "Game Context not loaded for game {game:?}"
+                        ))
+                    })?
+                    .type_map;
 
                 let mut reader = File::open(path.as_ref())?;
                 let data = SaveFile::read_data(
                     &mut reader,
-                    SaveContext {
-                        key: steamid,
+                    &mut SaveContext {
+                        key: Some(steamid),
                         game: game,
-                        repair: true,
                     },
                 )
                 .map_err(|e| {
                     mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
                 })?;
 
+                let mut types = Vec::new();
+                for (hash, name) in zip(&hashes, &names) {
+                    types.push((*hash, name.as_str()));
+                }
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&*type_map, game);
-                let save_file = corrupted_reader.read_missing(&mut reader);
+                let save_file = corrupted_reader.read_missing(&mut reader, &types);
                 let save_ref = SaveDataRef {
                     root: Arc::new(RwLock::new(save_file)),
                     path: vec![],
                 };
                 println!("[INFO] Loaded Save File");
                 Ok(save_ref)
-            })?;
+            },
+        )?;
 
         let scan_n_objects =
-            lua.create_function(move |lua, (path, class_name, count, steamid, game): (String, String, u64, u64, String)| {
-                println!("[INFO] Loading Save File {path}");
-                let path = shellexpand::full(&path).map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Failed to load save file {e}"))
-                })?;
-                let game = Game::from_string(&game).unwrap_or_else(|| {
-                    eprintln!("[LUA ERROR] Unknown Game {game}, defaulting to MHWILDS");
-                    Game::MHWILDS
-                });
-
-                let game_contexts = {
-                    let app_data_guard = lua.app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>().ok_or_else(|| {
-                        mlua::Error::RuntimeError("TypeMap not loaded in Lua context for scan".into())
+            lua.create_function(
+                move |lua,
+                      (path, class_name, count, steamid, game): (
+                    String,
+                    String,
+                    u64,
+                    u64,
+                    String,
+                )| {
+                    println!("[INFO] Loading Save File {path}");
+                    let path = shellexpand::full(&path).map_err(|e| {
+                        mlua::Error::RuntimeError(format!("Failed to load save file {e}"))
                     })?;
-                    Arc::clone(&*app_data_guard)
-                };
-                let binding = game_contexts.read().unwrap();
-                let type_map = &binding.get(&game).ok_or_else(||{
-                    mlua::Error::RuntimeError(format!("Game Context not loaded for game {game:?}"))
-                })?.type_map;
+                    let game = Game::from_string(&game).unwrap_or_else(|| {
+                        eprintln!("[LUA ERROR] Unknown Game {game}, defaulting to MHWILDS");
+                        Game::MHWILDS
+                    });
 
-                let mut reader = File::open(path.as_ref())?;
-                let data = SaveFile::read_data(
-                    &mut reader,
-                    SaveContext {
-                        key: steamid,
-                        game: game,
-                        repair: true,
-                    },
-                )
-                .map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
-                })?;
+                    let game_contexts = {
+                        let app_data_guard = lua
+                            .app_data_ref::<Arc<RwLock<HashMap<Game, GameCtx>>>>()
+                            .ok_or_else(|| {
+                                mlua::Error::RuntimeError(
+                                    "TypeMap not loaded in Lua context for scan".into(),
+                                )
+                            })?;
+                        Arc::clone(&*app_data_guard)
+                    };
+                    let binding = game_contexts.read().unwrap();
+                    let type_map = &binding
+                        .get(&game)
+                        .ok_or_else(|| {
+                            mlua::Error::RuntimeError(format!(
+                                "Game Context not loaded for game {game:?}"
+                            ))
+                        })?
+                        .type_map;
 
-                let mut reader = Cursor::new(data);
-                let mut corrupted_reader = CorruptSaveReader::new(&*type_map, game);
-                println!("[INFO] scanning {count} classes of {class_name}");
-                let save_file = corrupted_reader.read_n_objects(&mut reader, &class_name, count);
-                let save_ref = SaveDataRef {
-                    root: Arc::new(RwLock::new(save_file)),
-                    path: vec![],
-                };
-                println!("[INFO] Loaded Save File");
-                Ok(save_ref)
-            })?;
+                    let mut reader = File::open(path.as_ref())?;
+                    let data = SaveFile::read_data(
+                        &mut reader,
+                        &mut SaveContext {
+                            key: Some(steamid),
+                            game: game,
+                        },
+                    )
+                    .map_err(|e| {
+                        mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
+                    })?;
+
+                    let mut reader = Cursor::new(data);
+                    let mut corrupted_reader = CorruptSaveReader::new(&*type_map, game);
+                    println!("[INFO] scanning {count} classes of {class_name}");
+                    let save_file =
+                        corrupted_reader.read_n_objects(&mut reader, &class_name, count);
+                    let save_ref = SaveDataRef {
+                        root: Arc::new(RwLock::new(save_file)),
+                        path: vec![],
+                    };
+                    println!("[INFO] Loaded Save File");
+                    Ok(save_ref)
+                },
+            )?;
 
         let save_file_table = lua.create_table()?;
         save_file_table.set("scan_classes", scan_classes)?;
-        save_file_table.set("scan_missing", scan_missing)?;
+        save_file_table.set("scan_missing", scan_missing.clone())?;
+        save_file_table.set("read_native_fields", scan_missing)?;
         save_file_table.set("scan_n_objects", scan_n_objects)?;
         lua.globals().set("SaveFile", save_file_table)?;
         println!("[INFO] Registered SaveFile Table");
@@ -346,9 +393,8 @@ impl ScriptRunner {
                 let save_file = match SaveFile::read(
                     &mut reader,
                     &mut SaveContext {
-                        key: steamid,
+                        key: Some(steamid),
                         game: game,
-                        repair: true,
                     },
                 ) {
                     Ok(s) => Ok(s),
@@ -363,7 +409,6 @@ impl ScriptRunner {
                 println!("[INFO] Loaded Save File");
                 Ok(save_ref)
             })?;
-
 
         let fs_table = lua.create_table()?;
         fs_table.set("load_save", load_save)?;
@@ -414,8 +459,9 @@ impl ScriptRunner {
                     let _ = tx.send(path.display().to_string());
                 }
             });
-            rx.recv()
-                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to get file from open file dialog {e}")))
+            rx.recv().map_err(|e| {
+                mlua::Error::RuntimeError(format!("Failed to get file from open file dialog {e}"))
+            })
         })?;
 
         let save_file = self.lua.create_function(move |_, title: String| {
@@ -434,8 +480,9 @@ impl ScriptRunner {
                     let _ = tx.send(path.display().to_string());
                 }
             });
-            rx.recv()
-                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to get file from save file dialog {e}")))
+            rx.recv().map_err(|e| {
+                mlua::Error::RuntimeError(format!("Failed to get file from save file dialog {e}"))
+            })
         })?;
 
         let open_folder = self.lua.create_function(move |_, title: String| {
@@ -453,8 +500,9 @@ impl ScriptRunner {
                     let _ = tx.send(path.display().to_string());
                 }
             });
-            rx.recv()
-                .map_err(|e| mlua::Error::RuntimeError(format!("Failed to get file from open folder dialog {e}")))
+            rx.recv().map_err(|e| {
+                mlua::Error::RuntimeError(format!("Failed to get file from open folder dialog {e}"))
+            })
         })?;
 
         let ui_table = self.lua.create_table()?;

@@ -27,12 +27,12 @@ pub struct FileView {
     popup_msg: String,
     show_popup: bool,
     repair: bool,
+    brute_force: bool,
 }
 
 impl FileView {
     pub fn new(config: &Config, idx: u64, language: ContentLanguage) -> Self {
         Self {
-            //id: ui.make_persistent_id(format!("file_view_{idx}")),
             idx,
             input_file_picker: FilePicker::<false>::new("File"),
             output_path_picker: FilePicker::new("Output Path"),
@@ -44,48 +44,27 @@ impl FileView {
             show_popup: false,
             popup_msg: "".to_string(),
             repair: false,
+            brute_force: false,
         }
     }
 
 
     pub fn from_data(config: &Config, file_name: String, bytes: Vec<u8>, idx: u64, language: ContentLanguage) -> Self {
+        let mut file = FileView::new(config, idx, language);
         let mut input_file_picker = FilePicker::<false>::new("File");
         input_file_picker.text = file_name.clone();
-        let current_file = CurrentFile::FileData{file_name, bytes};
-        Self {
-            idx,
-            input_file_picker,
-            output_path_picker: FilePicker::new("Output Path"),
-            current_file,
-            language,
-            game: Game::MHWILDS,
-            search: Search::default(),
-            steam: Steam::new(config),
-            show_popup: false,
-            popup_msg: "".to_string(),
-            repair: false,
-
-        }
+        file.input_file_picker.text = file_name.clone();
+        file.current_file = CurrentFile::FileData{file_name, bytes};
+        file
     }
 
     pub fn from_path(config: &Config, file_path: String, idx: u64, language: ContentLanguage) -> Self {
+        let mut file = FileView::new(config, idx, language);
         let mut input_file_picker = FilePicker::<false>::new("File");
         input_file_picker.text = file_path.clone();
-        let current_file = CurrentFile::Path(file_path);
-        Self {
-            idx,
-            input_file_picker,
-            output_path_picker: FilePicker::new("Output Path"),
-            current_file,
-            language,
-            game: Game::MHWILDS,
-            search: Search::default(),
-            steam: Steam::new(config),
-            show_popup: false,
-            popup_msg: "".to_string(),
-            repair: false,
-
-        }
+        file.input_file_picker.text = file_path.clone();
+        file.current_file = CurrentFile::Path(file_path);
+        file
     }
 
     // TODO: make this a macro
@@ -213,7 +192,7 @@ impl FileView {
                 }
                 if let Some(game_ctx) = game_ctx.as_deref_mut() {
                     self.update_input_file(game_ctx);
-                    self.reload(game_ctx);
+                    //self.reload(game_ctx);
                 }
             }
 
@@ -255,29 +234,10 @@ impl FileView {
         ui.horizontal(|ui| {
             ui.label("Try Repairing Corruption (WIP)");
             ui.checkbox(&mut self.repair, "");
-            /*if ui.button("Run Script").clicked() {
-              match &mut self.current_file {
-              CurrentFile::Loaded { loaded, .. } => {
-              let mut script_runner = ScriptRunner::new();
-              let res = script_runner.set_save_file_context(loaded);
-              match res {
-              Ok(_) => {
-              let res = script_runner.load_and_execute_from_file("scripts/foo.lua");
-              println!("[INFO] lua res: {res:?}");
-              }
-              Err(e) => {
-              eprintln!("[ERROR] Script Runner: {e}")
-              }
-              }
-              let res = script_runner.get_save_file_context();
-              if let Some(res) = res {
-             *loaded = res;
-              }
-              }
-              _ => {}
-              }
-              }*/
+            ui.label("Brute Force SteamID");
+            ui.checkbox(&mut self.brute_force, "");
         });
+
         if let Some(game_ctx) = game_ctx {
             ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
                 ui.style_mut().spacing.item_spacing *= 1.5;
@@ -316,29 +276,45 @@ impl FileView {
     }
 
     fn read_save<R: Read + Seek>(&mut self, reader: &mut R, game_ctx: &mut GameCtx) -> Option<SaveFile> {
-        if let Some(steamid) = self.steam.steam_id {
+        if self.steam.steam_id.is_some() || self.brute_force {
+            let mut save_ctx = SaveContext{
+                key: if self.brute_force {
+                    None
+                } else {self.steam.steam_id},
+                game: self.game,
+            };
+
             if self.repair {
-                let data = SaveFile::read_data(reader, SaveContext{
-                    key: steamid,
-                    game: self.game,
-                    repair: self.repair
-                }).ok()?;
+                let data = SaveFile::read_data(reader, &mut save_ctx).ok()?;
+                //std::fs::write("user_decrypted.bin", &data).unwrap();
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
-                let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);
+                //let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);
+                let save_file = corrupted_reader.read_missing(&mut reader, &[(0xdbe3f199, "app.savedata.cUserSaveData"), (0x85e904c1, "via.storage.saveService.SaveFileDetail")]);
+                if self.brute_force {
+                    self.steam.steam_id = save_ctx.key; 
+                    if let Some(steam_id) = save_ctx.key { self.steam.steam_id_text = steam_id.to_string(); }
+                }
                 return Some(save_file)
             }
-            let mut ctx = SaveContext { key: steamid , game: self.game , repair: false };
-            match SaveFile::read(reader, &mut ctx) {
+            match SaveFile::read(reader, &mut save_ctx) {
                 Ok(save) => {
+                    if self.brute_force {
+                        self.steam.steam_id = save_ctx.key; 
+                        if let Some(steam_id) = save_ctx.key { self.steam.steam_id_text = steam_id.to_string(); }
+                    }
                     return Some(save)
                 },
                 Err(e) => {
                     self.set_popup(format!("Error reading save: {e:?}"));
                 }
             }
+            if self.brute_force {
+                self.steam.steam_id = save_ctx.key; 
+                if let Some(steam_id) = save_ctx.key { self.steam.steam_id_text = steam_id.to_string(); }
+            }
         } else {
-            self.set_popup(format!("Cannot load save without steamid"));
+            self.set_popup(format!("Cannot load save without steamid, or brute force"));
         }
         None
     }

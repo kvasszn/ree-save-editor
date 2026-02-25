@@ -170,17 +170,17 @@ local Class = {}
 ---@operator len: number
 function Class:__len() end
 
----@return string|nil error
-
+---@param index integer
 ---@return integer|nil error
-function Class:field_hash() end
+function Class:field_hash(index) end
 
 ---@return integer|nil error
 function Class:class_hash() end
 
+---@param index integer
 ---@param game GameID
 ---@return string|nil error
-function Class:field_name(game) end
+function Class:field_name(index, game) end
 
 ---@param game GameID
 ---@return string|nil error
@@ -215,11 +215,23 @@ function SaveFile:save(path, steamid) end
 function SaveFile.scan_classes(path, steamid, game) end
 
 --- Attempts to recover missing classes based on known hashes
+---@deprecated
 ---@param path string
+---@param hashes integer[]
+---@param type_names string[]
 ---@param steamid integer
 ---@param game GameID
 ---@return SaveFile
-function SaveFile.scan_missing(path, steamid, game) end
+function SaveFile.scan_missing(path, hashes, type_names, steamid, game) end
+
+--- Attempts to read top level native fields based on rsz data
+---@param path string
+---@param hashes integer[]
+---@param type_names string[]
+---@param steamid integer
+---@param game GameID
+---@return SaveFile
+function SaveFile.read_native_objects(path, hashes, type_names, steamid, game) end
 
 --- Attempts to recover a number of classes based on a name
 --- Scans for first instance of field names, count times

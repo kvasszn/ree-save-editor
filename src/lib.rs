@@ -105,9 +105,8 @@ mod tests {
         let data: Vec<u8> = std::fs::read(save_path).expect("Save file not found for testing");
         let mut data = Cursor::new(data);
         let mut save_ctx = save::SaveContext {
-            key: key,
+            key: Some(key),
             game: Game::MHWILDS,
-            repair: false,
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);
@@ -124,9 +123,8 @@ mod tests {
         let data: Vec<u8> = std::fs::read(save_path).expect("Save file not found for testing");
         let mut data = Cursor::new(data.clone());
         let mut save_ctx = save::SaveContext {
-            key: key,
+            key: Some(key),
             game: Game::MHWILDS,
-            repair: false,
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);

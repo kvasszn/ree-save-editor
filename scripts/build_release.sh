@@ -7,8 +7,8 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-WINDOWS_PATH="./outputs/$VERSION/windows"
-LINUX_PATH="./outputs/$VERSION/linux"
+WINDOWS_PATH="./outputs/${VERSION}${MODE}/windows"
+LINUX_PATH="./outputs/${VERSION}${MODE}/linux"
 rm -r "./outputs/$VERSION"
 echo "Building Linux..."
 cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu  --release 
@@ -19,7 +19,7 @@ mkdir -p "$WINDOWS_PATH/assets/mhwilds"
 mkdir -p "$LINUX_PATH/assets/mhwilds"
 
 
-if [ $MODE == "full"] ;then
+if [ "$MODE" != "full" ] ;then
     ASSETS="combined_msgs.json empty_user_save.bin enums_mappings_mhwilds.json enumsmhwilds.json remapmhwilds.json rszmhwilds_packed.json"
 
     for file in $ASSETS; do
@@ -44,9 +44,9 @@ cp ./target/x86_64-pc-windows-msvc/release/mhtame-gui.exe $WINDOWS_PATH
 echo "Zipping Windows release..."
 (cd "$WINDOWS_PATH" && zip -r "../save-editor-windows-$VERSION.zip" .)
 echo "Contents:"
-unzip -l "./outputs/$VERSION/save-editor-windows-$VERSION.zip"
+unzip -l "./$WINDOWS_PATH/../save-editor-windows-$VERSION.zip"
 
 echo "Zipping Linux release..."
 (cd "$LINUX_PATH" && zip -r "../save-editor-linux-$VERSION.zip" .)
 echo "Contents:"
-unzip -l "./outputs/$VERSION/save-editor-linux-$VERSION.zip"
+unzip -l "./$LINUX_PATH/../save-editor-linux-$VERSION.zip"

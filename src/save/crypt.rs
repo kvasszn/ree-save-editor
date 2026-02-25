@@ -1,9 +1,9 @@
-use std::{error::Error, fmt::Display};
+use std::{error::Error, fmt::Display, sync::atomic::{AtomicUsize, Ordering}, time::Duration};
 
 use hex_literal::hex;
 use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
 use bytemuck::{Pod, Zeroable};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 pub struct SplitMix64;
 
@@ -220,68 +220,7 @@ impl Mandarin {
             }
         }
     }
-    // THIS IS BORKED AF RN IDK IF I KNOW WHAT IT'S ACTUALLY DOING
-    // decrypts by brute forcing the RSA encrypted key (not brute forcing RSA itself, brute forcing
-    // the plaintext)
-    #[deprecated]
-    pub fn brute_force_v2(&self, encrypted: &[u8]) -> Option<u64> {
 
-        let len = encrypted.len();
-        let encrypted_key = &encrypted[len - 0x80-12..len-12];
-        println!("{encrypted_key:?}");
-        let encrypted_key = bytes_to_int(encrypted_key);
-
-        println!("Found encrypted_key={encrypted_key:?}");
-
-        let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2");
-        let n = bytes_to_int(&n);
-        let e = Integer::from(65537);
-
-        let mut state_a: u64 = self.seed_for_rsa_rand;
-        let mut static_rands = [0u8; 32];
-
-        for i in 0..32 {
-            state_a = SplitMix64::next_int(&mut state_a);
-            static_rands[i] = state_a as u8;
-        }
-        for i in 0..8 {
-            static_rands[i] = 0;
-        }
-
-        let _high_part_int = bytes_to_int(&static_rands);
-
-        let start = 0x00000000;
-        let end = 0xffffffffu64;
-        let base = 0x0110000100000000;
-        let count = end - start;
-        let start_time = std::time::SystemTime::now();
-        println!("trying {} keys", count);
-        /*/let good_key = (base+start..base+end).into_par_iter().find_first(|x| {
-            let guess_int = &high_part_int + Integer::from(key_inv);
-            let encrypted_key_guess = mod_exp(&guess_int, &e, &n);
-            encrypted_key_guess == encrypted_key
-        });*/
-
-        let good_key = (base+start..base+end).find(|x| {
-            let key_inv = !x;
-            let mut buf = static_rands.clone();
-            buf[0..8].copy_from_slice(&(key_inv).to_le_bytes());
-            //let guess_int = &high_part_int + Integer::from(key_inv);
-            let guess_int = bytes_to_int(&buf);
-            let encrypted_key_guess = mod_exp(&guess_int, &e, &n);
-            println!("key={x:?}");
-            println!("guess={encrypted_key_guess:?}");
-            encrypted_key_guess == encrypted_key
-        });
-        println!("checked {count} keys in {}ms", start_time.elapsed().unwrap().as_millis());
-        match good_key {
-            None => println!("Could not brute force the key"),
-            Some(x) => println!("found key at x={x:x}"),
-        }
-        good_key
-    }
-
-    // this is not very feasible unless i optimize the fuck out of it somehow
     pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
@@ -291,49 +230,61 @@ impl Mandarin {
             state_p = SplitMix64::next_int(&mut state_p);
         }
 
+        let p = bytes_to_int(&AuthCtx::P);
+        let r = bytes_to_int(&AuthCtx::R);
+        let e = Integer::from(0x14u64);
+
+        let expected_x0 = mod_exp(&r, &e, &p);
+        let expected_x0_bytes = int_to_bytes_le::<64>(&expected_x0);
+
+        let mut target_prng_mask = [0u8; 8];
+        for i in 0..8 {
+            target_prng_mask[i] = encrypted[i] ^ expected_x0_bytes[i];
+        }
+
+        let progress = AtomicUsize::new(0);
         let initial_state_p = state_p;
-        //let block_size = block_sizes[0] as usize * 0x4000;
-        let start = 0x00000000u64;
-        let end = 0xffffffffu64;
-        let count = end - start;
-        println!("trying {} keys", count);
-        let good_key = (start..end).into_par_iter().find_first(|i| {
-            let mut buf = [0u8; 0x210];
-            let key = 0x0110000100000000 + i;
-            let auth = AuthCtx::init(!key).unwrap();
-            //println!("key={key:?}");
-            let mut state_p = initial_state_p.wrapping_add(!key);
-            //println!("state_p={state_p:?}");
-            buf[0..0x210].copy_from_slice(&encrypted[0..0x210]);
+        let s = std::time::Instant::now();
+        let base = 0x0110000100000000 as usize;
+        let count = 0xffffffff as usize;
+        let chunk_size = 1_000_000;
+        println!("[BRUTE FORCE] Starting brute force for {} keys", count);
+        let good_key = (base..base+count)
+            .into_par_iter()
+            .chunks(chunk_size)
+            .find_map_any(|steamids| {
+                let mut found_key = None;
+                let mut checked = chunk_size;
+                let mut mask = [0u8; 8];
+                for (i, steamid) in steamids.iter().enumerate() {
+                    let inv_key = !(*steamid as u64);
+                    let mut state_p = initial_state_p.wrapping_add(inv_key);
+                    for _ in 0..16 { state_p = SplitMix64::next_int(&mut state_p); }
 
-            // generate key and iv
-            let mut key = [0u8; 16];
-            let mut iv = [0u8; 16];
-            for j in 0..16 {
-                state_p = SplitMix64::next_int(&mut state_p);
-                key[j] = state_p as u8;
-                iv[j] = (state_p >> 8) as u8;
-            }
-
-            // this contains meta data for the block
-            // 4 pairs of big ints and a 16 byte checksum
-            for j in 0..0x210 {
-                state_p = SplitMix64::next_int(&mut state_p);
-                buf[j] = buf[j] ^ state_p as u8;
-            }
-
-            let auth_block = bytemuck::from_bytes::<Block>(&buf[..0x210]);
-            let key_iv2 = auth.decrypt_block(*auth_block);
-            //println!("mul={:?}", auth_block.chunks[0].0);
-            //println!("ct={:?}", auth_block.chunks[0].1);
-            key_iv2[0..16] == key && key_iv2[16..32] == iv
+                    for i in 0..8 {
+                        state_p = SplitMix64::next_int(&mut state_p);
+                        mask[i] = state_p as u8;
+                    }
+                    if mask == target_prng_mask[0..8] {
+                        found_key =  Some(*steamid as u64);
+                        checked = i;
+                        break;
+                    }
+                }
+                let completed = progress.fetch_add(checked, Ordering::Relaxed);
+                print!("\rChecked {} / {} keys", completed, count);
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+                found_key
         });
+        println!("");
 
-        //let taken = s.elapsed().unwrap().as_secs_f64();
-        //println!("time taken for {} keys {}, {}k/s", count, taken, count as f64 / taken);
+        let taken = s.elapsed().as_secs_f64();
+        let completed = progress.load(Ordering::Relaxed);
+        println!("time taken for {completed} keys: {taken:.2}s @ {} keys/s", completed as f64 / taken);
         if let Some(good_key) = good_key {
-            println!("[Key/IV check] passed with key={:#x}", 0x0110000100000000 + good_key);
-            return 0x0110000100000000 + good_key
+            println!("[Key/IV check] passed with key={}", good_key);
+            return good_key
         }
         0x0
     }
@@ -351,7 +302,7 @@ impl Mandarin {
 
         let len = encrypted.len();
         let encrypted_key = &encrypted[len - 0x80-12..len-12];
-        println!("{encrypted_key:?}");
+        println!("[DECRYPT] RSA Integer {encrypted_key:?}");
 
         // calculate the block sizes >> 0xe for each "potential block"
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
@@ -467,6 +418,7 @@ impl Mandarin {
 
     pub fn encrypt(&self, data: &[u8], key: u64) -> Result<Vec<u8>, MandarinError>{
         //let mut state_a: u64 = 0xBFACF76C3F96;
+        //let n = hex!("c2d3bdb583ed63f803f400647714aabbc306ead0a00978cf096a06372ec19df37cea8d83b958b3133b4cbd8cfa9bc028b75d28d232e3e31eb26b122f95a6076141f6a8528469339dc80c59642115aecc9f29a20c2238b6d0fa5d7079fedd85488650ed625c0ad55931d5742c9696efedbd9419c25c0745e907355b4f3648a44f");
         let mut state_a: u64 = self.seed_for_rsa_rand;
         let mut rands: [u8; 0x20] = [0u8; 0x20];
         for i in 0..32 {
@@ -475,14 +427,16 @@ impl Mandarin {
         }
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
-        //let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
-        let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000");
-        let rands_int = bytes_to_int(&rands[0..32]);
-        let n = bytes_to_int(&n);
-        //println!("{n:?}");
-        //let n = Integer::from_digits(&n, Order::Lsf);
+        let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2");
+        let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
+        //let n = bytes_to_int(&n);
+        let n = Integer::from_digits(&n, Order::Lsf);
         let e = Integer::from(65537);
         let encrypted_key = mod_exp(&rands_int, &e, &n);
+
+        //let rands_int = bytes_to_int(&rands[0..32]);
+        //println!("{n:?}");
+        //let n = Integer::from_digits(&n, Order::Lsf);
 
         // calculate the block sizes >> 0xe for each "potential block"
         let data_len = data.len() as u64;

@@ -148,6 +148,14 @@ impl<'a> CorruptSaveReader<'a> {
         size: u32,
         field_info: &FieldInfo,
     ) -> Result<FieldValue, Box<dyn Error>> {
+        let pos = reader.stream_position()?;
+        let size = if field_type != FieldType::String && field_type != FieldType::Struct 
+            && size != field_info.size as u32 {
+            eprintln!("[WARNING] invalid size={size:x}, good={:x} for field {}: {}: @{pos:#x}", field_info.size, field_info.name, field_info.original_type);
+            field_info.size as u32
+        } else {
+            size
+        };
         if field_type != FieldType::String {
             reader.seek_align_up(size as u64)?;
         }
@@ -189,11 +197,17 @@ impl<'a> CorruptSaveReader<'a> {
     ) -> crate::file::Result<Field> {
         let _hash = reader.read_u32()?;
         let field_type_raw = reader.read_i32()?;
-        let mut field_type = FieldType::try_from(field_type_raw)?;
+        let field_type = FieldType::try_from(field_type_raw);
         let good_field_type = FieldType::from_field_info(field);
-        if field_type != good_field_type {
+        let pos = reader.stream_position()?;
+        let mut field_type = field_type.unwrap_or_else(|e| {
+            eprintln!("[WARNING] Invalid Field Type {field_type_raw:x} @{pos:#x}, using good_file_type={good_field_type:?}: {e:?}");
+            good_field_type
+        });
+
+        if field_type != good_field_type && good_field_type != FieldType::Struct {
             eprintln!(
-                "[WARNING] Field type mismatch good={good_field_type:?}, read={field_type_raw:?} in field {} from class {}",
+                "[WARNING] Field type mismatch good={good_field_type:?}@{pos:#x}, read={field_type_raw:?} in field {} from class {}",
                 field.name, parent.name
             );
             field_type = good_field_type;
@@ -333,8 +347,10 @@ impl<'a> CorruptSaveReader<'a> {
             }
             Ok(r) => r,
         };
+        let pos = reader.stream_position()?;
         let correct_hash = murmur3(&type_info.name, 0xffffffff);
         if hash != correct_hash {
+            eprintln!("[WARNING] different hashes correct_hash={correct_hash:x}, read_hash={hash:x}: @{pos:#x}");
             hash = correct_hash;
         }
 
@@ -355,11 +371,12 @@ impl<'a> CorruptSaveReader<'a> {
                         "[WARNING] Could not read field hash in class {} for field {}: {e}",
                         type_info.name, field_info.name
                     );
-                    return Ok(Class {
-                        num_fields,
-                        hash,
-                        fields,
-                    });
+                    *field_hash
+                        /*return Ok(Class {
+                          num_fields,
+                          hash,
+                          fields,
+                          });*/
                 }
                 Ok(r) => r,
             };
@@ -437,24 +454,24 @@ impl<'a> CorruptSaveReader<'a> {
             let class = self.read_class(reader, type_info).unwrap();
             if native_field_hash == 0 {
                 fields.push((
-                    murmur3(&"via.storage.saveService.SaveFileDetail", 0xffffffff),
-                    class,
+                        murmur3(&"via.storage.saveService.SaveFileDetail", 0xffffffff),
+                        class,
                 ));
             } else {
                 fields.push((native_field_hash, class));
             }
         }
         /*reader.seek(std::io::SeekFrom::Start(0)).unwrap();
-        let scanned_class = self.scan_class_fields(reader, murmur3(&"app.savedata.cUserSaveParam", 0xffffffff), 0);
-        fields.push((fields.len() as u32, scanned_class));
+          let scanned_class = self.scan_class_fields(reader, murmur3(&"app.savedata.cUserSaveParam", 0xffffffff), 0);
+          fields.push((fields.len() as u32, scanned_class));
 
-        let pos = reader.stream_position().unwrap();
-        let scanned_class = self.scan_class_fields(reader, murmur3(&"app.savedata.cUserSaveParam", 0xffffffff), pos);
-        fields.push((fields.len() as u32, scanned_class));
+          let pos = reader.stream_position().unwrap();
+          let scanned_class = self.scan_class_fields(reader, murmur3(&"app.savedata.cUserSaveParam", 0xffffffff), pos);
+          fields.push((fields.len() as u32, scanned_class));
 
-        let pos = reader.stream_position().unwrap();
-        let scanned_class = self.scan_class_fields(reader, murmur3(&"app.savedata.cUserSaveParam", 0xffffffff), pos);
-        fields.push((fields.len() as u32, scanned_class));*/
+          let pos = reader.stream_position().unwrap();
+          let scanned_class = self.scan_class_fields(reader, murmur3(&"app.savedata.cUserSaveParam", 0xffffffff), pos);
+          fields.push((fields.len() as u32, scanned_class));*/
         let scanned_classes = self.scan_classes(reader);
         let mut scanned_classes: Vec<(u32, Class)> = scanned_classes
             .into_iter()
@@ -490,37 +507,21 @@ impl<'a> CorruptSaveReader<'a> {
         }
     }
 
-    pub fn read_missing<R: Read + Seek>(&mut self, reader: &mut R) -> SaveFile {
-        // First get the top level struct for each game/file
-        // TODO: rn just for wilds, add based on game later
-        let type_info = self
-            .type_map
-            .get_by_name("app.savedata.cUserSaveData")
-            .unwrap();
-        // need to add custom class readers that also have type information along side them when
+    pub fn read_missing<R: Read + Seek>(&mut self, reader: &mut R, types: &[(u32, &str)]) -> SaveFile {
         let mut fields = Vec::new();
-        if let Ok(native_field_hash) = reader.read_u32() {
-            let class = self.read_class(reader, type_info).unwrap();
-            if native_field_hash == 0 {
-                fields.push((murmur3(&"app.savedata.cUserSaveData", 0xffffffff), class));
-            } else {
-                fields.push((native_field_hash, class));
+        for (field_hash, type_name) in types {
+            let type_info = self
+                .type_map
+                .get_by_name(&type_name)
+                .unwrap();
+            if let Ok(native_field_hash) = reader.read_u32() {
+                let class = self.read_class(reader, type_info).unwrap();
+                if native_field_hash != *field_hash {
+                    eprintln!("[WARNING] Top level native field hash {native_field_hash:#x} != {field_hash:#x}");
+                }
+                fields.push((*field_hash, class));
             }
-        }
-        let type_info = self
-            .type_map
-            .get_by_name("via.storage.saveService.SaveFileDetail")
-            .unwrap();
-        if let Ok(native_field_hash) = reader.read_u32() {
-            let class = self.read_class(reader, type_info).unwrap();
-            if native_field_hash == 0 {
-                fields.push((
-                    murmur3(&"via.storage.saveService.SaveFileDetail", 0xffffffff),
-                    class,
-                ));
-            } else {
-                fields.push((native_field_hash, class));
-            }
+
         }
         SaveFile {
             fields,

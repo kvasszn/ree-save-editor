@@ -19,10 +19,10 @@ pub struct SaveFile {
     pub fields: Vec<(u32, Class)>
 }
 
+#[derive(Debug, Clone)]
 pub struct SaveContext {
-    pub key: u64,
+    pub key: Option<u64>,
     pub game: Game,
-    pub repair: bool,
 }
 
 impl SaveFile {
@@ -117,7 +117,7 @@ impl SaveFile {
         f.write_all(&file_hash.to_le_bytes())?;
         Ok(())
     }
-    pub fn read_data<R: Read + Seek>(reader: &mut R, ctx: SaveContext) -> crate::file::Result<Vec<u8>> {
+    pub fn read_data<R: Read + Seek>(reader: &mut R, ctx: &mut SaveContext) -> crate::file::Result<Vec<u8>> {
         let magic = Magic::<4>::read(reader, &mut ())?;
         if &magic != b"DSSS" {
             return Err(format!("Magic {:#04X?}, != DSSS", &magic.0).into())
@@ -161,17 +161,17 @@ impl SaveFile {
         reader.read_to_end(&mut encrypted)?;
         let data = if mandarin {
             let mandarin = Mandarin::init_from_game(ctx.game)?;
-            let key = if ctx.key == u64::MAX {
-                mandarin.brute_force(&encrypted, decrypted_len)
-            } else {ctx.key};
-            let key = ctx.game.get_key_from_steamid(key);
+            let key = ctx.key
+                .map(|steamid| ctx.game.get_key_from_steamid(steamid))
+                .unwrap_or_else(|| {mandarin.brute_force(&encrypted, decrypted_len)});
+            ctx.key = Some(key);
             let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
             log::info!("[Decrypted]");
             decrypted_buf
         } else {
             encrypted
         };
-        let mut data = if deflate {
+        let data = if deflate {
             // Decompression
             let mut decrypted_buf = Cursor::new(&data);
             // this is so fucking stupid
@@ -253,10 +253,10 @@ impl StructRW<SaveContext> for SaveFile {
             //reader.read_to_end(&mut encrypted)?;
             let data = if mandarin {
                 let mandarin = Mandarin::init_from_game(ctx.game)?;
-                let key = if ctx.key == 0 {
-                    mandarin.brute_force(&encrypted, decrypted_len)
-                } else {ctx.key};
-                let key = ctx.game.get_key_from_steamid(key);
+                let key = ctx.key
+                    .map(|steamid| ctx.game.get_key_from_steamid(steamid))
+                    .unwrap_or_else(|| {mandarin.brute_force(&encrypted, decrypted_len)});
+                ctx.key = Some(key);
                 let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
                 log::info!("[Decrypted]");
                 decrypted_buf
@@ -283,8 +283,8 @@ impl StructRW<SaveContext> for SaveFile {
                 decompressed
             } else {data};
 
-                //let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
-                //data[0..16].copy_from_slice(&good_header);
+            //let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
+            //data[0..16].copy_from_slice(&good_header);
             //std::fs::write("./outputs/tests/good.bin", &data)?;
             //std::fs::write("./outputs/tests/ghguyv2.bin", &data)?;
             let data = &mut Cursor::new(&data);
