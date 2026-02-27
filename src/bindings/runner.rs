@@ -183,6 +183,7 @@ impl ScriptRunner {
         game_table.set("DD2", "DD2")?;
         game_table.set("PRAGMATA", "PRAGMATA")?;
         game_table.set("MHST3", "MHST3")?;
+        game_table.set("RE9", "RE9")?;
         lua.globals().set("game", game_table)?;
         println!("[INFO] register game table");
         Ok(())

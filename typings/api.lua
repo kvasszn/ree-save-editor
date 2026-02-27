@@ -231,7 +231,7 @@ function SaveFile.scan_missing(path, hashes, type_names, steamid, game) end
 ---@param steamid integer
 ---@param game GameID
 ---@return SaveFile
-function SaveFile.read_native_objects(path, hashes, type_names, steamid, game) end
+function SaveFile.read_native_fields(path, hashes, type_names, steamid, game) end
 
 --- Attempts to recover a number of classes based on a name
 --- Scans for first instance of field names, count times

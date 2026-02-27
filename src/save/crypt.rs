@@ -1,9 +1,10 @@
-use std::{error::Error, fmt::Display, sync::atomic::{AtomicUsize, Ordering}, time::Duration};
+use std::{error::Error, fmt::Display, sync::atomic::{AtomicUsize, Ordering}};
 
 use hex_literal::hex;
 use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
 use bytemuck::{Pod, Zeroable};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+use web_time::Instant;
 
 pub struct SplitMix64;
 
@@ -329,6 +330,63 @@ impl Mandarin {
         state
     }*/
 
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
+        let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
+        let mut block_sizes = vec![0u8; num_potential_blocks as usize];
+        let mut state_p: u64 = self.seed_for_enc_rand;
+        for i in 0..num_potential_blocks as usize {
+            block_sizes[i] = (state_p & 7) as u8 + 1;
+            state_p = SplitMix64::next_int(&mut state_p);
+        }
+
+        let p = bytes_to_int(&AuthCtx::P);
+        let r = bytes_to_int(&AuthCtx::R);
+        let e = Integer::from(0x14u64);
+
+        let expected_x0 = mod_exp(&r, &e, &p);
+        let expected_x0_bytes = int_to_bytes_le::<64>(&expected_x0);
+
+        let mut target_prng_mask = [0u8; 8];
+        for i in 0..8 {
+            target_prng_mask[i] = encrypted[i] ^ expected_x0_bytes[i];
+        }
+
+        let initial_state_p = state_p;
+        let s = Instant::now();
+        let base = 0x0110000100000000u64;
+        let count = 0xffffffffu64;
+        log::info!("[BRUTE FORCE] Starting brute force for {} keys", count);
+        let good_key = (base..base+count)
+            .into_par_iter()
+            .find_map_any(|steamid| {
+                let mut mask = [0u8; 8];
+                let inv_key = !steamid;
+                let mut state_p = initial_state_p.wrapping_add(inv_key);
+                for _ in 0..16 { state_p = SplitMix64::next_int(&mut state_p); }
+
+                for i in 0..8 {
+                    state_p = SplitMix64::next_int(&mut state_p);
+                    mask[i] = state_p as u8;
+                }
+                if mask == target_prng_mask[0..8] {
+                    Some(steamid)
+                } else {
+                    None
+                }
+            });
+
+        let taken = s.elapsed().as_secs_f64();
+        log::info!("time taken: {taken:.2}s");
+        if let Some(good_key) = good_key {
+            println!("[Key/IV check] passed with key={}", good_key);
+            return good_key
+        }
+        0x0
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
@@ -352,9 +410,9 @@ impl Mandarin {
 
         let progress = AtomicUsize::new(0);
         let initial_state_p = state_p;
-        let s = std::time::Instant::now();
-        let base = 0x0110000100000000 as usize;
-        let count = 0xffffffff as usize;
+        let s = Instant::now();
+        let base = 0x0110000100000000u64 as usize;
+        let count = 0xffffffffu64 as usize;
         let chunk_size = 1_000_000;
         println!("[BRUTE FORCE] Starting brute force for {} keys", count);
         let good_key = (base..base+count)

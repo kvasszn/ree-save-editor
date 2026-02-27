@@ -115,6 +115,16 @@ impl AssetPaths {
                     remap: None,
                 }
             }
+            Game::RE9 => {
+                Self {
+                    rsz: None,
+                    enums: Some("assets/re9/enums_re9.json".to_string()),
+                    msgs: None,
+                    mappings: None,
+                    strings: Some("assets/re9/strings.txt".to_string()),
+                    remap: None,
+                }
+            }
             //_ => Self::default(),
         }
     }
