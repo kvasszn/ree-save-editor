@@ -536,9 +536,9 @@ impl Mandarin {
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
         let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2");
-        let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
-        //let n = bytes_to_int(&n);
-        let n = Integer::from_digits(&n, Order::Lsf);
+        //let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
+        let rands_int = bytes_to_int(&rands[0..32]);
+        let n = bytes_to_int(&n);
         let e = Integer::from(65537);
         let encrypted_key = mod_exp(&rands_int, &e, &n);
 

@@ -132,24 +132,27 @@ impl FieldValue {
     // When this is run for the Array struct, it should never be able to read an Object, I'm not
     // sure about array though
     pub fn read_sized<R: Read + Seek>(reader: &mut R, field_type: FieldType, size: u32) -> Result<Self, Box<dyn Error>> {
-        /*if field_type == FieldType::Struct {
+        if size == 24 {
+            reader.seek_align_up(8 as u64)?;
             let pos = reader.stream_position()?;
-            if size == 24 {
-                if pos % 32 > 16 {
-                    let aligned = 32 - (pos % (16)); 
-                    reader.seek(std::io::SeekFrom::Current(aligned as i64))?;
-                } else {
-                    reader.seek_align_up(16)?;
-                }
-            } else if size == 32 {
-                let aligned = 32 - (pos % (16)); 
-                reader.seek(std::io::SeekFrom::Current(aligned as i64))?;
+            if pos % 32 < 16 {
+                reader.seek(std::io::SeekFrom::Current(16))?;
+            }
+        } else if size == 32 {
+            reader.seek_align_up_offset(32, 16)?;
+        } else if size == 112 || size == 114 {
+            reader.seek_align_up(16)?;
+            let pos = reader.stream_position()?;
+            if pos % 32 == 16 {
+                reader.seek_align_up_offset(128, 112)?;
             } else {
-                reader.seek_align_up(size.into())?;
+                reader.seek_align_up(128)?;
+            }
+            if size == 114 {
+                reader.seek_relative(-4)?;
             }
         }
-        else*/
-        if field_type != FieldType::String {
+        else {
             reader.seek_align_up(size as u64)?;
         }
         let value = match field_type {
@@ -184,7 +187,7 @@ impl FieldValue {
             FieldValue::Array(v) => v.write(w),
             FieldValue::Class(v) => v.write(w),
             FieldValue::String(v) => { 
-                w.seek_align_up(4)?;
+                w.write_align_up(4)?;
                 w.write(&(v.0.len() as u32).to_le_bytes())?;
                 for e in &v.0 {
                     w.write(&e.to_le_bytes())?;
@@ -193,8 +196,8 @@ impl FieldValue {
             }
             // These values actually need a size/len
             _ => {
-                w.seek_align_up(4)?;
-                let size = self.get_size();
+                w.write_align_up(4)?;
+                let size: u32 = self.get_size();
                 w.write(&size.to_le_bytes())?;
                 self.write_sized(w)?;
                 Ok(())
@@ -204,7 +207,18 @@ impl FieldValue {
 
 
     pub fn write_sized<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
-        w.seek_align_up(self.get_size() as u64)?;
+        let size = self.get_size();
+        if size == 24 {
+            w.write_align_up(8 as u64)?;
+            let pos = w.stream_position()?;
+            if pos % 32 < 16 {
+                w.write_all(&[0u8; 16])?;
+            }
+        } else if size == 32 {
+            w.write_align_up_offset(32, 16)?;
+        } else {
+            w.write_align_up(size as u64)?;
+        }
         let _ = match self {
             FieldValue::Enum(v) => w.write(&v.to_le_bytes())?,
             FieldValue::Boolean(v) => w.write(&[*v as u8])?,
@@ -503,7 +517,6 @@ impl Array {
         let len = reader.read_u32()?;
         let array_type = ArrayType::try_from(reader.read_i32()?)?;
         let mut values: Vec<FieldValue> = Vec::with_capacity(len as usize);
-        let mut broken = false;
         for _i in 0..len {
             let value = match array_type {
                 ArrayType::Value => {
@@ -520,28 +533,10 @@ impl Array {
                 },
                 ArrayType::Class => {
                     let class = Class::read(reader)?;
-                    /*if class.is_err() {
-                        eprintln!("[ERROR] in array class element {class:?}");
-                        broken = true;
-                        let last_value = values[0].clone();
-                        last_value
-                    } else {
-                        let class = class.unwrap();
-                        FieldValue::Class(class.into())
-                    }*/
                     FieldValue::Class(class.into())
                 },
             };
 
-            /*if broken { 
-                //eprintln!("[WARNING] Replacing Array Elements");
-                for _ in _i..len {
-                    //values.push(value.clone());
-                }
-                break;
-            } else {
-                values.push(value);
-            }*/
             values.push(value);
         }
         reader.seek_align_up(4)?;
@@ -554,7 +549,7 @@ impl Array {
     }
 
     pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
-        w.seek_align_up(4)?;
+        w.write_align_up(4)?;
         w.write(&(self.member_type as i32).to_le_bytes())?;
         w.write(&self.member_size.to_le_bytes())?;
         w.write(&(self.values.len() as u32).to_le_bytes())?;
@@ -564,7 +559,7 @@ impl Array {
                 ArrayType::Value => {
                     if self.member_type == FieldType::String {
                         if let FieldValue::String(s) = e {
-                            w.seek_align_up(4)?;
+                            w.write_align_up(4)?;
                             let size = s.0.len() as u32;
                             w.write(&size.to_le_bytes())?;
                             for v in &s.0 {
@@ -582,7 +577,7 @@ impl Array {
                 }
             }
         }
-        w.seek_align_up(4)?;
+        w.write_align_up(4)?;
         Ok(())
     }
 
@@ -634,10 +629,12 @@ impl Field {
         // This migth treat parse Array here, would make sense with the enum not being in
         // reflection::TypeKind
 
-        //println!("hash={hash:?}");
+        //let pos = reader.stream_position()?;
         let field_type = FieldType::try_from(reader.read_i32()?)?;
-        //println!("ft={field_type:?}");
         let value = FieldValue::read(reader, field_type)?;
+        /*if hash == 0xEF10B158 && pos == 0x190c {
+            println!("hash={hash:x}, {value:?}, ft={field_type:?}");
+        }*/
         //println!("v={value:?}");
         seek_align_up(reader, 4)?;
         Ok(Self {
@@ -651,7 +648,7 @@ impl Field {
         w.write(&self.hash.to_le_bytes())?;
         w.write(&(self.field_type as i32).to_le_bytes())?;
         self.value.write(w)?;
-        w.seek_align_up(4)?;
+        w.write_align_up(4)?;
         Ok(())
     }
 
@@ -674,54 +671,19 @@ pub struct Struct {
 pub struct Class {
     pub num_fields: u32,
     pub hash: u32,
-    pub fields: IndexMap<u32, Field>
+    pub fields: Vec<Field>
 }
 
 impl Class {
     pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error>> {
-        /*let num_fields = reader.read_u32()?;
-        let hash = reader.read_u32()?;
-        //let name = RszDump::get_struct(hash).and_then(|x|Ok(x.name.clone())).unwrap_or("none".to_string());
-        let fields = (0..num_fields).map(|_| {
-            let field = Field::read(reader).unwrap();
-            Ok((field.hash, field))
-        }).collect::<Result<IndexMap<u32, Field>, Box<dyn Error>>>()?;
-        Ok(Self {
-            num_fields,
-            hash,
-            fields
-        })*/
+ 
         let num_fields = reader.read_u32()?;
         let hash = reader.read_u32()?;
-        //let name = RszDump::get_struct(hash).and_then(|x|Ok(x.name.clone())).unwrap_or("none".to_string());
-        let mut fields = IndexMap::<u32, Field>::new();
+        let mut fields = Vec::<Field>::new();
         for _ in 0..num_fields {
             let field = Field::read(reader)?;
-            fields.insert(field.hash, field);
-            /*match field {
-                Ok(field) => {},
-                Err(e) => {
-                    eprintln!("[ERROR] Parsing Error in class {hash:010x} field #{}, returning early: {e}", i);
-                    return Ok(Self {
-                        num_fields,
-                        hash,
-                        fields
-                    })
-                }
-            }*/
+            fields.push(field);
         }
-        /*let fields = (0..num_fields).filter_map(|_| {
-            let field = Field::read(reader);
-            match field {
-                Ok(field) => Some((field.hash, field)),
-                Err(e) => {
-                    errored = true;
-                    eprintln!("[ERROR] Parsing error {e}");
-                    None
-                }
-            }
-        }).collect::<IndexMap<u32, Field>>();*/
-        //}).collect::<Result<IndexMap<u32, Field>, Box<dyn Error>>>()?;
         Ok(Self {
             num_fields,
             hash,
@@ -732,7 +694,7 @@ impl Class {
     pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
         w.write(&self.num_fields.to_le_bytes())?;
         w.write(&self.hash.to_le_bytes())?;
-        for (_, field) in &self.fields {
+        for field in &self.fields {
             field.write(w)?;
         }
         Ok(())
@@ -750,14 +712,24 @@ impl Class {
         self.get_field_mut(name).and_then(|x| x.get_mut::<T>())
     }
 
+    pub fn find<'a>(&'a self, name: &'a str) -> Option<usize> {
+        let hash = murmur3(name, 0xffffffff);
+        self.fields.iter().enumerate().find_map(|(i, f)| {
+            if f.hash == hash {
+                Some(i)
+            } else {
+                None
+            }
+        })
+    }
     pub fn get_field<'a>(&'a self, name: &'a str) -> Option<&'a Field> {
         let hash = murmur3(name, 0xffffffff);
-        self.fields.get(&hash)
+        self.fields.iter().find(|f| f.hash == hash)
     }
 
     pub fn get_field_mut<'a>(&'a mut self, name: &'a str) -> Option<&'a mut Field> {
         let hash = murmur3(name, 0xffffffff);
-        self.fields.get_mut(&hash)
+        self.fields.iter_mut().find(|f| f.hash == hash)
     }
 
     pub fn get_value<'a>(&'a self, name: &'a str) -> Option<&'a FieldValue> {
@@ -769,19 +741,19 @@ impl Class {
     }
 
     pub fn get_index<'a>(&'a self, index: usize) -> Option<&'a Field> {
-        self.fields.get_index(index).map(|f| f.1)
+        self.fields.get(index).map(|f| f)
     }
 
     pub fn get_index_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut Field> {
-        self.fields.get_index_mut(index).map(|f| f.1)
+        self.fields.get_mut(index).map(|f| f)
     }
 
     pub fn get_index_value<'a>(&'a self, index: usize) -> Option<&'a FieldValue> {
-        self.fields.get_index(index).map(|(_, f)| &f.value)
+        self.fields.get(index).map(|f| &f.value)
     }
 
     pub fn get_index_value_mut<'a>(&'a mut self, index: usize) -> Option<&'a mut FieldValue> {
-        self.fields.get_index_mut (index).map(|(_, f)| &mut f.value)
+        self.fields.get_mut(index).map(|f| &mut f.value)
     }
 
     pub fn get_subclass<'a>(&'a self, name: &'a str) -> Option<&'a Class> {

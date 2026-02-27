@@ -691,7 +691,7 @@ impl Class {
 
     fn add_enum_edit_ex(&mut self, type_info: Option<&TypeInfo>, field_name: &str, label: &str, enum_type_str: &str, ui: &mut Ui, ctx: &mut EditContext, left: &mut HashSet<u32>) -> EditResponse {
         let hash = &murmur3(field_name, 0xffffffff);
-        if let Some(field) = self.fields.get_mut(hash) {
+        if let Some(field) = self.get_field_mut(field_name) {
             match field.value {
                 FieldValue::S32(mut val) => {
                     ui.horizontal(|ui| {
@@ -781,8 +781,9 @@ impl Class {
     // encoding, do they not know what numbers are?
     fn edit_as_equip_work(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         let mut left = HashSet::new();
-        for i in self.fields.keys() {
-            left.insert(*i);
+
+        for (_i, field) in self.fields.iter().enumerate() {
+            left.insert(field.hash);
         }
 
         let type_info = ctx.type_map.get_by_hash(self.hash);
@@ -891,7 +892,7 @@ impl Class {
                     ui.horizontal(|ui|{
                         ui.label("FreeVal1");
                         free_flag_1.edit(ui, ctx);
-                        left.remove(&murmur3("FreeVal1", 0xffffffff));
+                        //left.remove(&murmur3("FreeVal1", 0xffffffff));
                     });
                     if *free_flag_1 == 1  {
                         let skills = self.get_array_mut("BowgunCustomizeId");
@@ -960,9 +961,9 @@ impl Class {
             }
         };
 
-        for (h, field) in self.fields.iter_mut() {
-            if left.contains(h) {
-                let child_id = ui.make_persistent_id(h).value();
+        for (_i, field) in self.fields.iter_mut().enumerate() {
+            if left.contains(&field.hash) {
+                let child_id = ui.make_persistent_id(field.hash).value();
                 let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
                 field.edit(ui, &mut ctx);
             }
@@ -973,7 +974,7 @@ impl Class {
 
     // this could potentially return the name of the type for arrays
     pub fn get_preview_from_field(&self, field_name: &str, ctx: &mut EditContext) -> Option<String> {
-        self.fields.get(&murmur3(field_name, 0xffffffff)).and_then(|x| {
+        self.get_field(field_name).and_then(|x| {
             x.value.get_preview(ctx)
         })
     }
@@ -990,8 +991,8 @@ impl Class {
 
     fn edit_as_remapped(&mut self, remap: &Remap, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         let mut left = HashSet::new();
-        for i in self.fields.keys() {
-            left.insert(*i);
+        for (_i, field) in self.fields.iter().enumerate() {
+            left.insert(field.hash);
         }
 
         let type_info = ctx.type_map.get_by_hash(self.hash);
@@ -999,8 +1000,8 @@ impl Class {
             self.add_enum_edit(type_info, k, v, ui, ctx, &mut left);
         }
 
-        for (h, field) in self.fields.iter_mut() {
-            if left.contains(h) {
+        for (h, field) in self.fields.iter_mut().enumerate() {
+            if left.contains(&field.hash) {
                 let child_id = ui.make_persistent_id(h).value();
                 let mut ctx = Class::udpate_ctx(type_info, child_id, ctx);
                 field.edit(ui, &mut ctx);
@@ -1157,8 +1158,8 @@ impl Editable for Class {
                         self.edit_as_equip_work(ui, ctx);
                     },
                     _ => {
-                        for (field_hash, field) in &mut self.fields {
-                            let child_id = ui.make_persistent_id(field_hash);
+                        for field in &mut self.fields {
+                            let child_id = ui.make_persistent_id(field.hash);
                             let mut child_ctx = EditContext {
                                 copy_buffer: ctx.copy_buffer,
                                 id: child_id.value(),
@@ -1173,8 +1174,8 @@ impl Editable for Class {
                     }
                 }
             } else {
-                for (field_hash, field) in &mut self.fields {
-                    let child_id = ui.make_persistent_id(field_hash);
+                for field in &mut self.fields {
+                    let child_id = ui.make_persistent_id(field.hash);
                     let mut child_ctx = EditContext {
                         copy_buffer: ctx.copy_buffer,
                         id: child_id.value(),

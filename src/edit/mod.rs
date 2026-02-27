@@ -139,10 +139,17 @@ impl Editable for SaveFile {
                 ..*ctx
             };
             let type_info = ctx.type_map.get_by_hash(field.1.hash);
+            let field_name = ctx.type_map.get_hash_str(field.0)
+                .cloned()
+                .unwrap_or(format!("{:08x}", field.0));
             let header = if let Some(type_info) = type_info {
-                format!("{:08x}: {}: {:08x}", field.0, type_info.name, field.1.hash)
+                format!("{}: {},{:08x}", field_name, type_info.name, field.1.hash)
             } else {
-                format!("{:08x}: {:08x}", field.0, field.1.hash)
+                if let Some(type_name) = ctx.type_map.get_hash_str(field.1.hash) {
+                    format!("{}: {},{:08x}", field_name, type_name, field.1.hash)
+                } else {
+                    format!("{}: {:08x}", field_name, field.1.hash)
+                }
             };
             CollapsingHeader::new(header)
                 .id_salt(child_id)

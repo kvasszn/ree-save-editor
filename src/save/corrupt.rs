@@ -3,7 +3,6 @@ use std::{
     io::{Read, Seek},
 };
 
-use indexmap::IndexMap;
 use util::{ReadExt, SeekExt, seek_align_up};
 
 use crate::{
@@ -259,7 +258,7 @@ impl<'a> CorruptSaveReader<'a> {
             num_fields.max(type_info.fields.len() as u32)
         };
 
-        let mut fields = IndexMap::<u32, Field>::new();
+        let mut fields = Vec::<Field>::new();
         // could maybe do something where you keep on trying to read a field hash until you cant
         // could also maybe just read in order of the RSZ, if its there, its there, otherwise just
         // ignore
@@ -282,7 +281,7 @@ impl<'a> CorruptSaveReader<'a> {
             let field = self.read_field(reader, type_info, field_info);
             match field {
                 Ok(field) => {
-                    fields.insert(field.hash, field);
+                    fields.push(field);
                 }
                 Err(e) => {
                     eprintln!("[ERROR] Parsing error on field {}, {e}", field_info.name);
@@ -291,27 +290,7 @@ impl<'a> CorruptSaveReader<'a> {
             }
         }
 
-        /* for _ in 0..num_fields {
-           let field_hash = reader.read_u32()?;
-        // if the field hash is correct, read normally
-        if let Some(field_info) = type_info.fields.get(&field_hash) {
-        let field = self.read_field(reader, type_info, field_info);
-        match field {
-        Ok(field) => {fields.insert(field.hash, field);},
-        Err(e) => {
-        eprintln!("[ERROR] Parsing error {e}");
-        return Ok(Class {
-        num_fields,
-        hash,
-        fields
-        })
-        }
-        }
-        } else {
-        break;
-        }
-        }*/
-        // Safely read up to a max of type_info
+ 
         Ok(Class {
             num_fields,
             hash,
@@ -360,7 +339,7 @@ impl<'a> CorruptSaveReader<'a> {
             num_fields.max(type_info.fields.len() as u32)
         };
 
-        let mut fields = IndexMap::<u32, Field>::new();
+        let mut fields = Vec::<Field>::new();
         // could maybe do something where you keep on trying to read a field hash until you cant
         // could also maybe just read in order of the RSZ, if its there, its there, otherwise just
         // ignore
@@ -388,7 +367,7 @@ impl<'a> CorruptSaveReader<'a> {
             let field = self.read_field(reader, type_info, field_info);
             match field {
                 Ok(field) => {
-                    fields.insert(field.hash, field);
+                    fields.push(field);
                 }
                 Err(e) => {
                     eprintln!("[ERROR] Parsing error on field {}, {e}", field_info.name);
@@ -549,7 +528,7 @@ impl<'a> CorruptSaveReader<'a> {
         hash: u32,
         start: u64,
     ) -> Class {
-        let mut fields = IndexMap::new();
+        let mut fields = Vec::new();
         let Some(type_info) = self.type_map.get_by_hash(hash) else {
             return Class {
                 num_fields: 0,
@@ -590,7 +569,7 @@ impl<'a> CorruptSaveReader<'a> {
                                     hash: *field_hash,
                                     value: FieldValue::Class(Box::new(c)),
                                 };
-                                fields.insert(*field_hash, field);
+                                fields.push(field);
                                 //scanned_classes.push(c);
                             }
                             Err(e) => {
@@ -617,7 +596,7 @@ impl<'a> CorruptSaveReader<'a> {
                                     "[INFO] Found field {} in class {}",
                                     field_info.name, type_info.name
                                 );
-                                fields.insert(*field_hash, f);
+                                fields.push(f);
                             }
                             Err(e) => {
                                 eprintln!("[ERROR] Failed to read field: {e}")

@@ -32,10 +32,12 @@ pub struct FileView {
 
 impl FileView {
     pub fn new(config: &Config, idx: u64, language: ContentLanguage) -> Self {
+        let mut output_path_picker = FilePicker::<true>::new("Output Path");
+        output_path_picker.text = "./outputs".to_string();
         Self {
             idx,
             input_file_picker: FilePicker::<false>::new("File"),
-            output_path_picker: FilePicker::new("Output Path"),
+            output_path_picker,
             current_file: CurrentFile::Null,
             language,
             game: Game::MHWILDS,
@@ -145,9 +147,9 @@ impl FileView {
                             // quite disgusting but oh well
                             #[cfg(not(target_arch = "wasm32"))]
                             {
-                                let path = self.output_path_picker.text.clone();
+                                let output_path = self.output_path_picker.text.clone();
                                 use std::{fs::File};
-                                let mut path = PathBuf::from(path);
+                                let mut path = PathBuf::from(output_path.clone());
                                 let _ = std::fs::create_dir_all(&path);
                                 let in_file_path = PathBuf::from(&file_path);
                                 let file_name = in_file_path.file_name()
@@ -159,6 +161,8 @@ impl FileView {
                                     Ok(mut file) => {
                                         use std::io::Write;
                                         let _ = file.write_all(&data);
+                                        let path = output_path.clone();
+                                        let path = shellexpand::full(&path).unwrap_or(output_path.into());
                                         self.set_popup(format!("Saved to {:?}", path));
                                     }
                                     Err(e) => {
@@ -202,7 +206,7 @@ impl FileView {
                 .show_ui(ui, |ui| {
                     for option in GAME_OPTIONS {
                         ui.selectable_value(&mut self.game, option.1, option.0);
-                    }
+                }
                 }).response.changed();
             if let Some(game_ctx) = game_ctx.as_deref_mut() {
                 if changed_game {
@@ -286,7 +290,7 @@ impl FileView {
 
             if self.repair {
                 let data = SaveFile::read_data(reader, &mut save_ctx).ok()?;
-                //std::fs::write("user_decrypted.bin", &data).unwrap();
+                std::fs::write("outputs/user_decrypted.bin", &data).unwrap();
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
                 //let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);
