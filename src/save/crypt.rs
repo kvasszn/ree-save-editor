@@ -18,6 +18,33 @@ impl SplitMix64 {
         z = (z ^ (z >> 27)).wrapping_mul(Self::MUL2);
         return z ^ (z >> 31);
     }
+
+    pub fn last_int(state: &mut u64) -> u64 {
+        *state = state.wrapping_add(Self::ADD);
+        let mut z: u64 = *state;
+        z = (z ^ (z >> 30)).wrapping_mul(Self::MUL1);
+        z = (z ^ (z >> 27)).wrapping_mul(Self::MUL2);
+        return z ^ (z >> 31);
+    }
+
+    pub const INV_MUL1: u64 = 0x96de1b173f119089;
+    pub const INV_MUL2: u64 = 0x319642b2d24d8ec3;
+    pub fn unmix(mut z: u64) -> u64 {
+        // 1. Reverse the final XOR-shift: z = z ^ (z >> 31);
+        z ^= (z >> 31) ^ (z >> 62);
+
+        // 2. Reverse the second multiplication and its preceding XOR-shift:
+        // z = (z ^ (z >> 27)).wrapping_mul(Self::MUL2);
+        z = z.wrapping_mul(Self::INV_MUL2);
+        z ^= (z >> 27) ^ (z >> 54);
+
+        // 3. Reverse the first multiplication and its preceding XOR-shift:
+        // z = (z ^ (z >> 30)).wrapping_mul(Self::MUL1);
+        z = z.wrapping_mul(Self::INV_MUL1);
+        z ^= (z >> 30) ^ (z >> 60);
+
+        z
+    }
 }
 
 // Using rug
@@ -45,7 +72,7 @@ mod backend {
 #[cfg(not(target_os = "linux"))]
 mod backend {
     pub use num_bigint::{BigInt as Integer, Sign};
-    
+
     // Helper: Modular Exponentiation for Num-BigInt
     pub fn mod_exp(base: &Integer, exp: &Integer, modulus: &Integer) -> Integer {
         base.modpow(exp, modulus)
@@ -67,7 +94,6 @@ mod backend {
 }
 
 use backend::*;
-
 use crate::save::game::Game;
 
 
@@ -106,11 +132,11 @@ impl AuthCtx {
     }
 
     /*pub fn update_u(&mut self, u: u64) {
-        let u = Integer::from(u) % &self.q;
-        let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
-        self.u = u;
-        self.s = s;
-    }*/
+      let u = Integer::from(u) % &self.q;
+      let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
+      self.u = u;
+      self.s = s;
+      }*/
 
     pub fn encrypt(&self, pt: [u8; 8]) -> Pair {
         let x0 = mod_exp(&self.r, &self.e, &self.p);
@@ -221,6 +247,88 @@ impl Mandarin {
         }
     }
 
+    /*pub fn recover_state_from_mask(mask: [u8; 8]) -> u64 {
+        let cfg = Config::new();
+        let ctx = Context::new(&cfg);
+        let solver = Solver::new(&ctx);
+
+        // Create our unknown 64-bit starting state
+        let mut state = BV::new_const(&ctx, "state", 64);
+        let start_state = state.clone();
+
+        let add = BV::from_u64(&ctx, SplitMix64::ADD, 64);
+        let mul1 = BV::from_u64(&ctx, SplitMix64::MUL1, 64);
+        let mul2 = BV::from_u64(&ctx, SplitMix64::MUL2, 64);
+
+        for &expected_byte in &mask {
+            // state = state.wrapping_add(ADD);
+            state = state.bvadd(&add);
+            let mut z = state.clone();
+
+            // z = (z ^ (z >> 30)).wrapping_mul(MUL1);
+            let z_sh30 = z.bvlshr(&BV::from_u64(&ctx, 30, 64));
+            z = z.bvxor(&z_sh30).bvmul(&mul1);
+
+            // z = (z ^ (z >> 27)).wrapping_mul(MUL2);
+            let z_sh27 = z.bvlshr(&BV::from_u64(&ctx, 27, 64));
+            z = z.bvxor(&z_sh27).bvmul(&mul2);
+
+            // state = z ^ (z >> 31);
+            let z_sh31 = z.bvlshr(&BV::from_u64(&ctx, 31, 64));
+            state = z.bvxor(&z_sh31);
+
+            // mask[i] == state as u8; (extract the lowest 8 bits)
+            let extracted_byte = state.extract(7, 0);
+            let target = BV::from_u64(&ctx, expected_byte as u64, 8);
+            solver.assert(&extracted_byte._eq(&target));
+        }
+
+        // Crunch the equations
+        assert_eq!(solver.check(), z3::SatResult::Sat, "Z3 failed to find a valid PRNG state");
+
+        let model = solver.get_model().unwrap();
+        let resolved = model.eval(&start_state, true).unwrap();
+
+        resolved.as_u64().unwrap()
+    }*/
+
+    /*pub fn find_seed(&self, encrypted: &[u8], key: u64, decrypted_len: u64) -> u64 {
+        let p = bytes_to_int(&AuthCtx::P);
+        let r = bytes_to_int(&AuthCtx::R);
+        let e = Integer::from(0x14u64);
+
+        let expected_x0 = mod_exp(&r, &e, &p);
+        let expected_x0_bytes = int_to_bytes_le::<64>(&expected_x0);
+
+        let mut target_prng_mask = [0u8; 8];
+        for i in 0..8 {
+            target_prng_mask[i] = encrypted[i] ^ expected_x0_bytes[i];
+        }
+        println!("{target_prng_mask:?}");
+
+        // 1. Solve for the true 64-bit state using our leaked 8 bytes
+        println!("[+] Running Z3 solver to reconstruct 64-bit state from mask...");
+        let mut state = 0;//Self::recover_state_from_mask(target_prng_mask);
+
+        // 2. Undo the 16 key/iv iterations (MUST subtract ADD)
+        for _ in 0..16 { 
+            state = SplitMix64::unmix(state).wrapping_sub(SplitMix64::ADD); 
+        }
+
+        // 3. Undo the inverted key injection
+        state = state.wrapping_sub(!key);
+
+        // 4. Undo the block sizes loop
+        let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
+        for _ in 0..num_potential_blocks {
+            state = SplitMix64::unmix(state).wrapping_sub(SplitMix64::ADD);
+        }
+
+        println!("[+] Successfully recovered seed_for_enc_rand: {:#018x} ({})", state, state);
+
+        state
+    }*/
+
     pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
@@ -276,7 +384,7 @@ impl Mandarin {
                 use std::io::Write;
                 let _ = std::io::stdout().flush();
                 found_key
-        });
+            });
         println!("");
 
         let taken = s.elapsed().as_secs_f64();

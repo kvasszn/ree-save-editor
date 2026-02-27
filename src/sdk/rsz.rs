@@ -27,7 +27,7 @@ pub struct RszHeader {
     pub roots: Vec<u32>,
     pub extern_slots: HashMap<u32, String>,
     pub type_descriptors: Vec<TypeDescriptor>,
-    pub data: Vec<u8>,
+    pub data: Vec<u8>
 }
 
 impl RszHeader {

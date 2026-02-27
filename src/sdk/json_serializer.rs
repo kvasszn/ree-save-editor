@@ -1,5 +1,4 @@
 use std::fmt::Display;
-
 use serde::{Serialize, Serializer, ser::{SerializeMap, SerializeSeq}};
 
 use crate::sdk::{rsz::Rsz, type_map::{FieldInfo, TypeMap}, value::{Instance, Value}};
