@@ -5,13 +5,18 @@ f = open(sys.argv[1], 'r', encoding='latin-1')
 #if len(sys.argv) < 3 and sys.argv[2]:
 #    check = int(sys.argv[2], 16)
 
-to_check = [0xdbe3f199, 0x85e904c1, 0xb6182d04, 0xc2468a16, 0xbc922b61, 0x27945a5a, 0xe137773c, 0x1b5a30c0]
+to_check = [524057212, 1106175613]#, 0xdbe3f199, 0x85e904c1, 0xb6182d04, 0xc2468a16, 0xbc922b61, 0x27945a5a, 0xe137773c, 0x1b5a30c0]
 strings = f.readlines()
 #for string in strings:
 #    string = string.strip()
 #    s = string.split('.')
 #    for sub in s:
 #        strings.append(sub)
+for s in ["Player01", "Player02", "Player03", "Player04", "Player06", "Player07", "Player08", "Player09", "Player10", "Player11", "Player12", "Player13", "Player14", "Player15", "Player16"]:
+    strings.append(s.lower())
+    strings.append(s.upper())
+    strings.append(s)
+
 
 
 f = open(sys.argv[2], 'r', encoding='latin-1')

@@ -238,6 +238,7 @@ impl FieldValue {
 impl Editable for FieldValue {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         match self {
+            FieldValue::Boolean(v) => v.edit(ui, ctx),
             FieldValue::Enum(v) => edit_enum_from_field(v, ui, ctx),
             FieldValue::S8(v) => v.edit(ui, ctx),
             FieldValue::U8(v) => v.edit(ui, ctx),

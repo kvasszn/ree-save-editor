@@ -58,7 +58,7 @@ impl AssetPaths {
             },
             Game::RE9 => {
                 Self {
-                    rsz: None,
+                    rsz: Some("./assets/re9/rszre9.json".to_string()),
                     enums: Some("./assets/re9/enums_re9.json".to_string()),
                     msgs: None,
                     mappings: None,

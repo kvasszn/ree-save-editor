@@ -159,10 +159,12 @@ impl FileView {
                                 log::info!("Saving to {path:?}");
                                 match File::create(&path) {
                                     Ok(mut file) => {
+                                        // idk wtf im doing here uh
                                         use std::io::Write;
                                         let _ = file.write_all(&data);
                                         let path = output_path.clone();
-                                        let path = shellexpand::full(&path).unwrap_or(output_path.into());
+                                        let path = shellexpand::full(&path).unwrap_or(output_path.clone().into());
+                                        let path = std::fs::canonicalize(path.to_string()).unwrap_or(output_path.clone().into());
                                         self.set_popup(format!("Saved to {:?}", path));
                                     }
                                     Err(e) => {
@@ -275,6 +277,7 @@ impl FileView {
     }
 
     fn set_popup(&mut self, msg: String) {
+        log::info!("popup msg set: {}", msg);
         self.popup_msg = msg;
         self.show_popup = true;
     }
@@ -290,7 +293,6 @@ impl FileView {
 
             if self.repair {
                 let data = SaveFile::read_data(reader, &mut save_ctx).ok()?;
-                std::fs::write("outputs/user_decrypted.bin", &data).unwrap();
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
                 //let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);

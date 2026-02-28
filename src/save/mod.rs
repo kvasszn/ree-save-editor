@@ -37,7 +37,6 @@ impl SaveFile {
             data.write(&field.0.to_le_bytes())?;
             field.1.write(&mut data)?;
         }
-        std::fs::write("outputs/user_decrypted_write.bin", &data.clone().into_inner()).unwrap();
 
         // compression
         let decompressed_size: u64 = data.get_ref().len() as u64;
@@ -84,7 +83,6 @@ impl SaveFile {
             data.write(&field.0.to_le_bytes())?;
             field.1.write(&mut data)?;
         }
-        std::fs::write("outputs/user_decrypted_write.bin", &data.clone().into_inner()).unwrap();
         // compression
         let decompressed_size: u64 = data.get_ref().len() as u64;
 
