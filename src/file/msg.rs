@@ -3,13 +3,15 @@ use std::sync::OnceLock;
 
 use crate::rsz::rszserde::Guid;
 use crate::file::{StructRW, DefaultDump};
+use crate::sdk::type_map::ContentLanguage;
+use serde::Deserialize;
 use serde::{ser::SerializeStruct, Serialize};
 
 const KEY: [u8; 16] = [
     207, 206, 251, 248, 236, 10, 51, 102, 147, 169, 29, 147, 80, 57, 95, 9,
 ];
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MsgAttribute {
     Int(i64),
     Float(f64),
@@ -17,7 +19,7 @@ pub enum MsgAttribute {
     Unknown(u64),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct MsgEncryptedData {
     data: Vec<u8>,
 }
@@ -42,7 +44,7 @@ impl<C> StructRW<C> for MsgEncryptedData {
 
 
 #[allow(unused)]
-#[derive(Debug, file_macros::StructRW, Serialize)]
+#[derive(Clone, Debug, file_macros::StructRW, Serialize, Deserialize)]
 #[depends_on(
     data_offset: u64,
     //data: &'a MsgEncryptedData,
@@ -74,7 +76,7 @@ impl<'a> StructRW<MsgEntryContext<'a>> for MsgAttribute {
 }
 
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MsgString(pub String);
 
 impl<'a> StructRW<MsgEntryContext<'a>> for MsgString {
@@ -97,7 +99,7 @@ impl<'a> StructRW<MsgEntryContext<'a>> for MsgString {
 }
 
 
-#[derive(Debug, file_macros::StructRW)]
+#[derive(Clone, Debug, file_macros::StructRW, Deserialize)]
 #[allow(unused)]
 pub struct Msg {
     version: u32,
@@ -129,6 +131,15 @@ pub struct Msg {
     #[varlist(ty = MsgEntry, count = entry_count, offsets = entry_offsets)]
     #[context(MsgEntry, data_offset: data_offset, lang_count: lang_count, attr_count: attr_count, cursor: Cursor::new(&data.data))]
     entries: Vec<MsgEntry>,
+}
+
+impl Msg {
+    pub fn get_entry<'a>(&'a self, guid: &'a Guid, language: ContentLanguage) -> Option<&'a str> {
+        if let Some(entry) = self.entries.iter().find(|e| e.guid.0 == guid.0) {
+            return entry.content.get(language as usize).map(|x| x.0.as_str())
+        }
+        None
+    }
 }
 
 impl DefaultDump for Msg {}

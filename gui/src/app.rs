@@ -86,7 +86,7 @@ impl eframe::App for TameApp {
 
         TopBottomPanel::top("MenuBar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("MH Wilds Save Editor");
+                ui.label("REE Save Editor");
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.hyperlink_to("GitHub", "https://github.com/kvasszn/mhtame");

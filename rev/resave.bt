@@ -156,6 +156,8 @@ typedef struct (int field_base) {
     } else if (size == 32) {
         // Your original 32-byte logic
         AlignUpOffset(32, 0x10);
+	} else if (size == 64) {
+        AlignUpOffset(64, 48);
     } else if (size == 112 || size == 114) {
         AlignUp(16);
        // FSkip(FTell() % 64 + 0x10);
@@ -334,4 +336,4 @@ struct Entry {
     }
 };
 
-Entry fields[3]<optimize=false>;
+Entry fields[100]<optimize=false>;

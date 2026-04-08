@@ -21,7 +21,7 @@ pub struct TypeDescriptor {
 
 pub type UserData = Object;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct U16String<const NULL_TERM: bool>(pub Vec<u16>);
 
 impl U16String<false> {
@@ -72,7 +72,7 @@ impl StringU16 {
 pub type StringU16C = U16String<true>;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct Guid(pub [u8; 16]);
 impl Display for Guid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -89,7 +89,7 @@ impl Serialize for Guid {
 }
 
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, Clone, Copy, PartialEq)]
 pub struct Range<T> {
     pub start: T,
     pub end: T,
@@ -126,7 +126,7 @@ pub type Float3 = [f32; 3];
 pub type Float4 = [f32; 4];
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable, PartialEq)]
 pub struct Vec2(pub f32, pub f32, pub f32, pub f32);
 impl Vec2 {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -135,7 +135,7 @@ impl Vec2 {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable, PartialEq)]
 pub struct Vec3(pub f32, pub f32, pub f32, pub f32);
 impl Vec3 {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -144,7 +144,7 @@ impl Vec3 {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Serialize, Pod, Zeroable, PartialEq)]
 pub struct Vec4(pub f32, pub f32, pub f32, pub f32);
 impl Vec4 {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -153,7 +153,7 @@ impl Vec4 {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct Quaternion(f32, f32, f32, f32);
 impl Quaternion {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -162,7 +162,7 @@ impl Quaternion {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct Sphere(f32, f32, f32, f32);
 impl Sphere {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -171,7 +171,7 @@ impl Sphere {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct Position(f64, f64, f64);
 impl Position {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -180,7 +180,7 @@ impl Position {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct Color(pub u8, pub u8, pub u8, pub u8);
 impl Color {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -189,18 +189,18 @@ impl Color {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct Mat4x4(pub [f32; 16]);
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct RuntimeType(pub String);
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct GameObjectRef(pub Guid);
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct OBB {
     center: Vec3,
     half_extents: Vec3,
@@ -218,7 +218,7 @@ impl OBB {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct AABB(pub Vec4, pub Vec4);
 impl AABB {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -227,7 +227,7 @@ impl AABB {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct Rect {
     start: UInt2,
     end: UInt2,
@@ -242,7 +242,7 @@ impl Rect {
     }
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct Data(pub Vec<u8>);
 impl Data {
     pub fn read<R: Read>(r: &mut R) -> io::Result<Self> {
@@ -253,7 +253,7 @@ impl Data {
 }
 
 #[repr(C)]
-#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Serialize, Clone, Copy, Pod, Zeroable, PartialEq)]
 pub struct KeyFrame{
     time: f32,
     val: [f32; 3],

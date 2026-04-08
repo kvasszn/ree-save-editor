@@ -82,6 +82,7 @@ rfd = "0.17.2"
 shellexpand = "3.1.1"
 hex = "0.4.3"
 web-time = "1.1.0"
+regex = "1.12.3"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]

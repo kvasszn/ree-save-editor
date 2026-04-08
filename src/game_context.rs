@@ -1,6 +1,6 @@
 use std::{collections::HashMap};
 
-use crate::{edit::copy::CopyBuffer, save::{game::Game, remap::Remap}, sdk::type_map::{TypeMap}};
+use crate::{edit::copy::CopyBuffer, save::{game::Game, remap::Remap}, sdk::{asset::Assets, type_map::TypeMap}};
 
 #[derive(Debug, Clone, Default)]
 pub struct AssetPaths {
@@ -63,7 +63,7 @@ impl AssetPaths {
                     msgs: None,
                     mappings: None,
                     strings: Some("./assets/re9/strings.txt".to_string()),
-                    remap: None,
+                    remap: Some("./assets/re9/remap.json".to_string()),
                 }
             }
             //_ => Self::default(),
@@ -122,7 +122,7 @@ impl AssetPaths {
                     msgs: None,
                     mappings: None,
                     strings: Some("assets/re9/strings.txt".to_string()),
-                    remap: None,
+                    remap: Some("assets/re9/remap.json".to_string()),
                 }
             }
             //_ => Self::default(),
@@ -135,11 +135,14 @@ pub struct GameCtx {
     pub type_map: TypeMap,
     pub copy_buffer: CopyBuffer,
     pub remaps: HashMap<String, Remap>,
+    pub assets: Assets
 }
 
 impl GameCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(paths: &AssetPaths) -> Self {
+        use crate::sdk::type_map;
+
         let mut type_map = TypeMap::default();
         if let Some(path) = &paths.rsz {
             let _ = type_map.load_rsz_from_path(path)
@@ -174,10 +177,15 @@ impl GameCtx {
             HashMap::new()
         };
 
+        let mut assets = Assets::default();
+        let res = assets.load_by_remaps(&remaps, &type_map);
+        println!("Loading asset res {res:?}");
+
         Self {
             type_map,
             copy_buffer: CopyBuffer::Null,
             remaps,
+            assets
         }
     }
 
@@ -226,6 +234,7 @@ impl GameCtx {
                 type_map,
                 copy_buffer: CopyBuffer::Null,
                 remaps,
+                assets: HashMap::new(),
             };
             let _ = tx.send((game, game_ctx));
         });

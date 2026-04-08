@@ -34,13 +34,22 @@ impl FileView {
     pub fn new(config: &Config, idx: u64, language: ContentLanguage) -> Self {
         let mut output_path_picker = FilePicker::<true>::new("Output Path");
         output_path_picker.text = "./outputs".to_string();
+        let game = if cfg!(feature = "mhwilds") {
+            Game::MHWILDS
+        } else if cfg!(feature = "re9") {
+            Game::RE9
+        } else if cfg!(feature = "mhst3") {
+            Game::MHST3
+        } else {
+            Game::MHWILDS
+        };
         Self {
             idx,
             input_file_picker: FilePicker::<false>::new("File"),
             output_path_picker,
             current_file: CurrentFile::Null,
             language,
-            game: Game::MHWILDS,
+            game,
             search: Search::default(),
             steam: Steam::new(config),
             show_popup: false,
@@ -260,7 +269,8 @@ impl FileView {
                             &self.search.range,
                             &mut game_ctx.copy_buffer,
                             self.language,
-                            &game_ctx.remaps
+                            &game_ctx.remaps,
+                            &game_ctx.assets
                         );
                         loaded.edit(ui, &mut edit_ctx);
                     }

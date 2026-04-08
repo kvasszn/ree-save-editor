@@ -618,7 +618,7 @@ impl DeRszRegistry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeRsz {
     pub offset: usize,
     pub roots: Vec<u32>,
@@ -1491,7 +1491,7 @@ impl RszFromJson for Struct {
     }
 }
 
-#[derive(Debug, DeRszInstance, Clone, Copy)]
+#[derive(Debug, DeRszInstance, Clone, Copy, PartialEq)]
 pub struct Guid(pub [u8; 16]);
 
 derive_dersz_from_json!(Guid);

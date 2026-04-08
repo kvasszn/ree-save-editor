@@ -10,3 +10,5 @@ rsz_macros/target
 /gen/target
 /data
 assets/raw_enums
+assets/mhwilds/*.user.3
+assets/mhwilds/*.msg.23

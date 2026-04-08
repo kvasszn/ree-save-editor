@@ -9,6 +9,12 @@ name = "mhtame-gui"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+re9 = []
+mhwilds = []
+mhst3 = []
+
 [dependencies]
 util = { path = "../util" }
 

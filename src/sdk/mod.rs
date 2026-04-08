@@ -1,4 +1,5 @@
 pub mod type_map;
+pub mod asset;
 pub mod types;
 pub mod value;
 pub mod deserializer;

@@ -111,7 +111,7 @@ impl SaveFile {
         fb.write_all(&decrypted_size.to_le_bytes())?;
         let data = &fb.into_inner();
         let file_hash = murmur3(&data, 0xffffffff);
-        let mut f = File::create(path).unwrap();
+        let mut f = File::create(path)?;
         f.write_all(&data)?;
         f.write_all(&file_hash.to_le_bytes())?;
         Ok(())
@@ -284,7 +284,7 @@ impl StructRW<SaveContext> for SaveFile {
 
             //let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
             //data[0..16].copy_from_slice(&good_header);
-            //std::fs::write("./outputs/tests/good.bin", &data)?;
+            let _ = std::fs::write("./outputs/decrypted.bin", &data);
             //std::fs::write("./outputs/tests/ghguyv2.bin", &data)?;
             let data = &mut Cursor::new(&data);
             let mut fields = Vec::new();

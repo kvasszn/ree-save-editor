@@ -3,7 +3,7 @@ VERSION=$1
 MODE=$2
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: ./build_release.sh <version> [full|mhwilds|re9|mhst3]"
+    echo "Usage: ./build_release.sh <version> [mhwilds|re9|mhst3]"
     exit 1
 fi
 
@@ -11,12 +11,19 @@ WINDOWS_PATH="./outputs/${VERSION}${MODE}/windows"
 LINUX_PATH="./outputs/${VERSION}${MODE}/linux"
 rm -r "./outputs/$VERSION"
 echo "Building Linux..."
-cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu  --release 
+
+if [ -z $MODE ]; then
+	features = ""
+else
+	features = "--features ${MODE}"
+fi
+
+cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu  --release ${features}
 echo "Building Windows..."
-cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release
+cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release ${features}
 
 
-if [ "$MODE" == "full" ] ;then
+if [ -z "$MODE" ] ;then
     cp -r assets $WINDOWS_PATH/
     cp -r assets $LINUX_PATH/
 
@@ -40,7 +47,7 @@ elif [ "$MODE" == "mhwilds" ] ;then
 	cp scripts/reset_tickets.lua $WINDOWS_PATH/scripts
 	cp scripts/reset_tickets.lua $LINUX_PATH/scripts
 elif [ "$MODE" == "re9" ] ;then
-    ASSETS="strings.txt enums_re9.json"
+    ASSETS="enums_re9.json rszre9.json remap.json"
 
 	mkdir -p "$WINDOWS_PATH/assets/re9"
 	mkdir -p "$LINUX_PATH/assets/re9"

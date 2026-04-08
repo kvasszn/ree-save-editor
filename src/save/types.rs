@@ -1,15 +1,24 @@
+use std::collections::HashMap;
 use std::io::{Cursor, Read, Seek, Write};
 use std::error::Error;
-use indexmap::IndexMap;
 use num_enum::TryFromPrimitive;
-use crate::sdk::type_map::{FieldInfo, TypeInfo, TypeMap};
-use crate::sdk::{types::*};
+use serde::Deserialize;
+use crate::save::remap::{Format, Remap};
+use crate::sdk::asset::Assets;
+use crate::sdk::type_map::{self, ContentLanguage, FieldInfo, TypeInfo, TypeMap};
+use crate::sdk::{types::*, value::Value};
 
 use util::*;
 
+#[derive(Debug, Clone)]
+pub enum Ref {
+    Index(usize),
+    Field(String)
+}
+
 // Some of this stuff comes from via.reflection.TypeKind
 #[repr(i32)]
-#[derive(Clone, Copy, Debug, TryFromPrimitive, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, TryFromPrimitive, PartialEq, Eq)]
 pub enum FieldType {
     Array = -1, // This is hidden in any enums that are similar to this
     Unknown = 0,
@@ -75,6 +84,13 @@ impl FieldType {
 }
 
 #[derive(Debug, Clone)]
+pub enum EnumValue {
+    E2([u8; 2]),
+    E4([u8; 4]),
+    E8([u8; 8]),
+}
+
+#[derive(Debug, Clone)]
 pub enum FieldValue {
     Array(Box<Array>),
     Unknown,
@@ -95,6 +111,24 @@ pub enum FieldValue {
     String(Box<StringU16>),
     Struct(Box<Struct>),
     Class(Box<Class>)
+}
+
+impl From<&FieldValue> for Value {
+    fn from(value: &FieldValue) -> Self {
+        match value {
+            FieldValue::S8(v)  => Value::S8(*v),
+            FieldValue::S16(v) => Value::S16(*v),
+            FieldValue::S32(v) => Value::S32(*v),
+            FieldValue::S64(v) => Value::S64(*v),
+            FieldValue::U8(v)  => Value::U8(*v),
+            FieldValue::U16(v) => Value::U16(*v),
+            FieldValue::U32(v) => Value::U32(*v),
+            FieldValue::U64(v) => Value::U64(*v),
+            _ => {
+                Value::Null
+            }
+        }
+    }
 }
 
 impl FieldValue {
@@ -140,7 +174,10 @@ impl FieldValue {
             }
         } else if size == 32 {
             reader.seek_align_up_offset(32, 16)?;
-        } else if size == 112 || size == 114 {
+        } else if size == 64 {
+            reader.seek_align_up_offset(64, 48)?;
+        }
+        /*else if size == 112 {
             reader.seek_align_up(16)?;
             let pos = reader.stream_position()?;
             if pos % 32 == 16 {
@@ -148,15 +185,17 @@ impl FieldValue {
             } else {
                 reader.seek_align_up(128)?;
             }
-            if size == 114 {
-                reader.seek_relative(-4)?;
-            }
-        }
+        }*/
         else {
             reader.seek_align_up(size as u64)?;
         }
         let value = match field_type {
-            FieldType::Enum => { FieldValue::Enum(reader.read_i32()?) }
+            FieldType::Enum => { 
+                //if size == 4 {
+                //    EnumValue::E4(reader.read_u8_arr::<4>(n)?)
+                //}
+                FieldValue::Enum(reader.read_i32()?)
+            }
             FieldType::Boolean => { FieldValue::Boolean(reader.read_bool()?) }
             FieldType::S8 => { FieldValue::S8(reader.read_i8()?) }
             FieldType::U8 => { FieldValue::U8(reader.read_u8()?) }
@@ -216,6 +255,8 @@ impl FieldValue {
             }
         } else if size == 32 {
             w.write_align_up_offset(32, 16)?;
+        } else if size == 64 {
+            w.write_align_up_offset(64, 48)?;
         } else {
             w.write_align_up(size as u64)?;
         }
@@ -255,9 +296,54 @@ impl FieldValue {
             FieldValue::Struct(v) => v.data.len() as u32,
             _ => 0
         }
-
     }
 
+
+    pub fn to_string(&self, field_type: &str, language: ContentLanguage, remaps: &HashMap<String, Remap>, type_map: &TypeMap, assets: &Assets) -> String {
+        if let Some(remap) = &remaps.get(field_type) {
+            let evaluated = Format::eval(self, field_type, language, &remap.format, type_map, remaps, assets);
+            if let Some(evaluated) = evaluated {
+                return evaluated;
+            }
+        }
+        match self {
+            FieldValue::Enum(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::Boolean(v) => v.to_string(),
+            FieldValue::U8(v) => v.to_string(),
+            FieldValue::U16(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::U32(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::U64(v) => v.to_string(),
+            FieldValue::S8(v) => v.to_string(),
+            FieldValue::S16(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::S32(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::S64(v) => v.to_string(),
+            FieldValue::Unknown => "Unknown".to_string(),
+            FieldValue::Class(v) => {
+                v.to_string(language, type_map, remaps, assets).unwrap_or("".to_string())
+            }
+            FieldValue::String(v) => v.to_string(),
+            FieldValue::Struct(_) => "Struct".to_string(),
+            _ => "(error) Invalid Field Type in to_string".to_string(),
+
+        }
+    }
+    pub fn to_string_basic(&self) -> String {
+        match self {
+            FieldValue::Enum(v) => v.to_string(),
+            FieldValue::Boolean(v) => v.to_string(),
+            FieldValue::U8(v) => v.to_string(),
+            FieldValue::U16(v) => v.to_string(),
+            FieldValue::U32(v) => v.to_string(),
+            FieldValue::U64(v) => v.to_string(),
+            FieldValue::S8(v) => v.to_string(),
+            FieldValue::S16(v) => v.to_string(),
+            FieldValue::S32(v) => v.to_string(),
+            FieldValue::S64(v) => v.to_string(),
+            FieldValue::String(v) => v.to_string(),
+            _ => "(error) Invalid Field Type in to_string_basic".to_string(),
+
+        }
+    }
 }
 
 impl FieldValue {
@@ -633,8 +719,8 @@ impl Field {
         let field_type = FieldType::try_from(reader.read_i32()?)?;
         let value = FieldValue::read(reader, field_type)?;
         /*if hash == 0xEF10B158 && pos == 0x190c {
-            println!("hash={hash:x}, {value:?}, ft={field_type:?}");
-        }*/
+          println!("hash={hash:x}, {value:?}, ft={field_type:?}");
+          }*/
         //println!("v={value:?}");
         seek_align_up(reader, 4)?;
         Ok(Self {
@@ -676,7 +762,7 @@ pub struct Class {
 
 impl Class {
     pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error>> {
- 
+
         let num_fields = reader.read_u32()?;
         let hash = reader.read_u32()?;
         let mut fields = Vec::<Field>::new();
@@ -770,6 +856,82 @@ impl Class {
 
     pub fn get_array_mut<'a>(&'a mut self, name: &'a str) -> Option<&'a mut Array> {
         self.get_value_mut(name)?.as_array_mut()
+    }
+
+    pub fn eval_refs<'a>(&'a self, refs: &'a Vec<Ref>) -> Option<&'a FieldValue> {
+        let mut cur_value = None;
+        let mut it = refs.iter();
+        let first = it.next()?;
+        if let Ref::Field(field) = first {
+            cur_value = self.get_value(field);
+        }
+
+        for v in it {
+            match v {
+                Ref::Index(index) => {
+                    let val = cur_value?.as_array()?.get_value(*index)?;
+                    cur_value = Some(val);
+                }
+                Ref::Field(field) => {
+                    let val = cur_value?.as_class()?.get_value(field)?;
+                    cur_value = Some(val);
+                }
+            }
+        }
+        cur_value
+    }
+
+    pub fn eval_refs_type<'a>(&'a self, refs: &'a Vec<Ref>, remaps: &HashMap<String, Remap>, type_map: &TypeMap) -> Option<String> {
+        let mut cur_value = None;
+        let mut cur_type = type_map.get_by_hash(self.hash);
+        let mut it = refs.iter();
+        let first = it.next()?;
+        if let Ref::Field(field) = first {
+            cur_value = self.get_value(field);
+            if let Some(t) = cur_type {
+                if let Some(field_remap) = remaps.get(&t.name)?.fields.get(field) {
+                    cur_type = type_map.get_by_name(field_remap)
+                }
+            }
+        }
+
+        for v in it {
+            match v {
+                Ref::Index(index) => {
+                    let val = cur_value?.as_array()?.get_value(*index)?;
+                    if let FieldValue::Class(val) = val {
+                        cur_type = type_map.get_by_hash(val.hash);
+                    }
+                    cur_value = Some(val);
+                }
+                Ref::Field(field) => {
+                    let val = cur_value?.as_class()?;
+                    let val = val.get_value(field)?;
+                    if let Some(t) = cur_type {
+                        if let Some(field_remap) = remaps.get(&t.name)?.fields.get(field) {
+                            cur_type = type_map.get_by_name(field_remap)
+                        }
+                    } else {
+                        if let FieldValue::Class(val) = val {
+                            cur_type = type_map.get_by_hash(val.hash);
+                        }
+                    }
+                    cur_value = Some(val);
+                }
+            }
+        }
+        cur_type.map(|x| x.name.clone())
+    }
+
+    pub fn to_string(&self, language: ContentLanguage, type_map: &TypeMap, remaps: &HashMap<String, Remap>, assets: &Assets) -> Option<String> { 
+        let field_type = type_map.get_by_hash(self.hash)?.name.as_str();
+        if let Some(remap) = &remaps.get(field_type) {
+            let evaluated = Format::eval_class(self, field_type, language, &remap.format, type_map, remaps, assets);
+            if let Some(evaluated) = evaluated {
+                return Some(evaluated);
+            }
+        }
+        None
     }
 }
 

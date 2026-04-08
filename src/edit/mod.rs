@@ -6,6 +6,7 @@ use std::{collections::HashMap, fmt::Debug};
 use std::collections::HashSet;
 use eframe::egui::{CollapsingHeader,  Response, Ui};
 use crate::edit::copy::CopyBuffer;
+use crate::sdk::asset::Assets;
 use crate::sdk::type_map::{ContentLanguage, FieldInfo, TypeInfo, TypeMap};
 
 use crate::save::remap::Remap;
@@ -32,10 +33,11 @@ pub struct EditContext<'a> {
     pub copy_buffer: &'a mut CopyBuffer,
     pub language: ContentLanguage,
     pub remaps: &'a HashMap<String, Remap>,
+    pub assets: &'a Assets
 }
 
 impl<'a> EditContext<'a> {
-    pub fn new(type_map: &'a TypeMap, search_paths: &'a HashSet<(u32, u32)>, search_leaf_nodes: &'a HashSet<(u32, u32)>, search_range: &'a core::ops::Range<usize>, copy_buffer: &'a mut CopyBuffer, language: ContentLanguage, remaps: &'a HashMap<String, Remap>) -> Self {
+    pub fn new(type_map: &'a TypeMap, search_paths: &'a HashSet<(u32, u32)>, search_leaf_nodes: &'a HashSet<(u32, u32)>, search_range: &'a core::ops::Range<usize>, copy_buffer: &'a mut CopyBuffer, language: ContentLanguage, remaps: &'a HashMap<String, Remap>, assets: &'a Assets) -> Self {
         Self {
             type_map,
             search_paths,
@@ -52,6 +54,7 @@ impl<'a> EditContext<'a> {
             copy_buffer,
             language,
             remaps,
+            assets
         }
     }
 }
@@ -138,11 +141,19 @@ impl Editable for SaveFile {
                 id: child_id.value(),
                 ..*ctx
             };
-            let type_info = ctx.type_map.get_by_hash(field.1.hash);
+            let type_name = ctx.type_map.get_by_hash(field.1.hash)
+                .map(|t| t.name.clone())
+                .unwrap_or(format!("{:08x}", field.1.hash));
             let field_name = ctx.type_map.get_hash_str(field.0)
                 .cloned()
                 .unwrap_or(format!("{:08x}", field.0));
-            let header = if let Some(type_info) = type_info {
+            let header = format!("{field_name}: {type_name}");
+            /*let label = match (type_info, field_name) {
+                (None, Some(field_name)) => format!("{}: {}", field.0, type_info.name),
+                (Some(type_info), Some(field_name)) => format!("{}: {}", field_name, type_info.name),
+                _ => format!("{}: {:08x}", field.0, field.1.hash)
+            };*/
+            /*let header = if let Some(type_info) = type_info {
                 format!("{}: {},{:08x}", field_name, type_info.name, field.1.hash)
             } else {
                 if let Some(type_name) = ctx.type_map.get_hash_str(field.1.hash) {
@@ -150,7 +161,7 @@ impl Editable for SaveFile {
                 } else {
                     format!("{}: {:08x}", field_name, field.1.hash)
                 }
-            };
+            };*/
             CollapsingHeader::new(header)
                 .id_salt(child_id)
                 .default_open(true)

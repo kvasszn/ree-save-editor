@@ -15,7 +15,7 @@ pub struct Extern {
     pub path: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Object(u32),
     Array(Vec<Value>),
@@ -64,4 +64,20 @@ pub enum Value {
     Rect(Rect),
     GameObjectRef(GameObjectRef),
     KeyFrame(KeyFrame),
+}
+
+impl Value {
+    pub fn as_i128(&self) -> Option<i128> {
+        match self {
+            Value::U8(v)  => Some(*v as i128),
+            Value::U16(v) => Some(*v as i128),
+            Value::U32(v) => Some(*v as i128),
+            Value::U64(v) => Some(*v as i128),
+            Value::S8(v)  => Some(*v as i128),
+            Value::S16(v) => Some(*v as i128),
+            Value::S32(v) => Some(*v as i128),
+            Value::S64(v) => Some(*v as i128),
+            _ => None,
+        }
+    }
 }
