@@ -85,16 +85,36 @@ impl FieldType {
 
 #[derive(Debug, Clone)]
 pub enum EnumValue {
-    E2([u8; 2]),
-    E4([u8; 4]),
-    E8([u8; 8]),
+    E1(i8),
+    E2(i16),
+    E4(i32),
+    E8(i64),
+}
+
+impl EnumValue {
+    pub fn as_i64(&self) -> i64 {
+        match self {
+            Self::E1(v) => *v as i64,
+            Self::E2(v) => *v as i64,
+            Self::E4(v) => *v as i64,
+            Self::E8(v) => *v,
+        }
+    }
+    pub fn as_u64(&self) -> u64 {
+        match self {
+            Self::E1(v) => *v as u64,
+            Self::E2(v) => *v as u64,
+            Self::E4(v) => *v as u64,
+            Self::E8(v) => *v as u64,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum FieldValue {
     Array(Box<Array>),
     Unknown,
-    Enum(i32),
+    Enum(EnumValue),
     Boolean(bool),
     S8(i8),
     U8(u8),
@@ -184,7 +204,8 @@ impl FieldValue {
         } else if size == 64 {
             reader.seek_align_up_offset(64, 48)?;
         }
-        /*else if size == 112 {
+        // this shit is so fucking stupid but whatever
+        else if size == 112 || size == 114 || size == 116 {
             reader.seek_align_up(16)?;
             let pos = reader.stream_position()?;
             if pos % 32 == 16 {
@@ -192,18 +213,23 @@ impl FieldValue {
             } else {
                 reader.seek_align_up(128)?;
             }
-        }*/
+            // i think size == 114 needs an fskip(-4) here for some fucking reason like what the
+            // what the fuck idk what im doing ahhhhhhhh
+        }
         else {
             reader.seek_align_up(size as u64)?;
         }
         let value = match field_type {
             FieldType::Enum => {
-                assert_eq!(size, 4);
-                //if size == 4 {
-                //    EnumValue::E4(reader.read_u8_arr::<4>(n)?)
-                //}
-                FieldValue::Enum(reader.read_i32()?)
-            }
+                let enum_val = match size {
+                    1 => EnumValue::E1(reader.read_i8()?),
+                    2 => EnumValue::E2(reader.read_i16()?),
+                    4 => EnumValue::E4(reader.read_i32()?),
+                    8 => EnumValue::E8(reader.read_i64()?),
+                    _ => return Err(format!("Invalid Enum size: {}", size).into()),
+                };
+                FieldValue::Enum(enum_val)
+            },
             FieldType::Boolean => { FieldValue::Boolean(reader.read_bool()?) }
             FieldType::S8 => { FieldValue::S8(reader.read_i8()?) }
             FieldType::U8 => { FieldValue::U8(reader.read_u8()?) }
@@ -255,7 +281,13 @@ impl FieldValue {
 
     pub fn write_sized<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
         let size = self.get_size();
-        if size == 24 {
+        if size == 12 {
+            w.write_align_up(4 as u64)?;
+            let pos = w.stream_position()?;
+            if pos % 16 < 4 {
+                w.write_all(&[0u8; 8])?;
+            }
+        } else if size == 24 {
             w.write_align_up(8 as u64)?;
             let pos = w.stream_position()?;
             if pos % 32 < 16 {
@@ -265,11 +297,25 @@ impl FieldValue {
             w.write_align_up_offset(32, 16)?;
         } else if size == 64 {
             w.write_align_up_offset(64, 48)?;
+        }
+        else if size == 112 || size == 114 || size == 116 {
+            w.write_align_up(16)?;
+            let pos = w.stream_position()?;
+            if pos % 32 == 16 {
+                w.write_align_up_offset(128, 112)?;
+            } else {
+                w.write_align_up(128)?;
+            }
         } else {
             w.write_align_up(size as u64)?;
         }
         let _ = match self {
-            FieldValue::Enum(v) => w.write(&v.to_le_bytes())?,
+            FieldValue::Enum(v) => match v {
+                EnumValue::E1(e) => w.write(&e.to_le_bytes())?,
+                EnumValue::E2(e) => w.write(&e.to_le_bytes())?,
+                EnumValue::E4(e) => w.write(&e.to_le_bytes())?,
+                EnumValue::E8(e) => w.write(&e.to_le_bytes())?,
+            },
             FieldValue::Boolean(v) => w.write(&[*v as u8])?,
             FieldValue::S8(v) => w.write(&[*v as u8])?,
             FieldValue::U8(v) => w.write(&[*v])?,
@@ -297,9 +343,15 @@ impl FieldValue {
 
     pub fn get_size(&self) -> u32 {
         match self {
+            FieldValue::Enum(v) => match v {
+                EnumValue::E1(_) => 1,
+                EnumValue::E2(_) => 2,
+                EnumValue::E4(_) => 4,
+                EnumValue::E8(_) => 8,
+            },
             FieldValue::Boolean(_) | FieldValue::U8(_) | FieldValue::S8(_) | FieldValue::C8(_) => 1,
             FieldValue::U16(_) | FieldValue::S16(_) | FieldValue::C16(_)  => 2,
-            FieldValue::Enum(_) | FieldValue::U32(_) | FieldValue::S32(_) | FieldValue::F32(_) => 4,
+            FieldValue::U32(_) | FieldValue::S32(_) | FieldValue::F32(_) => 4,
             FieldValue::U64(_) | FieldValue::S64(_) | FieldValue::F64(_) => 8,
             FieldValue::Struct(v) => v.data.len() as u32,
             _ => 0
@@ -315,7 +367,7 @@ impl FieldValue {
             }
         }
         match self {
-            FieldValue::Enum(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::Enum(v) => type_map.get_enum_str(&v.as_i64(), field_type).cloned().unwrap_or(v.as_i64().to_string()),
             FieldValue::Boolean(v) => v.to_string(),
             FieldValue::U8(v) => v.to_string(),
             FieldValue::U16(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
@@ -337,7 +389,7 @@ impl FieldValue {
     }
     pub fn to_string_basic(&self) -> String {
         match self {
-            FieldValue::Enum(v) => v.to_string(),
+            FieldValue::Enum(v) => v.as_i64().to_string(),
             FieldValue::Boolean(v) => v.to_string(),
             FieldValue::U8(v) => v.to_string(),
             FieldValue::U16(v) => v.to_string(),

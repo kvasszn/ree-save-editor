@@ -163,29 +163,29 @@ typedef struct (int field_base) {
         if (FTell() % 16 > 4) {
             FSkip(8);
         }
-    } else if (size == 112 || size == 114) {
-    AlignUp(16);
-    // FSkip(FTell() % 64 + 0x10);
-    local int pos2 = FTell();
-    if (pos2 % 32 == 16) {
-        AlignUpOffset(128, 112);
-    }
-    else {
-        AlignUp(128);
-    }
-    if (size == 114) {
-        FSkip(-4);
-    }
-    /*if (FTell() %128 == 0) {
-    }
-    else if (FTell() % 128 <= 64) {
-        FSkip(64);
-        //FSkip(32);
-    } else if (FTell() % 128 <= 32){
-        FSkip(32);
-        //AlignUpOffset(128, 112);
-    }*/
-    
+    } else if (size == 112 || size == 114 || size == 116) {
+        AlignUp(16);
+        // FSkip(FTell() % 64 + 0x10);
+        local int pos2 = FTell();
+        if (pos2 % 32 == 16) {
+            AlignUpOffset(128, 112);
+        }
+        else {
+            AlignUp(128);
+        }
+        if (size == 114) {
+            FSkip(-4);
+        }
+        /*if (FTell() %128 == 0) {
+        }
+        else if (FTell() % 128 <= 64) {
+            FSkip(64);
+            //FSkip(32);
+        } else if (FTell() % 128 <= 32){
+            FSkip(32);
+            //AlignUpOffset(128, 112);
+        }*/
+        
     } else {
         AlignUp(size);
     }
@@ -268,7 +268,7 @@ struct Array {
                             } else if (size == 32) {
                                 // Your original 32-byte logic
                                 AlignUpOffset(32, 0x10);
-                            } else if (size > 64) {
+                            } else if (size == 64) {
                                 AlignUp(16);
                                // FSkip(FTell() % 64 + 0x10);
                                 local int pos2 = FTell();
@@ -287,8 +287,30 @@ struct Array {
                                     FSkip(32);
                                     //AlignUpOffset(128, 112);
                                 }*/
-                        
-                            } else {
+                             } else if (size == 112 || size == 114 || size == 116) {
+                                AlignUp(16);
+                                // FSkip(FTell() % 64 + 0x10);
+                                local int pos2 = FTell();
+                                if (pos2 % 32 == 16) {
+                                    AlignUpOffset(128, 112);
+                                }
+                                else {
+                                    AlignUp(128);
+                                }
+                                if (size == 114) {
+                                    FSkip(-4);
+                                }
+                                /*if (FTell() %128 == 0) {
+                                }
+                                else if (FTell() % 128 <= 64) {
+                                    FSkip(64);
+                                    //FSkip(32);
+                                } else if (FTell() % 128 <= 32){
+                                    FSkip(32);
+                                    //AlignUpOffset(128, 112);
+                                }*/
+                            }
+                            else {
                                 AlignUp(size);
                             }
                             uint8 data[arr_member_size];
@@ -345,5 +367,5 @@ struct Entry {
         Field field;
     }
 };
-
+FSkip(24);
 Entry fields[100]<optimize=false>;

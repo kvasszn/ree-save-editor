@@ -9,7 +9,7 @@ use crate::{
     save::{
         SaveFile,
         game::Game,
-        types::{Array, ArrayType, Class, Field, FieldType, FieldValue, Struct},
+        types::{Array, ArrayType, Class, EnumValue, Field, FieldType, FieldValue, Struct},
     },
     sdk::{
         StringU16,
@@ -159,7 +159,16 @@ impl<'a> CorruptSaveReader<'a> {
             reader.seek_align_up(size as u64)?;
         }
         let value = match field_type {
-            FieldType::Enum => FieldValue::Enum(reader.read_i32()?),
+            FieldType::Enum => {
+                let enum_val = match size {
+                    1 => EnumValue::E1(reader.read_i8()?),
+                    2 => EnumValue::E2(reader.read_i16()?),
+                    4 => EnumValue::E4(reader.read_i32()?),
+                    8 => EnumValue::E8(reader.read_i64()?),
+                    _ => return Err(format!("Invalid Enum size: {}", size).into()),
+                };
+                FieldValue::Enum(enum_val)
+            },
             FieldType::Boolean => FieldValue::Boolean(reader.read_bool()?),
             FieldType::S8 => FieldValue::S8(reader.read_i8()?),
             FieldType::U8 => FieldValue::U8(reader.read_u8()?),

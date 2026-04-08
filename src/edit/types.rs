@@ -98,7 +98,98 @@ fn collapsing_header_with_buttons_for_array_member(
     header_resp.body(|ui| member.edit(ui, ctx));
 }
 
-fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+
+pub fn edit_enum_value_from_field(value: &mut EnumValue, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+    let mut current_i64 = value.as_i64();
+
+    let enum_type = ctx
+        .field_info
+        .and_then(|field_info| ctx.type_map.enums.get(&field_info.original_type));
+        
+    let enum_str_opt = enum_type.and_then(|e| e.get(&current_i64.to_string()));
+    
+    let enum_text = ctx.field_info.and_then(|field_info| {
+        enum_str_opt.and_then(|enum_str| {
+            ctx.type_map
+                .get_enum_text(enum_str, &field_info.original_type, ctx.language)
+        })
+    });
+
+    match enum_str_opt {
+        Some(mut enum_str) => {
+            let enum_type = enum_type.unwrap();
+            let mut enum_list = enum_type
+                .iter()
+                .filter_map(|x| {
+                    if x.0.parse::<i64>().is_ok() {
+                        Some(x.1.clone()) // cloned to avoid lifetime issues in the closure
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+                
+            let preview = if let Some(enum_text) = &enum_text {
+                format!("{enum_str}:\"{enum_text}\"")
+            } else {
+                enum_str.to_string()
+            };
+            
+            enum_list.sort();
+            
+            egui::ComboBox::from_id_salt(ctx.id)
+                .selected_text(preview)
+                .show_ui(ui, |ui| {
+                    for option in &enum_list {
+                        let enum_text = ctx.field_info.and_then(|field_info| {
+                            ctx.type_map.get_enum_text(
+                                &option,
+                                &field_info.original_type,
+                                ctx.language,
+                            )
+                        });
+
+                        let preview = if let Some(enum_text) = enum_text {
+                            format!("{option}:\"{enum_text}\"")
+                        } else {
+                            option.to_string()
+                        };
+                        
+                        ui.selectable_value(&mut enum_str, &option, preview);
+                    }
+                    
+                    if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i64>().ok()) {
+                        *value = match *value {
+                            EnumValue::E1(_) => EnumValue::E1(x as i8),
+                            EnumValue::E2(_) => EnumValue::E2(x as i16),
+                            EnumValue::E4(_) => EnumValue::E4(x as i32),
+                            EnumValue::E8(_) => EnumValue::E8(x as i64),
+                        };
+                        current_i64 = x;
+                    }
+                });
+        }
+        None => {}
+    }
+
+    // 3. Handle the raw fallback edit
+    ui.label("Raw Enum Value: ");
+    
+    // Since `value` is no longer a primitive, we manually route it to an egui DragValue 
+    // or you can implement an `.edit(ui, ctx)` method directly on EnumValue.
+    ui.horizontal(|ui| {
+        match value {
+            EnumValue::E1(v) => ui.add(egui::DragValue::new(v)),
+            EnumValue::E2(v) => ui.add(egui::DragValue::new(v)),
+            EnumValue::E4(v) => ui.add(egui::DragValue::new(v)),
+            EnumValue::E8(v) => ui.add(egui::DragValue::new(v)),
+        };
+    });
+
+    EditResponse::default()
+}
+
+fn edit_enum_from_field(value: &mut i64, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
     let enum_type = ctx
         .field_info
         .and_then(|field_info| ctx.type_map.enums.get(&field_info.original_type));
@@ -116,7 +207,7 @@ fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> 
             let mut enum_list = enum_type
                 .iter()
                 .filter_map(|x| {
-                    if x.0.parse::<i32>().is_ok() {
+                    if x.0.parse::<i64>().is_ok() {
                         Some(x.1)
                     } else {
                         None
@@ -148,7 +239,7 @@ fn edit_enum_from_field(value: &mut i32, ui: &mut Ui, ctx: &mut EditContext) -> 
                         };
                         ui.selectable_value(&mut enum_str, &option, preview);
                     }
-                    if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i32>().ok()) {
+                    if let Some(x) = enum_type.get(enum_str).and_then(|e| e.parse::<i64>().ok()) {
                         *value = x;
                     }
                 });
@@ -301,7 +392,7 @@ impl FieldValue {
     pub fn get_preview(&self, ctx: &mut EditContext) -> Option<String> {
         match self {
             FieldValue::Enum(v) => ctx.field_info.and_then(|field_info| {
-                let enum_str = ctx.type_map.get_enum_str(v, &field_info.original_type)?;
+                let enum_str = ctx.type_map.get_enum_str(v.as_i64(), &field_info.original_type)?;
                 let enum_text =
                     ctx.type_map
                         .get_enum_text(enum_str, &field_info.original_type, ctx.language);
@@ -349,7 +440,7 @@ impl Editable for FieldValue {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         match self {
             FieldValue::Boolean(v) => v.edit(ui, ctx),
-            FieldValue::Enum(v) => edit_enum_from_field(v, ui, ctx),
+            FieldValue::Enum(v) => edit_enum_value_from_field(v, ui, ctx),
             FieldValue::S8(v) => v.edit(ui, ctx),
             FieldValue::U8(v) => v.edit(ui, ctx),
             FieldValue::S16(v) => v.edit(ui, ctx),

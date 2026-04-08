@@ -1,7 +1,7 @@
 use std::{sync::{Arc, RwLock}};
 use mlua::prelude::*;
 
-use crate::{bindings::{DataRef, DataRoot, RefPath, SaveDataRef}, save::{types::{Array, Class, Field, FieldValue, Struct}}, sdk::{StringU16}};
+use crate::{bindings::{DataRef, DataRoot, RefPath, SaveDataRef}, save::types::{Array, Class, EnumValue, Field, FieldValue, Struct}, sdk::StringU16};
 
 impl IntoLua for FieldValue {
     fn into_lua(self, lua: &Lua) -> LuaResult<LuaValue> {
@@ -29,7 +29,7 @@ impl IntoLua for FieldValue {
             FieldValue::Array(a) => {
                 lua.create_userdata(*a)?.into_lua(lua)
             },
-            FieldValue::Enum(v) => Ok(LuaValue::Integer(v as i64)),
+            FieldValue::Enum(v) => Ok(LuaValue::Integer(v.as_i64())),
             FieldValue::Struct(a) => {
                 lua.create_userdata(*a)?.into_lua(lua)
             },
@@ -130,7 +130,14 @@ pub fn set_fieldvalue_from_lua(_lua: &Lua, lhs: &mut FieldValue, value: LuaValue
                 Err(LuaError::FromLuaConversionError { from: "non-userdata", to: "Struct".to_string(), message: None })
             }
         }
-        FieldValue::Enum(v) => value.as_i32().inspect(|x| *v = *x).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
+        FieldValue::Enum(v) => {
+            match v {
+                EnumValue::E1(v) => value.as_i64().inspect(|x| *v = *x as i8).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
+                EnumValue::E2(v) => value.as_i64().inspect(|x| *v = *x as i16).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
+                EnumValue::E4(v) => value.as_i64().inspect(|x| *v = *x as i32).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
+                EnumValue::E8(v) => value.as_i64().inspect(|x| *v = *x as i64).map(|_| ()).ok_or(LuaError::UserDataTypeMismatch),
+            }
+        }
         FieldValue::Unknown => Ok(()),
         //_ => Err(LuaError::RuntimeError("Unimplemented FieldValue".to_string()))
     }
