@@ -166,7 +166,14 @@ impl FieldValue {
     // When this is run for the Array struct, it should never be able to read an Object, I'm not
     // sure about array though
     pub fn read_sized<R: Read + Seek>(reader: &mut R, field_type: FieldType, size: u32) -> Result<Self, Box<dyn Error>> {
-        if size == 24 {
+        if size == 12 {
+            reader.seek_align_up(4 as u64)?;
+            let pos = reader.stream_position()?;
+            if pos % 16 > 4 {
+                reader.seek(std::io::SeekFrom::Current(8))?;
+            }
+        }
+        else if size == 24 {
             reader.seek_align_up(8 as u64)?;
             let pos = reader.stream_position()?;
             if pos % 32 < 16 {
@@ -190,7 +197,8 @@ impl FieldValue {
             reader.seek_align_up(size as u64)?;
         }
         let value = match field_type {
-            FieldType::Enum => { 
+            FieldType::Enum => {
+                assert_eq!(size, 4);
                 //if size == 4 {
                 //    EnumValue::E4(reader.read_u8_arr::<4>(n)?)
                 //}
@@ -765,9 +773,11 @@ impl Class {
 
         let num_fields = reader.read_u32()?;
         let hash = reader.read_u32()?;
+        //println!("hash: {hash:0x}, num_fields: {num_fields}");
         let mut fields = Vec::<Field>::new();
         for _ in 0..num_fields {
             let field = Field::read(reader)?;
+            //println!("{field:?}");
             fields.push(field);
         }
         Ok(Self {

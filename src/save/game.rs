@@ -8,14 +8,16 @@ pub enum Game {
     PRAGMATA = 2,
     MHST3 = 3,
     RE9 = 4,
+    MHRISE,
 }
 
-pub const GAME_OPTIONS: [(&'static str, Game); 5] = [
+pub const GAME_OPTIONS: [(&'static str, Game); 6] = [
     ("MH Wilds", Game::MHWILDS),
     ("Dragon's Dogma 2", Game::DD2),
     ("Pragmata", Game::PRAGMATA),
     ("MH Stories 3", Game::MHST3),
-    ("RE Requiem", Game::RE9)
+    ("RE Requiem", Game::RE9),
+    ("MH Rise", Game::MHRISE),
 ];
 
 impl Game {
@@ -26,6 +28,7 @@ impl Game {
             "PRAGMATA" => Some(Game::PRAGMATA),
             "MHST3" => Some(Game::MHST3),
             "RE9" => Some(Game::RE9),
+            "MHRISE" => Some(Game::MHRISE),
             _ => None,
         }
     }
@@ -37,7 +40,8 @@ impl Game {
             Self::DD2 => Some((0x90EDB79172FDBE51, 0x5EC646997D69AE1B)),
             Self::PRAGMATA => Some((0x3F90D767F13ABE2E, 0x7DA24A9E1479F3D7)),
             Self::MHST3 => Some((0x4DB2A5EC6AD4005A, 0xA40139F12BA19EDB)),
-            Self::RE9 => Some((0, 0x61f6868699c14dfa))
+            Self::RE9 => Some((0, 0x61f6868699c14dfa)),
+            _ => None
         }
     }
 
@@ -48,6 +52,7 @@ impl Game {
             Self::PRAGMATA => 19284827,
             Self::MHST3 => steamid,
             Self::RE9 => steamid,
+            Self::MHRISE => steamid,
         }
     }
 
@@ -58,6 +63,7 @@ impl Game {
             Self::PRAGMATA => 3357650,
             Self::MHST3 => 2852190,
             Self::RE9 => 3764200,
+            Self::MHRISE => 1446780,
         }
     }
 }

@@ -107,6 +107,7 @@ mod tests {
         let mut save_ctx = save::SaveContext {
             key: Some(key),
             game: Game::MHWILDS,
+            curve_index: None,
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);
@@ -125,6 +126,7 @@ mod tests {
         let mut save_ctx = save::SaveContext {
             key: Some(key),
             game: Game::MHWILDS,
+            curve_index: None,
         };
         let save_file = SaveFile::read(&mut data, &mut save_ctx);
         assert!(save_file.is_ok(), "{:?}", save_file);

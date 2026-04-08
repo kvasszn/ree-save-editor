@@ -226,6 +226,7 @@ impl ScriptRunner {
                     &mut SaveContext {
                         key: Some(steamid),
                         game: game,
+                        curve_index: None,
                     },
                 )
                 .map_err(|e| {
@@ -280,6 +281,7 @@ impl ScriptRunner {
                 let data = SaveFile::read_data(
                     &mut reader,
                     &mut SaveContext {
+                        curve_index: None,
                         key: Some(steamid),
                         game: game,
                     },
@@ -349,6 +351,7 @@ impl ScriptRunner {
                         &mut SaveContext {
                             key: Some(steamid),
                             game: game,
+                            curve_index: None,
                         },
                     )
                     .map_err(|e| {
@@ -394,6 +397,7 @@ impl ScriptRunner {
                 let save_file = match SaveFile::read(
                     &mut reader,
                     &mut SaveContext {
+                        curve_index: None,
                         key: Some(steamid),
                         game: game,
                     },

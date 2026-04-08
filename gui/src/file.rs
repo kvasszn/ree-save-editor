@@ -299,6 +299,7 @@ impl FileView {
                     None
                 } else {self.steam.steam_id},
                 game: self.game,
+                curve_index: None,
             };
 
             if self.repair {

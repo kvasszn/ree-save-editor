@@ -148,7 +148,7 @@ typedef struct (int field_base) {
 
     uint32 size;
     local int pos = FTell();
-     if (size == 24) {
+    if (size == 24) {
         AlignUp(8);
         if (FTell() % 32 < 16) {
             FSkip(16);
@@ -156,30 +156,35 @@ typedef struct (int field_base) {
     } else if (size == 32) {
         // Your original 32-byte logic
         AlignUpOffset(32, 0x10);
-	} else if (size == 64) {
+    } else if (size == 64) {
         AlignUpOffset(64, 48);
+    } else if (size == 12) {
+        AlignUp(4);
+        if (FTell() % 16 > 4) {
+            FSkip(8);
+        }
     } else if (size == 112 || size == 114) {
-        AlignUp(16);
-       // FSkip(FTell() % 64 + 0x10);
-        local int pos2 = FTell();
-        if (pos2 % 32 == 16) {
-            AlignUpOffset(128, 112);
-        }
-        else {
-            AlignUp(128);
-        }
-        if (size == 114) {
-            FSkip(-4);
-        }
-        /*if (FTell() %128 == 0) {
-        }
-        else if (FTell() % 128 <= 64) {
-            FSkip(64);
-            //FSkip(32);
-        } else if (FTell() % 128 <= 32){
-            FSkip(32);
-            //AlignUpOffset(128, 112);
-        }*/
+    AlignUp(16);
+    // FSkip(FTell() % 64 + 0x10);
+    local int pos2 = FTell();
+    if (pos2 % 32 == 16) {
+        AlignUpOffset(128, 112);
+    }
+    else {
+        AlignUp(128);
+    }
+    if (size == 114) {
+        FSkip(-4);
+    }
+    /*if (FTell() %128 == 0) {
+    }
+    else if (FTell() % 128 <= 64) {
+        FSkip(64);
+        //FSkip(32);
+    } else if (FTell() % 128 <= 32){
+        FSkip(32);
+        //AlignUpOffset(128, 112);
+    }*/
     
     } else {
         AlignUp(size);
@@ -250,10 +255,15 @@ struct Array {
                         struct {
                             //AlignUp(arr_member_size);
                             local int size = arr_member_size;
-                                if (size == 24) {
+                            if (size == 24) {
                                 AlignUp(8);
                                 if (FTell() % 32 < 16) {
                                     FSkip(16);
+                                }
+                            } else if (size == 12) {
+                                AlignUp(4);
+                                if (FTell() % 16 > 4) {
+                                    FSkip(8);
                                 }
                             } else if (size == 32) {
                                 // Your original 32-byte logic

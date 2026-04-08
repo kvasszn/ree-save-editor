@@ -1,5 +1,5 @@
 pub mod corrupt;
-pub mod crypt;
+pub mod crypto;
 pub mod game;
 pub mod types;
 pub mod remap;
@@ -7,11 +7,11 @@ pub mod remap;
 use std::{fs::File, io::{Cursor, Read, Seek, SeekFrom, Write}, path::Path};
 
 use flate2::{Compression, write::{DeflateDecoder, DeflateEncoder}};
-use crate::{file::{Magic, StructRW}, save::{game::Game, types::Class}};
+use crate::{file::{Magic, StructRW}, save::{crypto::citrus::Citrus, game::Game, types::Class}};
 
 use util::*;
 
-use crypt::Mandarin;
+use crypto::Mandarin;
 
 #[derive(Debug, Clone)]
 pub struct SaveFile {
@@ -23,6 +23,7 @@ pub struct SaveFile {
 pub struct SaveContext {
     pub key: Option<u64>,
     pub game: Game,
+    pub curve_index: Option<usize>
 }
 
 impl SaveFile {
@@ -132,10 +133,10 @@ impl SaveFile {
         let mandarin = flags & 0x10 != 0;
         let blowfish = flags & 0x1 != 0;
         let _autostrong = flags & 0x3 != 0;
-        let _citrus = flags & 0x4 != 0;
+        let citrus = flags & 0x4 != 0;
         let deflate = flags & 0x8 != 0;
         // 0x4 is something related to the usage of mandarin and deflate i think
-        println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={_citrus}, autostrong={_autostrong}");
+        println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={citrus}, autostrong={_autostrong}");
 
         let data_start = reader.tell()?;
         reader.seek(std::io::SeekFrom::End(-12))?;
@@ -167,6 +168,11 @@ impl SaveFile {
             let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
             log::info!("[Decrypted]");
             decrypted_buf
+        } else if citrus {
+            let key = ctx.key.unwrap_or(0);
+            let citrus = Citrus::new(key, ctx.curve_index);
+            let decrypted = citrus.decrypt(&encrypted, decrypted_len as usize).unwrap();
+            decrypted 
         } else {
             encrypted
         };
@@ -215,11 +221,11 @@ impl StructRW<SaveContext> for SaveFile {
             let mandarin = flags & 0x10 != 0;
             let blowfish = flags & 0x1 != 0;
             let image_save = flags & 0x2 != 0;
-            let _citrus = flags & 0x4 != 0;
+            let citrus = flags & 0x4 != 0;
             let deflate = flags & 0x8 != 0;
             //let _autostrong = flags & 0x16 != 0;
             // 0x4 is something related to the usage of mandarin and deflate i think
-            println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={_citrus}, image_save={image_save}");
+            println!("deflate={deflate}, mandarin={mandarin}, blowfish={blowfish}, citrus={citrus}, image_save={image_save}");
 
             if image_save {
                 let _steamid32 = reader.read_u32()?;
@@ -259,6 +265,11 @@ impl StructRW<SaveContext> for SaveFile {
                 let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
                 log::info!("[Decrypted]");
                 decrypted_buf
+            } else if citrus {
+                let key = ctx.key.unwrap_or(0);
+                let citrus = Citrus::new(key, ctx.curve_index);
+                let decrypted = citrus.decrypt(&encrypted, decrypted_len as usize).unwrap();
+                decrypted 
             } else {
                 encrypted
             };
@@ -284,8 +295,7 @@ impl StructRW<SaveContext> for SaveFile {
 
             //let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
             //data[0..16].copy_from_slice(&good_header);
-            let _ = std::fs::write("./outputs/decrypted.bin", &data);
-            //std::fs::write("./outputs/tests/ghguyv2.bin", &data)?;
+            //let _ = std::fs::write("./outputs/decrypted.bin", &data);
             let data = &mut Cursor::new(&data);
             let mut fields = Vec::new();
             // TODO: Figure out if tehre's a count for this, surely there is one right? surely, i

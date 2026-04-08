@@ -65,7 +65,17 @@ impl AssetPaths {
                     strings: Some("./assets/re9/strings.txt".to_string()),
                     remap: Some("./assets/re9/remap.json".to_string()),
                 }
-            }
+            },
+            Game::MHRISE => {
+                Self {
+                    rsz: Some("./assets/mhrise/rszmhrise.json".to_string()),
+                    enums: None,
+                    msgs: None,
+                    mappings: None,
+                    strings: None,
+                    remap: None,
+                }
+            },
             //_ => Self::default(),
         }
     }
@@ -124,7 +134,17 @@ impl AssetPaths {
                     strings: Some("assets/re9/strings.txt".to_string()),
                     remap: Some("assets/re9/remap.json".to_string()),
                 }
-            }
+            },
+            Game::MHRISE => {
+                Self {
+                    rsz: Some("assets/mhrise/rszmhrise.json".to_string()),
+                    enums: None,
+                    msgs: None,
+                    mappings: None,
+                    strings: None,
+                    remap: None,
+                }
+            },
             //_ => Self::default(),
         }
     }

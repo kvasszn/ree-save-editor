@@ -1,3 +1,11 @@
+use crate::save::game::Game;
+
+//#[cfg(target_os = "linux")]
+//use super::backend::rug::*;
+//#[cfg(not(target_os = "linux"))]
+use super::util::backend::num_bigint::*;
+use super::util::SplitMix64;
+
 use std::{error::Error, fmt::Display, sync::atomic::{AtomicUsize, Ordering}};
 
 use hex_literal::hex;
@@ -5,98 +13,6 @@ use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
 use bytemuck::{Pod, Zeroable};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use web_time::Instant;
-
-pub struct SplitMix64;
-
-impl SplitMix64 {
-    pub const ADD: u64 = 0x9e3779b97f4a7c15;
-    pub const MUL1: u64 = 0xbf58476d1ce4e5b9;
-    pub const MUL2: u64 = 0x94d049bb133111eb;
-    pub fn next_int(state: &mut u64) -> u64 {
-        *state = state.wrapping_add(Self::ADD);
-        let mut z: u64 = *state;
-        z = (z ^ (z >> 30)).wrapping_mul(Self::MUL1);
-        z = (z ^ (z >> 27)).wrapping_mul(Self::MUL2);
-        return z ^ (z >> 31);
-    }
-
-    pub fn last_int(state: &mut u64) -> u64 {
-        *state = state.wrapping_add(Self::ADD);
-        let mut z: u64 = *state;
-        z = (z ^ (z >> 30)).wrapping_mul(Self::MUL1);
-        z = (z ^ (z >> 27)).wrapping_mul(Self::MUL2);
-        return z ^ (z >> 31);
-    }
-
-    pub const INV_MUL1: u64 = 0x96de1b173f119089;
-    pub const INV_MUL2: u64 = 0x319642b2d24d8ec3;
-    pub fn unmix(mut z: u64) -> u64 {
-        // 1. Reverse the final XOR-shift: z = z ^ (z >> 31);
-        z ^= (z >> 31) ^ (z >> 62);
-
-        // 2. Reverse the second multiplication and its preceding XOR-shift:
-        // z = (z ^ (z >> 27)).wrapping_mul(Self::MUL2);
-        z = z.wrapping_mul(Self::INV_MUL2);
-        z ^= (z >> 27) ^ (z >> 54);
-
-        // 3. Reverse the first multiplication and its preceding XOR-shift:
-        // z = (z ^ (z >> 30)).wrapping_mul(Self::MUL1);
-        z = z.wrapping_mul(Self::INV_MUL1);
-        z ^= (z >> 30) ^ (z >> 60);
-
-        z
-    }
-}
-
-// Using rug
-#[cfg(target_os = "linux")]
-mod backend {
-    pub use rug::{Integer, integer::Order};
-
-    pub fn mod_exp(base: &Integer, exp: &Integer, modulus: &Integer) -> Integer {
-        base.pow_mod_ref(exp, modulus).unwrap().into()
-    }
-
-    pub fn bytes_to_int(bytes: &[u8]) -> Integer {
-        Integer::from_digits(bytes, Order::Lsf)
-    }
-
-    pub fn int_to_bytes_le<const N: usize>(n: &Integer) -> [u8; N] {
-        let mut out = [0u8; N];
-        let digits = n.to_digits::<u8>(Order::Lsf);
-        let len = digits.len().min(N);
-        out[..len].copy_from_slice(&digits[..len]);
-        out
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-mod backend {
-    pub use num_bigint::{BigInt as Integer, Sign};
-
-    // Helper: Modular Exponentiation for Num-BigInt
-    pub fn mod_exp(base: &Integer, exp: &Integer, modulus: &Integer) -> Integer {
-        base.modpow(exp, modulus)
-    }
-
-    // Helper: Bytes to Integer (Little Endian)
-    pub fn bytes_to_int(bytes: &[u8]) -> Integer {
-        Integer::from_bytes_le(Sign::Plus, bytes)
-    }
-
-    // Helper: Integer to Bytes (Little Endian, fixed size)
-    pub fn int_to_bytes_le<const N: usize>(n: &Integer) -> [u8; N] {
-        let mut out = [0u8; N];
-        let digits = n.to_bytes_le().1; // Returns (Sign, Vec<u8>)
-        let len = digits.len().min(N);
-        out[..len].copy_from_slice(&digits[..len]);
-        out
-    }
-}
-
-use backend::*;
-use crate::save::game::Game;
-
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]

@@ -83,10 +83,15 @@ shellexpand = "3.1.1"
 hex = "0.4.3"
 web-time = "1.1.0"
 regex = "1.12.3"
+elliptic-curve = "0.13.8"
+cbc = "0.1.2"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rug = "1.28.0"
+num-bigint = { version = "0.4.6", features = ["serde"]}
+num-traits = "0.2"
+num-integer = "0.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 num-bigint = "0.4.6"
