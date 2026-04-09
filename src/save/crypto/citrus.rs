@@ -1,5 +1,7 @@
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::{BlockDecryptMut, KeyIvInit};
+use hex::ToHex;
+use sha3::Digest;
 
 //type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
@@ -162,18 +164,24 @@ impl Citrus {
 
         println!("decrypted_len: {decrypted_len:x}, num_blocks: {num_blocks}, buflen {:x}", buf.len());
         for i in 0..num_blocks {
-            println!("block: {i}");
+            //println!("block: {i}");
             let block = &buf[offset..offset+Self::BLOCK_SIZE];
-            println!(" {:x}", block.len());
+            //println!(" {:x}", block.len());
             // Decrypt the ECC encrypted keys
+            // TODO: figure out how this shit even gets generated lmfao
+            // it probably is just mersennes shitter
+            // they might also be completely random!
+            // hahahahahahahahahahahahahahahaahahahahhaahhahahahah
+            // these are not the same on every save, so i'm hoping they are just completely random
             key.copy_from_slice(&block[0..16]);
             iv.copy_from_slice(&block[16..32]);
+            println!("key={}, iv={}", hex::encode(key), hex::encode(iv));
             ecc_keys.copy_from_slice(&block[32..32 + Self::ENC_KEYS_SIZE]);
             Self::aes_decrypt(&mut ecc_keys, key, iv);
 
             // Decrypt the main data aes keys with ECC
             // if the curve params are unset try to brute force
-            let (key, iv) = self.ecc_decrypt_keys(&ecc_keys, &curve_params)?;
+            let (real_key, real_iv) = self.ecc_decrypt_keys(&ecc_keys, &curve_params)?;
             let block_size = if i == num_blocks - 1 {
                 decrypted_len - decrypted_bytes
             } else {
@@ -182,16 +190,35 @@ impl Citrus {
             //let dec_buf = &mut decrypted[decrypted_bytes..decrypted_bytes + block_size];
             // when decrypting, the blocks are always padded to the 0x40000 length i think
             dec_buf.copy_from_slice(&block[32 + Self::ENC_KEYS_SIZE..32 + Self::ENC_KEYS_SIZE + Self::ENC_DATA_SIZE]);
-            Self::aes_decrypt(&mut dec_buf, key, iv);
+            Self::aes_decrypt(&mut dec_buf, real_key, real_iv);
             decrypted[decrypted_bytes..decrypted_bytes + block_size].copy_from_slice(&dec_buf[..block_size]);
 
-            // TODO: add keccak-f? checksum check
+            let mut hasher = sha3::Sha3_256::new();
+
+            //let hash_data: Vec<u8> = [key.as_slice(), &iv, &ecc_keys, &dec_buf[..0x40000-0x20]].concat();
+            //let _ = std::fs::write("./outputs/hash_data.bin", &hash_data);
+            hasher.update(&key);
+            hasher.update(&iv);
+            hasher.update(&ecc_keys);
+            hasher.update(&dec_buf[..0x40000-0x20]);
+            //hasher.update(&hash_data);
+            
+            // TODO: Figure out how the last blocks checksum works, is it the whole thing, or just
+            // whatever got decrytped or smoething
+            let checksum: [u8; 32] = hasher.finalize().into();
+            let target_checksum = &block[0x40220..0x40240];
+
+            if checksum != target_checksum {
+                eprintln!("[ERROR] Citrus Checksum not equal on block {i}, checksum={}, target={}", hex::encode(checksum), hex::encode(target_checksum));
+            }
+
             offset += Self::BLOCK_SIZE;
             decrypted_bytes += block_size;
         }
-        println!("total decrypted_bytes: {decrypted_bytes:x}, offset: {offset:x}");
-        println!("probably at least a little decrypted");
-        let _ = std::fs::write("./outputs/citrus_decrypted.bin", &decrypted);
+
+        // TODO: FIgure out what the fuck is after this the little 0x1008 sized shit thing
+        println!("[INFO] Citrus: total decrypted_bytes: {decrypted_bytes:x}, offset: {offset:x}");
+        println!("[INFO] probably at least a little decrypted");
         Some(decrypted)
     }
 }
