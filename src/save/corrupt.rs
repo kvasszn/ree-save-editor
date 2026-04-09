@@ -7,9 +7,7 @@ use util::{ReadExt, SeekExt, seek_align_up};
 
 use crate::{
     save::{
-        SaveFile,
-        game::Game,
-        types::{Array, ArrayType, Class, EnumValue, Field, FieldType, FieldValue, Struct},
+        SaveFile, SaveFlags, game::Game, types::{Array, ArrayType, Class, EnumValue, Field, FieldType, FieldValue, Struct}
     },
     sdk::{
         StringU16,
@@ -469,6 +467,7 @@ impl<'a> CorruptSaveReader<'a> {
         fields.append(&mut scanned_classes);
         SaveFile {
             fields,
+            flags: SaveFlags::game_default(self.game),
             game: self.game,
         }
     }
@@ -491,6 +490,7 @@ impl<'a> CorruptSaveReader<'a> {
 
         SaveFile {
             fields,
+            flags: SaveFlags::game_default(self.game),
             game: self.game,
         }
     }
@@ -513,6 +513,7 @@ impl<'a> CorruptSaveReader<'a> {
         }
         SaveFile {
             fields,
+            flags: SaveFlags::game_default(self.game),
             game: self.game,
         }
     }
@@ -526,6 +527,7 @@ impl<'a> CorruptSaveReader<'a> {
             .collect();
         let save_file = SaveFile {
             game: self.game,
+            flags: SaveFlags::game_default(self.game),
             fields,
         };
         save_file

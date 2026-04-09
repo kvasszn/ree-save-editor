@@ -3,48 +3,68 @@
 //
 //      File: resave.bt
 //   Authors: cola
-//   Version: 
+//   Version: 1.2
 //   Purpose: Parse structure data for RE Engine save files
 //  Category: 
 // File Mask: 
 //  ID Bytes: 
-//   History: 
+//   History: Added Virtual Offset for decompressed chunk alignment
 //------------------------------------------------
 
 LittleEndian();
 
-void AlignUp(int align){
-    local int pos = FTell();
-    local int aligned = pos + (align - pos % align) % align;
-    FSeek(aligned);
+// ===============================================
+// GLOBAL OFFSET CONFIGURATION
+// ===============================================
+// Set this to whatever your decompressed file is offset by 
+// in the original memory space (e.g., 4 bytes).
+local int GLOBAL_VIRTUAL_OFFSET = -4;
+
+// Use this instead of FTell() for all alignment math!
+int VPos() {
+    return FTell() + GLOBAL_VIRTUAL_OFFSET;
 }
+// ===============================================
+
+void AlignUp(int align){
+    local int vpos = VPos();
+    local int pad = (align - vpos % align) % align;
+    if (pad > 0) {
+        FSkip(pad);
+    }
+}
+
 void AlignUpOffset(int align, int offset) {
-    local int pos = FTell();
-    local int remainder = pos % align;
-    local int aligned;
+    local int vpos = VPos();
+    local int remainder = vpos % align;
+    local int pad;
     
-    // Calculate the next address that matches the target offset
     if (remainder <= offset) {
-        aligned = pos + (offset - remainder);
+        pad = offset - remainder;
     } else {
-        aligned = pos + (align - remainder) + offset;
+        pad = (align - remainder) + offset;
     }
     
-    FSeek(aligned);
+    if (pad > 0) {
+        FSkip(pad);
+    }
 }
+
 void AlignUpNoSub(int align){
-    local int pos = FTell();
-    local int aligned = pos + (pos % align);
-    FSeek(aligned);
+    local int vpos = VPos();
+    local int pad = vpos % align;
+    if (pad > 0) {
+        FSkip(pad);
+    }
 }
 
 void AlignUpRelative(int align, int baseOffset) {
-    local int absolutePos = FTell();
-    local int relativePos = absolutePos - baseOffset;
-    
+    // Relative alignment cancels out the virtual offset, 
+    // so we can just use normal FTell() here.
+    local int relativePos = FTell() - baseOffset; 
     local int remainder = relativePos % align;
     if (remainder > 0) {
-        FSeek(absolutePos + (align - remainder));
+        FSkip(align - remainder);
     }
 }
 
@@ -72,56 +92,62 @@ enum <int32> FieldType {
 
 struct Object;
 struct Value;
-string ReadValue( Value &value ) {
-	local FieldType field_type = parentof(value).field_type;
+
+string ReadValue( Value &val ) {
+    local FieldType field_type = parentof(val).field_type;
     if (field_type == FT_Unknown) {
         return "";
     } else if (field_type == FT_Enum) {
-        string s;
+        string s = "0x";
         local int i = 0;   
-        for (i = value.size - 1; i >= 0; i-- ) {
-            s += Str("%02x", value[i]);
+        for (i = 0; i < val.size; i++ ) {
+            s += Str("%02X", val.value[i]);
         }
         return s;
     } else if (field_type == FT_Boolean) {
-        return Str("0x%x", value.value);
+        return val.value ? "true" : "false";
     } else if (field_type == FT_S8) {
-        return Str("0x%x", value.value);
+        return Str("%d", val.value);
     } else if (field_type == FT_U8) {
-        return Str("0x%x", value.value);
+        return Str("%u (0x%02X)", val.value, val.value);
     } else if (field_type == FT_S16) {
-        return Str("0x%x", value.value);
+        return Str("%d", val.value);
     } else if (field_type == FT_U16) {
-        return Str("0x%x", value.value);
+        return Str("%u (0x%04X)", val.value, val.value);
     } else if (field_type == FT_S32) {
-        return Str("0x%x", value.value);
+        return Str("%d", val.value);
     } else if (field_type == FT_U32) {
-        return Str("0x%x", value.value);
+        return Str("%u (0x%08X)", val.value, val.value);
     } else if (field_type == FT_S64) {
-        return Str("0x%x", value.value);
+        return Str("%Ld", val.value);
     } else if (field_type == FT_U64) {
-        return Str("0x%x", value.value);
+        return Str("%Lu (0x%016LX)", val.value, val.value);
     } else if (field_type == FT_F32) {
-        return Str("%f", value.value);
+        return Str("%f", val.value);
     } else if (field_type == FT_F64) {
-        return Str("%f", value.value);
+        return Str("%lf", val.value);
     } else if (field_type == FT_C8) {
-        return Str("%c", value.value);
+        return Str("'%c'", val.value);
     } else if (field_type == FT_C16) {
-        return Str("%c", value.value);
+        return Str("'%c'", val.value);
     }
-    return "idkkkk";
+    return "Unknown Type";
 } 
 
 struct Struct;
-string ReadStruct( Struct &value ) {
+string ReadStruct( Struct &val ) {
     string s;
-    local int i = 0;   
-    for (i = value.size - 1; i >= 0; i-- ) {
-        s += Str("%02x", value.data[i]);
+    local int i = 0;
+    local int print_len = val.size;
+    if (print_len > 16) print_len = 16; 
+       
+    for (i = 0; i < print_len; i++ ) {
+        s += Str("%02X ", val.data[i]);
     }
+    if (val.size > 16) s += "...";
     return s;
 } 
+
 int GetStride(int size)
 {
     if (size <= 0x10) return 0x10;
@@ -129,209 +155,168 @@ int GetStride(int size)
     if (size <= 0x40) return 0x40;
     return GetAlignment(size);
 }
+
 int GetAlignment(int structSize) {
     if (structSize == 0) return 1;
-    
-    // Check highest power of 2 first. 
-    // Change this to 32 if your engine uses 32-byte SIMD alignments (AVX).
     if (structSize % 16 == 0) return 16; 
-    
-    // For size == 24, (24 % 16 != 0), but (24 % 8 == 0). So it aligns to 8!
     if (structSize % 8 == 0)  return 8;  
     if (structSize % 4 == 0)  return 4;
     if (structSize % 2 == 0)  return 2;
-    
     return 1;
 }
 
 typedef struct (int field_base) {
-
-    uint32 size;
-    local int pos = FTell();
+    uint32 size <bgcolor=cSilver>;
+    
     if (size == 24) {
         AlignUp(8);
-        if (FTell() % 32 < 16) {
+        if (VPos() % 32 < 16) {
             FSkip(16);
         }
     } else if (size == 32) {
-        // Your original 32-byte logic
         AlignUpOffset(32, 0x10);
     } else if (size == 64) {
         AlignUpOffset(64, 48);
     } else if (size == 12) {
         AlignUp(4);
-        if (FTell() % 16 > 4) {
+        if (VPos() % 16 > 4) {
             FSkip(8);
         }
     } else if (size == 112 || size == 114 || size == 116) {
         AlignUp(16);
-        // FSkip(FTell() % 64 + 0x10);
-        local int pos2 = FTell();
-        if (pos2 % 32 == 16) {
+        if (VPos() % 32 == 16) {
             AlignUpOffset(128, 112);
-        }
-        else {
+        } else {
             AlignUp(128);
         }
         if (size == 114) {
             FSkip(-4);
         }
-        /*if (FTell() %128 == 0) {
-        }
-        else if (FTell() % 128 <= 64) {
-            FSkip(64);
-            //FSkip(32);
-        } else if (FTell() % 128 <= 32){
-            FSkip(32);
-            //AlignUpOffset(128, 112);
-        }*/
-        
+    } else if (size == 16) {
+        AlignUp(size);
+        //FSkip(4);
     } else {
         AlignUp(size);
     }
-    uint8 data[size] <bgcolor=cLtBlue>;
+    
+    if(size > 0)
+        uint8 data[size] <bgcolor=cLtBlue>;
 } Struct <read=ReadStruct>;
 
 typedef struct {
-    uint32 size;
+    uint32 size <bgcolor=cSilver>;
     AlignUp(size);
     if (size > 0) {
         if (field_type == FT_Unknown) {
         } else if (field_type == FT_Enum) {
-            uint8 value[size];
+            uint8 value[size] <bgcolor=cWhite>;
         } else if (field_type == FT_Boolean) {
-            uint8 value;
+            uint8 value <bgcolor=cWhite>;
         } else if (field_type == FT_S8) {
-            int8 value;
+            int8 value <bgcolor=cWhite>;
         } else if (field_type == FT_U8) {
-            uint8 value;
+            uint8 value <bgcolor=cWhite>;
         } else if (field_type == FT_S16) {
-            int16 value;
+            int16 value <bgcolor=cWhite>;
         } else if (field_type == FT_U16) {
-            uint16 value;
+            uint16 value <bgcolor=cWhite>;
         } else if (field_type == FT_S32) {
-            int32 value;
+            int32 value <bgcolor=cWhite>;
         } else if (field_type == FT_U32) {
-            uint32 value;
+            uint32 value <bgcolor=cWhite>;
         } else if (field_type == FT_S64) {
-            int64 value;
+            int64 value <bgcolor=cWhite>;
         } else if (field_type == FT_U64) {
-            uint64 value;
+            uint64 value <bgcolor=cWhite>;
         } else if (field_type == FT_F32) {
-            float value;
+            float value <bgcolor=cWhite>;
         } else if (field_type == FT_F64) {
-            double value;
+            double value <bgcolor=cWhite>;
         } else if (field_type == FT_C8) {
-            uchar value;
+            uchar value <bgcolor=cWhite>;
         } else if (field_type == FT_C16) {
-            wchar_t value;
+            wchar_t value <bgcolor=cWhite>;
         }
     }
 } Value <read=ReadValue>;
 
 struct StringU16 {
-    uint32 len;
+    uint32 len <bgcolor=cSilver>;
     if (len > 0)
-        wchar_t value[len];
+        wchar_t value[len] <bgcolor=cLtAqua>;
     AlignUp(4);
 };
 
 struct Array {
-    FieldType arr_member_type;
-    uint32 arr_member_size;
-    uint32 len;
-    uint32 array_type;
+    FieldType arr_member_type <bgcolor=cLtPurple>;
+    uint32 arr_member_size <bgcolor=cSilver>;
+    uint32 len <bgcolor=cSilver>;
+    uint32 array_type <bgcolor=cSilver>;
     local int i = 0;
 
     if (array_type == 0) {
         if (arr_member_type == 0x0f) {
             if (len > 0)
-                StringU16 values[len] <optimize=false>;
+                StringU16 values[len] <optimize=false, bgcolor=cLtAqua>;
             AlignUp(4);
         } else {
             if (len > 0) {
                 struct Values {
                     for (i = 0; i < len; i++) {
                         struct {
-                            //AlignUp(arr_member_size);
                             local int size = arr_member_size;
                             if (size == 24) {
                                 AlignUp(8);
-                                if (FTell() % 32 < 16) {
+                                if (VPos() % 32 < 16) {
                                     FSkip(16);
                                 }
                             } else if (size == 12) {
                                 AlignUp(4);
-                                if (FTell() % 16 > 4) {
+                                if (VPos() % 16 > 4) {
                                     FSkip(8);
                                 }
                             } else if (size == 32) {
-                                // Your original 32-byte logic
                                 AlignUpOffset(32, 0x10);
                             } else if (size == 64) {
                                 AlignUp(16);
-                               // FSkip(FTell() % 64 + 0x10);
-                                local int pos2 = FTell();
-                                if (pos2 % 32 == 16) {
+                                if (VPos() % 32 == 16) {
                                     AlignUpOffset(128, size);
-                                }
-                                else {
+                                } else {
                                     AlignUp(128);
                                 }
-                                /*if (FTell() %128 == 0) {
-                                }
-                                else if (FTell() % 128 <= 64) {
-                                    FSkip(64);
-                                    //FSkip(32);
-                                } else if (FTell() % 128 <= 32){
-                                    FSkip(32);
-                                    //AlignUpOffset(128, 112);
-                                }*/
                              } else if (size == 112 || size == 114 || size == 116) {
                                 AlignUp(16);
-                                // FSkip(FTell() % 64 + 0x10);
-                                local int pos2 = FTell();
-                                if (pos2 % 32 == 16) {
+                                if (VPos() % 32 == 16) {
                                     AlignUpOffset(128, 112);
-                                }
-                                else {
+                                } else {
                                     AlignUp(128);
                                 }
                                 if (size == 114) {
                                     FSkip(-4);
                                 }
-                                /*if (FTell() %128 == 0) {
-                                }
-                                else if (FTell() % 128 <= 64) {
-                                    FSkip(64);
-                                    //FSkip(32);
-                                } else if (FTell() % 128 <= 32){
-                                    FSkip(32);
-                                    //AlignUpOffset(128, 112);
-                                }*/
                             }
                             else {
                                 AlignUp(size);
                             }
-                            uint8 data[arr_member_size];
+                            if(arr_member_size > 0)
+                                uint8 data[arr_member_size] <bgcolor=cLtYellow>;
                         } value;
                     }
                     AlignUp(4);
                 } values;
             }
-            //Value values[len] <optimize=false>;
         }
     } else {
         if (len > 0) {
-            Object objects[len] <optimize=false>;
+            Object objects[len] <optimize=false, bgcolor=cLtGreen>;
         }
     }
 };
 
 struct Field {
-    local int field_base = FTell();
-    uint32 hash <format=hex>;
-    FieldType field_type;
+    local int field_base = FTell(); // We keep physical FTell for exact offset recording
+    uint32 hash <format=hex, bgcolor=cLtRed>;
+    FieldType field_type <bgcolor=cLtPurple>;
 
     if (field_type == FT_Class) {
         Object fields;
@@ -349,23 +334,22 @@ struct Field {
 };
 
 struct Object {
-    uint32 num_fields;
-    uint32 hash <format=hex>;;
+    uint32 num_fields <bgcolor=cSilver>;
+    uint32 hash <format=hex, bgcolor=cLtRed>;
     local int i = 0;
-    // put some limit on this shit
     for (i = 0; i < num_fields; i++) {
         Field field;
     }
 };
 
 struct Entry {
-    uint32 unk;
-    uint32 num_fields;
-    uint32 hash;
+    uint32 unk <bgcolor=cSilver>;
+    uint32 num_fields <bgcolor=cSilver>;
+    uint32 hash <format=hex, bgcolor=cLtRed>;
     local int i = 0;
     for (i = 0; i < num_fields; i++) {
         Field field;
     }
 };
-FSkip(24);
-Entry fields[100]<optimize=false>;
+
+Entry fields[100]<optimize=false, bgcolor=cLtGray>;

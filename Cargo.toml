@@ -85,6 +85,7 @@ web-time = "1.1.0"
 regex = "1.12.3"
 elliptic-curve = "0.13.8"
 cbc = "0.1.2"
+sha3 = "0.11.0"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]

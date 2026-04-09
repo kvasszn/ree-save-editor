@@ -10,7 +10,7 @@ use crate::sdk::asset::Assets;
 use crate::sdk::type_map::{ContentLanguage, FieldInfo, TypeInfo, TypeMap};
 
 use crate::save::remap::Remap;
-use crate::save::SaveFile;
+use crate::save::{SaveFile, SaveFlags};
 
 pub trait Editable {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse;
@@ -132,8 +132,36 @@ impl Editable for bool {
 }
 
 
+impl Editable for SaveFlags {
+    fn edit(&mut self, ui: &mut Ui, _ctx: &mut EditContext) -> EditResponse {
+        ui.vertical(|ui| {
+            ui.label("Save Options:");
+
+            // Helper closure to make it ergonomic
+            let flag_checkbox = |ui: &mut Ui, flags: &mut SaveFlags, flag: SaveFlags, label: &str| {
+                let mut is_on = flags.contains(flag);
+                if ui.checkbox(&mut is_on, label).changed() {
+                    flags.set(flag, is_on); // set() is a built-in bitflags method
+                }
+            };
+
+            flag_checkbox(ui, self, SaveFlags::BLOWFISH, "Blowfish");
+            flag_checkbox(ui, self, SaveFlags::PHOTO, "Photo");
+            flag_checkbox(ui, self, SaveFlags::CITRUS, "Citrus");
+            flag_checkbox(ui, self, SaveFlags::DEFLATE, "Deflate");
+            flag_checkbox(ui, self, SaveFlags::MANDARIN, "Mandarin");
+        });
+        EditResponse::default()
+    }
+}
+
 impl Editable for SaveFile {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
+        CollapsingHeader::new("Advanced")
+            .default_open(false)
+            .show(ui, |ui| {
+                self.flags.edit(ui, ctx);
+            });
         for field in &mut self.fields {
             let child_id = ui.make_persistent_id(field.0);
             let mut child_ctx = EditContext {
@@ -149,19 +177,19 @@ impl Editable for SaveFile {
                 .unwrap_or(format!("{:08x}", field.0));
             let header = format!("{field_name}: {type_name}");
             /*let label = match (type_info, field_name) {
-                (None, Some(field_name)) => format!("{}: {}", field.0, type_info.name),
-                (Some(type_info), Some(field_name)) => format!("{}: {}", field_name, type_info.name),
-                _ => format!("{}: {:08x}", field.0, field.1.hash)
-            };*/
+              (None, Some(field_name)) => format!("{}: {}", field.0, type_info.name),
+              (Some(type_info), Some(field_name)) => format!("{}: {}", field_name, type_info.name),
+              _ => format!("{}: {:08x}", field.0, field.1.hash)
+              };*/
             /*let header = if let Some(type_info) = type_info {
-                format!("{}: {},{:08x}", field_name, type_info.name, field.1.hash)
-            } else {
-                if let Some(type_name) = ctx.type_map.get_hash_str(field.1.hash) {
-                    format!("{}: {},{:08x}", field_name, type_name, field.1.hash)
-                } else {
-                    format!("{}: {:08x}", field_name, field.1.hash)
-                }
-            };*/
+              format!("{}: {},{:08x}", field_name, type_info.name, field.1.hash)
+              } else {
+              if let Some(type_name) = ctx.type_map.get_hash_str(field.1.hash) {
+              format!("{}: {},{:08x}", field_name, type_name, field.1.hash)
+              } else {
+              format!("{}: {:08x}", field_name, field.1.hash)
+              }
+              };*/
             CollapsingHeader::new(header)
                 .id_salt(child_id)
                 .default_open(true)
