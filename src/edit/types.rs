@@ -1571,6 +1571,33 @@ impl Class {
         if let Some(serialize_data) = serialize_data {
             let ptr_address = serialize_data.values.as_ptr() as usize;
             let cache_id = ui.make_persistent_id(("SerializeData", ctx.id, ptr_address));
+
+            if ui.button("Upload").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Images", &["jpg", "jpeg", "webp", "png"])
+                        .pick_file() 
+                {
+                    // Read the file from disk
+                    if let Ok(new_bytes) = std::fs::read(&path) {
+                        // unwrap is safe here because of the previous check
+                        let serialize_data = self.get_array_mut("SerializeData")
+                            .unwrap();
+
+                        let field_values: Vec<FieldValue> = new_bytes.iter().map(|b| FieldValue::U8(*b)).collect();
+                        serialize_data.values = field_values; 
+
+                        ui.data_mut(|data| {
+                            data.insert_temp(cache_id, Arc::<[u8]>::from(new_bytes));
+                        });
+
+                        // Note: You might also need to call ui.ctx().forget_image(...) 
+                        // if egui's texture manager caches the old bytes under the same URI.
+                        ui.ctx().forget_image(&format!("bytes://{}_{}.webp", ctx.id, ptr_address));
+                    } else {
+                        eprintln!("Failed to read the selected image file.");
+                    }
+                }
+            }
             let image_bytes: Arc<[u8]> = ui.data_mut(|data| {
                 let bytes: &mut Arc<[u8]> = data.get_temp_mut_or_insert_with(cache_id, || {
                     self.get::<Vec<u8>>("SerializeData")

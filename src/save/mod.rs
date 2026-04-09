@@ -55,52 +55,6 @@ pub struct SaveContext {
 }
 
 impl SaveFile {
-    pub fn to_bytes_v2(&self, key: u64) -> crate::file::Result<Vec<u8>> {
-        let mut data = Cursor::new(Vec::<u8>::new());
-        let version: u32 = 2;
-        let flags: u32 = self.flags.bits();
-        let null: u32 = 0;
-
-        // write some unk bytes (i forget if this is the type hash or what, might be a murmur?)
-        for field in &self.fields {
-            data.write(&field.0.to_le_bytes())?;
-            field.1.write(&mut data)?;
-        }
-
-        // compression
-        let decompressed_size: u64 = data.get_ref().len() as u64;
-
-        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(5));
-        encoder.write_all(&data.get_ref())?;
-        let compressed = encoder.finish()?;
-        let compressed_size = compressed.len() as u64;
-        let mut data = Cursor::new(Vec::<u8>::new());
-        data.write(&(compressed_size + 0x10).to_le_bytes())?;
-        data.write(&(1u32).to_le_bytes())?;
-        data.write(&(compressed_size as u32).to_le_bytes())?;
-        data.write(&decompressed_size.to_le_bytes())?;
-        data.write(&compressed[..compressed_size as usize])?;
-
-        let decrypted_size = data.get_ref().len() as u64;
-        let mandarin = Mandarin::init_from_game(self.game)?;
-        let key = self.game.get_key_from_steamid(key);
-        let data = mandarin.encrypt(data.get_ref(), key)?;
-
-        let mut fb = Cursor::new(Vec::<u8>::new());
-        fb.write_all(b"DSSS")?; // 0
-        fb.write_all(&version.to_le_bytes())?; // 4
-        fb.write_all(&flags.to_le_bytes())?; //  8
-        fb.write_all(&null.to_le_bytes())?; // C
-        fb.write_all(&data)?; // 0x10
-        fb.write_all(&decrypted_size.to_le_bytes())?;
-        let data = &fb.into_inner();
-        let file_hash = murmur3(&data, 0xffffffff);
-        let mut f = Cursor::new(Vec::new());
-        f.write_all(&data)?;
-        f.write_all(&file_hash.to_le_bytes())?;
-        Ok(f.into_inner())
-    }
-
     pub fn to_bytes(&self, key: u64) -> crate::file::Result<Vec<u8>> {
         let mut buf = Vec::new();
         let mut wrapper = Cursor::new(&mut buf);
@@ -109,6 +63,11 @@ impl SaveFile {
         let virtual_offset = if self.flags == SaveFlags::DEFLATE { 12 } else { 0 };
         if virtual_offset > 0 {
             wrapper.write_all(&vec![0u8; virtual_offset])?;
+        }
+
+
+        if self.flags.contains(SaveFlags::PHOTO) {
+            wrapper.write_all(&(key & 0xffffffff).to_le_bytes())?;
         }
 
         for (hash, class) in &self.fields {
