@@ -217,6 +217,15 @@ impl Citrus {
         }
 
         // TODO: FIgure out what the fuck is after this the little 0x1008 sized shit thing
+        /* Ok so, 0x8 right after the data is probably a hash of some kind, im guessing the
+         * plaintext
+         * the 0x1000 block right after that can just be zeroed out, the game doesnt seem to care
+         * if i had to guess, it's some signature of some key related stuff, since its so big, maybe
+         * the ecc params?
+         */
+        // TODO: for completeness, at least read the block, maybe store it in the save to copy it
+        // over to a new one?
+        // also check the hash 
         println!("[INFO] Citrus: total decrypted_bytes: {decrypted_bytes:x}, offset: {offset:x}");
         println!("[INFO] probably at least a little decrypted");
         Some(decrypted)

@@ -284,7 +284,7 @@ impl FieldValue {
         if size == 12 {
             w.write_align_up(4 as u64)?;
             let pos = w.stream_position()?;
-            if pos % 16 < 4 {
+            if pos % 16 > 4 {
                 w.write_all(&[0u8; 8])?;
             }
         } else if size == 24 {

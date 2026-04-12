@@ -111,7 +111,13 @@ impl SaveFile {
         final_out.extend_from_slice(&self.flags.bits().to_le_bytes());
         final_out.extend_from_slice(&0u32.to_le_bytes()); 
         final_out.extend_from_slice(&current_data);
+        
 
+        // the game JUST takes the LAST 4 bytes of the buffer as the murmur, so anything between the
+        // actual data and the murmur can be wahtever, literally just doesnt matter (the
+        // deflate/compression defines the size)
+        let aligned = align_up(final_out.len(), 4);
+        final_out.resize(aligned, 0);
         let file_hash = murmur3(&final_out, 0xffffffff);
         final_out.extend_from_slice(&file_hash.to_le_bytes());
 
@@ -267,6 +273,7 @@ impl StructRW<SaveContext> for SaveFile {
                 ctx.key = Some(key);
                 let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
                 log::info!("[Decrypted]");
+                let _ = std::fs::write("./outputs/raw_save_compressed.bin", &decrypted_buf);
                 decrypted_buf
             } else if flags.contains(SaveFlags::CITRUS) {
                 let key = ctx.key.unwrap_or(0);
