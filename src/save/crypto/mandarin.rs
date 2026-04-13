@@ -3,14 +3,21 @@ use crate::save::game::Game;
 //#[cfg(target_os = "linux")]
 //use super::backend::rug::*;
 //#[cfg(not(target_os = "linux"))]
-use super::util::backend::num_bigint::*;
 use super::util::SplitMix64;
+use super::util::backend::num_bigint::*;
 
-use std::{error::Error, fmt::Display, sync::atomic::{AtomicUsize, Ordering}};
+use std::{
+    error::Error,
+    fmt::Display,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
-use hex_literal::hex;
-use aes::{cipher::{ KeyIvInit, StreamCipher }, Aes128};
+use aes::{
+    Aes128,
+    cipher::{KeyIvInit, StreamCipher},
+};
 use bytemuck::{Pod, Zeroable};
+use hex_literal::hex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use web_time::Instant;
 
@@ -31,9 +38,12 @@ struct AuthCtx {
 }
 
 impl AuthCtx {
-    pub const P: [u8; 32] = hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
-    pub const Q: [u8; 32] = hex!("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b269a2a63c648855c39b0b");
-    pub const R: [u8; 32] = hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
+    pub const P: [u8; 32] =
+        hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
+    pub const Q: [u8; 32] =
+        hex!("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b269a2a63c648855c39b0b");
+    pub const R: [u8; 32] =
+        hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
 
     pub fn init(u: u64) -> crate::reerr::Result<Self> {
         let p = bytes_to_int(&Self::P);
@@ -43,17 +53,15 @@ impl AuthCtx {
         let u = u % &q;
         let s = mod_exp(&r, &u, &p);
         let e = Integer::from(0x14u64);
-        Ok(AuthCtx {
-            p, q, r, s, u, e,
-        })
+        Ok(AuthCtx { p, q, r, s, u, e })
     }
 
     /*pub fn update_u(&mut self, u: u64) {
-      let u = Integer::from(u) % &self.q;
-      let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
-      self.u = u;
-      self.s = s;
-      }*/
+    let u = Integer::from(u) % &self.q;
+    let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
+    self.u = u;
+    self.s = s;
+    }*/
 
     pub fn encrypt(&self, pt: [u8; 8]) -> Pair {
         let x0 = mod_exp(&self.r, &self.e, &self.p);
@@ -77,7 +85,7 @@ impl AuthCtx {
         let mut chunks = [Pair([0u8; 64], [0u8; 64]); 4];
         for i in 0..4 {
             let mut buf = [0u8; 8];
-            buf.copy_from_slice(&pt[i*8..i*8+8]);
+            buf.copy_from_slice(&pt[i * 8..i * 8 + 8]);
             chunks[i] = self.encrypt(buf);
         }
         chunks
@@ -87,7 +95,7 @@ impl AuthCtx {
         let mut res = [0u8; 32];
         for (i, chunk) in block.chunks.iter().enumerate() {
             let x = self.decrypt(chunk);
-            res[i*8..i*8+8].copy_from_slice(&x);
+            res[i * 8..i * 8 + 8].copy_from_slice(&x);
         }
         res
     }
@@ -97,16 +105,16 @@ impl AuthCtx {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 struct Block {
     chunks: [Pair; 4], // key/iv checker
-    checksum: u64, // computed from city64 or farmhash of decrypted data
-    litterally_no_idea: [u8; 8]
+    checksum: u64,     // computed from city64 or farmhash of decrypted data
+    litterally_no_idea: [u8; 8],
 }
 
 #[derive(Debug)]
 pub enum MandarinError {
-    InvalidChecksum{target: u64, real: u64},
-    InvalidKey{target: [u8; 16], real: [u8; 16]},
-    InvalidIV{target: [u8; 16], real: [u8; 16]},
-    GameNotSupported{game: Game},
+    InvalidChecksum { target: u64, real: u64 },
+    InvalidKey { target: [u8; 16], real: [u8; 16] },
+    InvalidIV { target: [u8; 16], real: [u8; 16] },
+    GameNotSupported { game: Game },
     AuthFailed,
     // (index, len)
     OutOfBounds(usize, usize),
@@ -118,15 +126,28 @@ impl Display for MandarinError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             Self::InvalidChecksum { target, real } => {
-                write!(f, "Invalid Checksum target={target:#018x}, real={real:#018x}")
+                write!(
+                    f,
+                    "Invalid Checksum target={target:#018x}, real={real:#018x}"
+                )
             }
             Self::InvalidKey { target, real } => {
-                write!(f, "Key Mismatch target={:#018x}, real={:#018x}", u128::from_be_bytes(*target), u128::from_be_bytes(*real))
+                write!(
+                    f,
+                    "Key Mismatch target={:#018x}, real={:#018x}",
+                    u128::from_be_bytes(*target),
+                    u128::from_be_bytes(*real)
+                )
             }
             Self::InvalidIV { target, real } => {
-                write!(f, "IV Mismatch target={:#018x}, real={:#018x}", u128::from_be_bytes(*target), u128::from_be_bytes(*real))
+                write!(
+                    f,
+                    "IV Mismatch target={:#018x}, real={:#018x}",
+                    u128::from_be_bytes(*target),
+                    u128::from_be_bytes(*real)
+                )
             }
-            Self::GameNotSupported{ game } => {
+            Self::GameNotSupported { game } => {
                 write!(f, "Game {game:?} does not support Mandarin Encryption")
             }
             Self::AuthFailed => {
@@ -148,19 +169,14 @@ pub struct Mandarin {
 }
 
 impl Mandarin {
-
     pub fn init_from_game(game: Game) -> Result<Self, MandarinError> {
         let seeds = game.get_mandarin_seeds();
         match seeds {
-            None => {
-                Err(MandarinError::GameNotSupported { game })
-            }
-            Some(x) => {
-                Ok(Self {
-                    seed_for_rsa_rand: x.0,
-                    seed_for_enc_rand: x.1,
-                })
-            }
+            None => Err(MandarinError::GameNotSupported { game }),
+            Some(x) => Ok(Self {
+                seed_for_rsa_rand: x.0,
+                seed_for_enc_rand: x.1,
+            }),
         }
     }
 
@@ -228,8 +244,8 @@ impl Mandarin {
         let mut state = 0;//Self::recover_state_from_mask(target_prng_mask);
 
         // 2. Undo the 16 key/iv iterations (MUST subtract ADD)
-        for _ in 0..16 { 
-            state = SplitMix64::unmix(state).wrapping_sub(SplitMix64::ADD); 
+        for _ in 0..16 {
+            state = SplitMix64::unmix(state).wrapping_sub(SplitMix64::ADD);
         }
 
         // 3. Undo the inverted key injection
@@ -245,7 +261,6 @@ impl Mandarin {
 
         state
     }*/
-
 
     #[cfg(target_arch = "wasm32")]
     pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
@@ -274,13 +289,15 @@ impl Mandarin {
         let base = 0x0110000100000000u64;
         let count = 0xffffffffu64;
         log::info!("[BRUTE FORCE] Starting brute force for {} keys", count);
-        let good_key = (base..base+count)
+        let good_key = (base..base + count)
             .into_par_iter()
             .find_map_any(|steamid| {
                 let mut mask = [0u8; 8];
                 let inv_key = !steamid;
                 let mut state_p = initial_state_p.wrapping_add(inv_key);
-                for _ in 0..16 { state_p = SplitMix64::next_int(&mut state_p); }
+                for _ in 0..16 {
+                    state_p = SplitMix64::next_int(&mut state_p);
+                }
 
                 for i in 0..8 {
                     state_p = SplitMix64::next_int(&mut state_p);
@@ -297,7 +314,7 @@ impl Mandarin {
         log::info!("time taken: {taken:.2}s");
         if let Some(good_key) = good_key {
             println!("[Key/IV check] passed with key={}", good_key);
-            return good_key
+            return good_key;
         }
         0x0
     }
@@ -331,7 +348,7 @@ impl Mandarin {
         let count = 0xffffffffu64 as usize;
         let chunk_size = 1_000_000;
         println!("[BRUTE FORCE] Starting brute force for {} keys", count);
-        let good_key = (base..base+count)
+        let good_key = (base..base + count)
             .into_par_iter()
             .chunks(chunk_size)
             .find_map_any(|steamids| {
@@ -341,14 +358,16 @@ impl Mandarin {
                 for (i, steamid) in steamids.iter().enumerate() {
                     let inv_key = !(*steamid as u64);
                     let mut state_p = initial_state_p.wrapping_add(inv_key);
-                    for _ in 0..16 { state_p = SplitMix64::next_int(&mut state_p); }
+                    for _ in 0..16 {
+                        state_p = SplitMix64::next_int(&mut state_p);
+                    }
 
                     for i in 0..8 {
                         state_p = SplitMix64::next_int(&mut state_p);
                         mask[i] = state_p as u8;
                     }
                     if mask == target_prng_mask[0..8] {
-                        found_key =  Some(*steamid as u64);
+                        found_key = Some(*steamid as u64);
                         checked = i;
                         break;
                     }
@@ -363,15 +382,23 @@ impl Mandarin {
 
         let taken = s.elapsed().as_secs_f64();
         let completed = progress.load(Ordering::Relaxed);
-        println!("time taken for {completed} keys: {taken:.2}s @ {} keys/s", completed as f64 / taken);
+        println!(
+            "time taken for {completed} keys: {taken:.2}s @ {} keys/s",
+            completed as f64 / taken
+        );
         if let Some(good_key) = good_key {
             println!("[Key/IV check] passed with key={}", good_key);
-            return good_key
+            return good_key;
         }
         0x0
     }
 
-    pub fn decrypt(&self, encrypted: &[u8], decrypted_len: u64, key: u64) -> Result<Vec<u8>, MandarinError>{
+    pub fn decrypt(
+        &self,
+        encrypted: &[u8],
+        decrypted_len: u64,
+        key: u64,
+    ) -> Result<Vec<u8>, MandarinError> {
         // This is different for dif games, i think it actually just gets generated somehow before
         // the module gets launched, but whatever values you find work for anyone
         let mut state_a: u64 = self.seed_for_rsa_rand;
@@ -383,14 +410,14 @@ impl Mandarin {
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
         let len = encrypted.len();
-        let encrypted_key = &encrypted[len - 0x80-12..len-12];
+        let encrypted_key = &encrypted[len - 0x80 - 12..len - 12];
         println!("[DECRYPT] RSA Integer {encrypted_key:?}");
 
         // calculate the block sizes >> 0xe for each "potential block"
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
-                                                                        // allocated, its on the stack
-                                                                        // but like variable size
+        // allocated, its on the stack
+        // but like variable size
 
         let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
@@ -406,7 +433,7 @@ impl Mandarin {
             let b = block_sizes[i as usize] as u64;
             num_real_blocks += 1;
             if encryption_len_leftover <= b * 0x4000 {
-                break
+                break;
             }
             encryption_len_leftover -= b * 0x4000;
         }
@@ -427,10 +454,10 @@ impl Mandarin {
             let encrypted_read_size = block_size + 0x210;
             let encrypted_end = encrypted_start + encrypted_read_size;
             if encrypted_end > encrypted.len() {
-                return Err(MandarinError::OutOfBounds(encrypted_end, encrypted.len()))
+                return Err(MandarinError::OutOfBounds(encrypted_end, encrypted.len()));
             }
             if encrypted_read_size > buf.len() {
-                return Err(MandarinError::OutOfBounds(encrypted_read_size, buf.len()))
+                return Err(MandarinError::OutOfBounds(encrypted_read_size, buf.len()));
             }
             buf[0..encrypted_read_size].copy_from_slice(&encrypted[encrypted_start..encrypted_end]);
 
@@ -463,7 +490,7 @@ impl Mandarin {
             if key_iv2[16..32] != iv {
                 println!("[Key/IV check] block {i}: IV mismatch, skipping check");
                 //return Err(MandarinError::InvalidIV { target: iv2, real: iv})
-            } 
+            }
             if key_iv2[0..16] == key && key_iv2[16..32] == iv {
                 println!("[Key/IV check] block {i}: passed");
             }
@@ -471,7 +498,7 @@ impl Mandarin {
             let target_checksum = auth_block.checksum;
             type Aes128Ofb = ofb::Ofb<Aes128>;
             let mut cipher = Aes128Ofb::new(&key.into(), &iv.into());
-            let mut data = &mut buf[0x210..0x210+block_size];
+            let mut data = &mut buf[0x210..0x210 + block_size];
             cipher.apply_keystream(&mut data);
 
             let bytes_to_copy = block_size.min(remaining_bytes);
@@ -479,12 +506,16 @@ impl Mandarin {
             let checksum = cityhasher::hash::<u64>(&data[..bytes_to_copy]);
             if checksum != target_checksum {
                 println!("[Checksum] block {i}: failed");
-                return Err(MandarinError::InvalidChecksum { target: target_checksum, real: checksum })
+                return Err(MandarinError::InvalidChecksum {
+                    target: target_checksum,
+                    real: checksum,
+                });
             } else {
                 println!("[Checksum] block {i}: passed")
             }
             //println!("{key:?}, {iv:?}, {checksum:x}");
-            decrypted[decrypted_start..decrypted_start + bytes_to_copy].copy_from_slice(&data[..bytes_to_copy]);
+            decrypted[decrypted_start..decrypted_start + bytes_to_copy]
+                .copy_from_slice(&data[..bytes_to_copy]);
             remaining_bytes = remaining_bytes.wrapping_sub(block_size);
             decrypted_start += bytes_to_copy;
             encrypted_start += encrypted_read_size;
@@ -498,7 +529,7 @@ impl Mandarin {
         Ok(decrypted)
     }
 
-    pub fn encrypt(&self, data: &[u8], key: u64) -> Result<Vec<u8>, MandarinError>{
+    pub fn encrypt(&self, data: &[u8], key: u64) -> Result<Vec<u8>, MandarinError> {
         //let mut state_a: u64 = 0xBFACF76C3F96;
         //let n = hex!("c2d3bdb583ed63f803f400647714aabbc306ead0a00978cf096a06372ec19df37cea8d83b958b3133b4cbd8cfa9bc028b75d28d232e3e31eb26b122f95a6076141f6a8528469339dc80c59642115aecc9f29a20c2238b6d0fa5d7079fedd85488650ed625c0ad55931d5742c9696efedbd9419c25c0745e907355b4f3648a44f");
         let mut state_a: u64 = self.seed_for_rsa_rand;
@@ -509,7 +540,9 @@ impl Mandarin {
         }
         rands[0..8].copy_from_slice(&(!key).to_le_bytes());
 
-        let n = hex!("4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2");
+        let n = hex!(
+            "4fa448364f5b3507e945075cc21994bdedef96962c74d53159d50a5c62ed50864885ddfe79705dfad0b638220ca2299fccae152164590cc89d33698452a8f6416107a6952f126bb21ee3e332d2285db728c09bfa8cbd4c3b13b358b9838dea7cf39dc12e37066a09cf7809a0d0ea06c3bbaa14776400f403f863ed83b5bdd3c2"
+        );
         //let rands_int = Integer::from_digits(&rands[0..32], Order::Lsf);
         let rands_int = bytes_to_int(&rands[0..32]);
         let n = bytes_to_int(&n);
@@ -524,8 +557,8 @@ impl Mandarin {
         let data_len = data.len() as u64;
         let num_potential_blocks = ((data_len & 0x3fff != 0) as u64) + (data_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
-                                                                        // allocated, its on the stack
-                                                                        // but like variable size
+        // allocated, its on the stack
+        // but like variable size
         let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
@@ -540,7 +573,7 @@ impl Mandarin {
             let b = block_sizes[i as usize] as u64;
             num_real_blocks += 1;
             if len_leftover <= b * 0x4000 {
-                break
+                break;
             }
             len_leftover -= b * 0x4000;
         }
@@ -572,24 +605,25 @@ impl Mandarin {
             let block_size = block_sizes[i] as usize * 0x4000;
             let bytes_to_copy = block_size.min(remaining_bytes);
             //println!("to_copy={bytes_to_copy}, block_size={block_size}, remaining_bytes={remaining_bytes}");
-            buf[0x210..bytes_to_copy + 0x210].copy_from_slice(&data[decrypted_start..decrypted_start+bytes_to_copy]);
+            buf[0x210..bytes_to_copy + 0x210]
+                .copy_from_slice(&data[decrypted_start..decrypted_start + bytes_to_copy]);
 
             let mut key_iv = [0u8; 32];
             key_iv[0..16].copy_from_slice(&key);
             key_iv[16..32].copy_from_slice(&iv);
             let chunks = auth.encrypt_bytes(key_iv);
-            let checksum = cityhasher::hash::<u64>(&buf[0x210..0x210+bytes_to_copy]);
+            let checksum = cityhasher::hash::<u64>(&buf[0x210..0x210 + bytes_to_copy]);
             //println!("{key:?}, {iv:?}, {checksum}");
 
             type Aes128Ofb = ofb::Ofb<Aes128>;
             let mut cipher = Aes128Ofb::new(&key.into(), &iv.into());
-            cipher.apply_keystream(&mut buf[0x210..0x210+block_size]);
+            cipher.apply_keystream(&mut buf[0x210..0x210 + block_size]);
 
             //  i have no idea what the last 0x8 bytes are in this block thing
             let block = Block {
                 chunks,
                 checksum,
-                litterally_no_idea: [0u8; 8]
+                litterally_no_idea: [0u8; 8],
             };
 
             //println!("mul={:?}", block.chunks[0].0);
@@ -602,7 +636,8 @@ impl Mandarin {
                 buf[j] = buf[j] ^ state_p as u8;
             }
 
-            encrypted[encrypted_start..encrypted_start + block_size + 0x210].copy_from_slice(&buf[..block_size + 0x210]);
+            encrypted[encrypted_start..encrypted_start + block_size + 0x210]
+                .copy_from_slice(&buf[..block_size + 0x210]);
             remaining_bytes = remaining_bytes.wrapping_sub(bytes_to_copy);
             decrypted_start += bytes_to_copy;
             encrypted_start += block_size + 0x210;
@@ -611,7 +646,7 @@ impl Mandarin {
         let integer = int_to_bytes_le::<0x80>(&encrypted_key);
         println!("[ENCRYPTION] RSA Integer={encrypted_key:?}");
         //println!("encrypted_key={encrypted_key:?}, {integer:?}");
-        encrypted[encrypted_start..encrypted_start+0x80].copy_from_slice(&integer);
-        Ok(encrypted[..encrypted_start+0x80].to_vec())
+        encrypted[encrypted_start..encrypted_start + 0x80].copy_from_slice(&integer);
+        Ok(encrypted[..encrypted_start + 0x80].to_vec())
     }
 }
