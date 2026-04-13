@@ -1,14 +1,30 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::{collections::HashSet, error::Error, io::{Cursor, Read, Seek}, sync::mpsc::{Receiver, Sender}, time::Duration};
+use std::{
+    collections::HashSet,
+    error::Error,
+    io::{Cursor, Read, Seek},
+    sync::mpsc::{Receiver, Sender},
+    time::Duration,
+};
 
 use eframe::egui::{self, Align2, Order};
-use eframe::{self, egui::{ComboBox, ScrollArea, TextEdit, Ui}};
+use eframe::{
+    self,
+    egui::{ComboBox, ScrollArea, TextEdit, Ui},
+};
 use mhtame::game_context::GameCtx;
 use mhtame::save::corrupt::CorruptSaveReader;
-use mhtame::sdk::type_map::{TypeMap};
-use mhtame::{edit::{EditContext, Editable}, file::StructRW, save::{SaveContext, SaveFile, game::{GAME_OPTIONS, Game}}, sdk::type_map::ContentLanguage};
-
+use mhtame::sdk::type_map::TypeMap;
+use mhtame::{
+    edit::{EditContext, Editable},
+    file::StructRW,
+    save::{
+        SaveContext, SaveFile,
+        game::{GAME_OPTIONS, Game},
+    },
+    sdk::type_map::ContentLanguage,
+};
 
 use crate::Config;
 
@@ -28,6 +44,7 @@ pub struct FileView {
     show_popup: bool,
     repair: bool,
     brute_force: bool,
+    curve_index: Option<usize>,
 }
 
 impl FileView {
@@ -56,20 +73,31 @@ impl FileView {
             popup_msg: "".to_string(),
             repair: false,
             brute_force: false,
+            curve_index: None,
         }
     }
 
-
-    pub fn from_data(config: &Config, file_name: String, bytes: Vec<u8>, idx: u64, language: ContentLanguage) -> Self {
+    pub fn from_data(
+        config: &Config,
+        file_name: String,
+        bytes: Vec<u8>,
+        idx: u64,
+        language: ContentLanguage,
+    ) -> Self {
         let mut file = FileView::new(config, idx, language);
         let mut input_file_picker = FilePicker::<false>::new("File");
         input_file_picker.text = file_name.clone();
         file.input_file_picker.text = file_name.clone();
-        file.current_file = CurrentFile::FileData{file_name, bytes};
+        file.current_file = CurrentFile::FileData { file_name, bytes };
         file
     }
 
-    pub fn from_path(config: &Config, file_path: String, idx: u64, language: ContentLanguage) -> Self {
+    pub fn from_path(
+        config: &Config,
+        file_path: String,
+        idx: u64,
+        language: ContentLanguage,
+    ) -> Self {
         let mut file = FileView::new(config, idx, language);
         let mut input_file_picker = FilePicker::<false>::new("File");
         input_file_picker.text = file_path.clone();
@@ -151,17 +179,21 @@ impl FileView {
             self.output_path_picker.update();
             if ui.button("Save").clicked() {
                 if let Some(steamid) = self.steam.steam_id {
-                    match self.current_file.write_save_to_buf(steamid) {
+                    match self
+                        .current_file
+                        .write_save_to_buf(steamid, self.curve_index)
+                    {
                         Ok((file_path, data)) => {
                             // quite disgusting but oh well
                             #[cfg(not(target_arch = "wasm32"))]
                             {
                                 let output_path = self.output_path_picker.text.clone();
-                                use std::{fs::File};
+                                use std::fs::File;
                                 let mut path = PathBuf::from(output_path.clone());
                                 let _ = std::fs::create_dir_all(&path);
                                 let in_file_path = PathBuf::from(&file_path);
-                                let file_name = in_file_path.file_name()
+                                let file_name = in_file_path
+                                    .file_name()
                                     .map(|x| x.to_string_lossy().to_string())
                                     .unwrap_or("data.bin".to_string());
                                 path.push(file_name);
@@ -172,13 +204,17 @@ impl FileView {
                                         use std::io::Write;
                                         let _ = file.write_all(&data);
                                         let path = output_path.clone();
-                                        let path = shellexpand::full(&path).unwrap_or(output_path.clone().into());
-                                        let path = std::fs::canonicalize(path.to_string()).unwrap_or(output_path.clone().into());
+                                        let path = shellexpand::full(&path)
+                                            .unwrap_or(output_path.clone().into());
+                                        let path = std::fs::canonicalize(path.to_string())
+                                            .unwrap_or(output_path.clone().into());
                                         self.set_popup(format!("Saved to {:?}", path));
                                     }
                                     Err(e) => {
-                                        self.set_popup(format!("Could not create file {:?}: error: {e}", path));
-
+                                        self.set_popup(format!(
+                                            "Could not create file {:?}: error: {e}",
+                                            path
+                                        ));
                                     }
                                 }
                             }
@@ -188,7 +224,6 @@ impl FileView {
                                 crate::save_file_dialog(&file_path, data);
                                 self.set_popup(format!("Saved/Downloaded"));
                             }
-
                         }
                         Err(e) => {
                             self.set_popup(format!("Error saving {}", e));
@@ -217,8 +252,10 @@ impl FileView {
                 .show_ui(ui, |ui| {
                     for option in GAME_OPTIONS {
                         ui.selectable_value(&mut self.game, option.1, option.0);
-                }
-                }).response.changed();
+                    }
+                })
+                .response
+                .changed();
             if let Some(game_ctx) = game_ctx.as_deref_mut() {
                 if changed_game {
                     self.reload(game_ctx);
@@ -247,42 +284,60 @@ impl FileView {
         }
 
         ui.horizontal(|ui| {
-            ui.label("Try Repairing Corruption (WIP)");
-            ui.checkbox(&mut self.repair, "");
-            ui.label("Brute Force SteamID");
-            ui.checkbox(&mut self.brute_force, "");
+            //ui.label("Try Repairing Corruption (WIP)");
+            //ui.checkbox(&mut self.repair, "");
+            //ui.label("Brute Force SteamID");
+            ui.checkbox(&mut self.brute_force, "Brute Force SteamID");
+            let mut has_value = self.curve_index.is_some();
+            if ui
+                .checkbox(&mut has_value, "Citrus Curve Index (for mh rise)")
+                .changed()
+            {
+                if has_value {
+                    self.curve_index = Some(0);
+                } else {
+                    self.curve_index = None;
+                }
+            }
+            if let Some(val) = self.curve_index.as_mut() {
+                ui.add(egui::DragValue::new(val).speed(1.0));
+            }
         });
 
         if let Some(game_ctx) = game_ctx {
-            ScrollArea::both().auto_shrink(false).max_width(f32::INFINITY).show(ui, |ui| {
-                ui.style_mut().spacing.item_spacing *= 1.5;
-                ui.style_mut().spacing.button_padding *= 1.5;
-                for (_style, font_id) in ui.style_mut().text_styles.iter_mut() {
-                    font_id.size *= 1.2;
-                }
-                match &mut self.current_file {
-                    CurrentFile::LoadedWeb { loaded, .. } | CurrentFile::Loaded { loaded, .. } => {
-                        let mut edit_ctx = EditContext::new(
-                            &game_ctx.type_map,
-                            &self.search.fields,
-                            &self.search.leaf_nodes,
-                            &self.search.range,
-                            &mut game_ctx.copy_buffer,
-                            self.language,
-                            &game_ctx.remaps,
-                            &game_ctx.assets
-                        );
-                        loaded.edit(ui, &mut edit_ctx);
+            ScrollArea::both()
+                .auto_shrink(false)
+                .max_width(f32::INFINITY)
+                .show(ui, |ui| {
+                    ui.style_mut().spacing.item_spacing *= 1.5;
+                    ui.style_mut().spacing.button_padding *= 1.5;
+                    for (_style, font_id) in ui.style_mut().text_styles.iter_mut() {
+                        font_id.size *= 1.2;
                     }
-                    _ => {
-                        ui.label("No File Loaded.");
-                        #[cfg(target_arch = "wasm32")]
-                        ui.label("Drag and Drop or use the file dialog");
-                        #[cfg(target_os = "windows")]
-                        ui.label("Drag and Drop or use the file dialog");
+                    match &mut self.current_file {
+                        CurrentFile::LoadedWeb { loaded, .. }
+                        | CurrentFile::Loaded { loaded, .. } => {
+                            let mut edit_ctx = EditContext::new(
+                                &game_ctx.type_map,
+                                &self.search.fields,
+                                &self.search.leaf_nodes,
+                                &self.search.range,
+                                &mut game_ctx.copy_buffer,
+                                self.language,
+                                &game_ctx.remaps,
+                                &game_ctx.assets,
+                            );
+                            loaded.edit(ui, &mut edit_ctx);
+                        }
+                        _ => {
+                            ui.label("No File Loaded.");
+                            #[cfg(target_arch = "wasm32")]
+                            ui.label("Drag and Drop or use the file dialog");
+                            #[cfg(target_os = "windows")]
+                            ui.label("Drag and Drop or use the file dialog");
+                        }
                     }
-                }
-            });
+                });
         }
     }
 
@@ -292,12 +347,18 @@ impl FileView {
         self.show_popup = true;
     }
 
-    fn read_save<R: Read + Seek>(&mut self, reader: &mut R, game_ctx: &mut GameCtx) -> Option<SaveFile> {
+    fn read_save<R: Read + Seek>(
+        &mut self,
+        reader: &mut R,
+        game_ctx: &mut GameCtx,
+    ) -> Option<SaveFile> {
         if self.steam.steam_id.is_some() || self.brute_force {
-            let mut save_ctx = SaveContext{
+            let mut save_ctx = SaveContext {
                 key: if self.brute_force {
                     None
-                } else {self.steam.steam_id},
+                } else {
+                    self.steam.steam_id
+                },
                 game: self.game,
                 curve_index: None,
             };
@@ -307,28 +368,40 @@ impl FileView {
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
                 //let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);
-                let save_file = corrupted_reader.read_missing(&mut reader, &[(0xdbe3f199, "app.savedata.cUserSaveData"), (0x85e904c1, "via.storage.saveService.SaveFileDetail")]);
+                let save_file = corrupted_reader.read_missing(
+                    &mut reader,
+                    &[
+                        (0xdbe3f199, "app.savedata.cUserSaveData"),
+                        (0x85e904c1, "via.storage.saveService.SaveFileDetail"),
+                    ],
+                );
                 if self.brute_force {
-                    self.steam.steam_id = save_ctx.key; 
-                    if let Some(steam_id) = save_ctx.key { self.steam.steam_id_text = steam_id.to_string(); }
+                    self.steam.steam_id = save_ctx.key;
+                    if let Some(steam_id) = save_ctx.key {
+                        self.steam.steam_id_text = steam_id.to_string();
+                    }
                 }
-                return Some(save_file)
+                return Some(save_file);
             }
             match SaveFile::read(reader, &mut save_ctx) {
                 Ok(save) => {
                     if self.brute_force {
-                        self.steam.steam_id = save_ctx.key; 
-                        if let Some(steam_id) = save_ctx.key { self.steam.steam_id_text = steam_id.to_string(); }
+                        self.steam.steam_id = save_ctx.key;
+                        if let Some(steam_id) = save_ctx.key {
+                            self.steam.steam_id_text = steam_id.to_string();
+                        }
                     }
-                    return Some(save)
-                },
+                    return Some(save);
+                }
                 Err(e) => {
                     self.set_popup(format!("Error reading save: {e:?}"));
                 }
             }
             if self.brute_force {
-                self.steam.steam_id = save_ctx.key; 
-                if let Some(steam_id) = save_ctx.key { self.steam.steam_id_text = steam_id.to_string(); }
+                self.steam.steam_id = save_ctx.key;
+                if let Some(steam_id) = save_ctx.key {
+                    self.steam.steam_id_text = steam_id.to_string();
+                }
             }
         } else {
             self.set_popup(format!("Cannot load save without steamid, or brute force"));
@@ -388,7 +461,8 @@ impl FileView {
             CurrentFile::Path(path) => {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    let expanded = shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
+                    let expanded =
+                        shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
                     let path = PathBuf::from(expanded.as_ref());
                     if path.exists() {
                         match std::fs::File::open(&path) {
@@ -397,7 +471,7 @@ impl FileView {
                                 if let Some(save) = save {
                                     self.current_file = CurrentFile::Loaded {
                                         file_name: path.display().to_string(),
-                                        loaded: save 
+                                        loaded: save,
                                     };
                                     return true;
                                 }
@@ -411,8 +485,10 @@ impl FileView {
                     }
                 }
                 #[cfg(target_arch = "wasm32")]
-                log::error!("Cannot load as path {path} on web, there should be no way to get here");
-            },
+                log::error!(
+                    "Cannot load as path {path} on web, there should be no way to get here"
+                );
+            }
             CurrentFile::FileData { file_name, bytes } => {
                 let mut reader = Cursor::new(&bytes);
                 let save = self.read_save(&mut reader, game_ctx);
@@ -444,19 +520,23 @@ impl FileView {
                         bytes: bytes,
                     };
                 }
-            },
-            CurrentFile::LoadedWeb { file_name, original_bytes, .. } => {
+            }
+            CurrentFile::LoadedWeb {
+                file_name,
+                original_bytes,
+                ..
+            } => {
                 let mut reader = Cursor::new(&original_bytes);
                 let save = self.read_save(&mut reader, game_ctx);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::LoadedWeb {
                         file_name: file_name.to_string(),
                         original_bytes,
-                        loaded: save 
+                        loaded: save,
                     };
                     return true;
                 }
-            },
+            }
             CurrentFile::Loaded { .. } | CurrentFile::Null => {
                 self.current_file = CurrentFile::Path(self.input_file_picker.text.clone());
                 if self.reload(game_ctx) == false {
@@ -507,8 +587,7 @@ impl Search {
                         CurrentFile::Loaded { loaded, .. }
                         | CurrentFile::LoadedWeb { loaded, .. } => {
                             for field in &loaded.fields {
-                                if let Some(type_info) = type_map.get_by_hash(field.1.hash)
-                                {
+                                if let Some(type_info) = type_map.get_by_hash(field.1.hash) {
                                     let fs = type_map.search(
                                         type_info,
                                         &search_buffer,
@@ -587,8 +666,7 @@ impl Steam {
             let mut path = steam_path.clone();
             path.push("config/loginusers.vdf");
             println!("Searching for users in steam path {}", steam_path.display());
-            let users = steam::parse_accounts(&path)
-                .unwrap_or_default();
+            let users = steam::parse_accounts(&path).unwrap_or_default();
             println!("found {users:?}");
             users
         };
@@ -628,18 +706,22 @@ impl Steam {
             #[cfg(not(target_arch = "wasm32"))]
             users,
             #[cfg(not(target_arch = "wasm32"))]
-            selected_user_name: None
+            selected_user_name: None,
         }
     }
 
-
     pub fn edit_steam_id(&mut self, ui: &mut Ui) {
         ui.label("Steam ID:");
-        if ui.add(TextEdit::singleline(&mut self.steam_id_text)).changed() {
+        if ui
+            .add(TextEdit::singleline(&mut self.steam_id_text))
+            .changed()
+        {
             if let Ok(val) = u64::from_str_radix(&self.steam_id_text, 10) {
                 self.steam_id = Some(val);
                 #[cfg(not(target_arch = "wasm32"))]
-                { self.selected_user_name = None; }
+                {
+                    self.selected_user_name = None;
+                }
 
                 #[cfg(target_arch = "wasm32")]
                 {
@@ -652,9 +734,8 @@ impl Steam {
                 }
                 // TODO: do this natively too with a config?
             } else {
-                self.steam_id = None; 
+                self.steam_id = None;
             }
-
         }
     }
 
@@ -662,9 +743,12 @@ impl Steam {
     pub fn select_user(&mut self, ui: &mut Ui) {
         if !self.users.is_empty() {
             ui.label("Users");
-            let label = self.selected_user_name.clone().unwrap_or("Select User".to_string());
+            let label = self
+                .selected_user_name
+                .clone()
+                .unwrap_or("Select User".to_string());
             ComboBox::from_id_salt("users_select")
-                .selected_text(label) 
+                .selected_text(label)
                 .show_ui(ui, |ui| {
                     for account in &self.users {
                         if ui.selectable_label(false, &account.persona_name).clicked() {
@@ -678,7 +762,7 @@ impl Steam {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn edit_steam_path(&mut self, ui: &mut Ui) -> bool{
+    pub fn edit_steam_path(&mut self, ui: &mut Ui) -> bool {
         ui.label("Steam Path: ");
         let mut buf = self.steam_path.display().to_string();
         let res = ui.text_edit_singleline(&mut buf).changed();
@@ -704,7 +788,7 @@ impl Steam {
                 let save_files = get_save_files(&self.steam_path, steam_id, _game);
                 if !save_files.is_empty() {
                     ComboBox::from_id_salt("save_select")
-                        .selected_text("Select Save File") 
+                        .selected_text("Select Save File")
                         .show_ui(ui, |ui| {
                             for file in &save_files {
                                 let val = file.to_string_lossy().to_string();
@@ -723,9 +807,19 @@ impl Steam {
 pub enum CurrentFile {
     Null,
     Path(String),
-    FileData { file_name: String, bytes: Vec<u8> },
-    Loaded { file_name: String, loaded: SaveFile },
-    LoadedWeb { file_name: String, original_bytes: Vec<u8>, loaded: SaveFile },
+    FileData {
+        file_name: String,
+        bytes: Vec<u8>,
+    },
+    Loaded {
+        file_name: String,
+        loaded: SaveFile,
+    },
+    LoadedWeb {
+        file_name: String,
+        original_bytes: Vec<u8>,
+        loaded: SaveFile,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -740,25 +834,32 @@ pub struct FilePicker<const FOLDER: bool> {
     rx: Receiver<FilePickResult>,
     label: String,
     text: String,
-    pending_result: Option<FilePickResult>
+    pending_result: Option<FilePickResult>,
 }
 
 impl CurrentFile {
     pub fn get_file_name(&self) -> Option<&str> {
         match self {
-            CurrentFile::Null | CurrentFile::FileData {..} => None,
+            CurrentFile::Null | CurrentFile::FileData { .. } => None,
             CurrentFile::Path(path) => Some(path.as_str()),
-            CurrentFile::Loaded { file_name, ..} | CurrentFile::LoadedWeb { file_name, .. } => Some(file_name.as_str())
+            CurrentFile::Loaded { file_name, .. } | CurrentFile::LoadedWeb { file_name, .. } => {
+                Some(file_name.as_str())
+            }
         }
     }
-    pub fn write_save_to_buf(&self, key: u64) -> Result<(String, Vec<u8>), Box<dyn Error>> {
+    pub fn write_save_to_buf(
+        &self,
+        key: u64,
+        curve_index: Option<usize>,
+    ) -> Result<(String, Vec<u8>), Box<dyn Error>> {
         match self {
-            CurrentFile::Null | CurrentFile::Path(_)| CurrentFile::FileData {..} => {
+            CurrentFile::Null | CurrentFile::Path(_) | CurrentFile::FileData { .. } => {
                 Err("Can't save unloaded file".into())
             }
-            CurrentFile::Loaded { file_name, loaded } | CurrentFile::LoadedWeb { file_name, loaded, .. } => {
-                Ok((file_name.clone(), loaded.to_bytes(key)?))
-            }
+            CurrentFile::Loaded { file_name, loaded }
+            | CurrentFile::LoadedWeb {
+                file_name, loaded, ..
+            } => Ok((file_name.clone(), loaded.to_bytes(key, curve_index)?)),
         }
     }
 }
@@ -780,7 +881,7 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
         if let Ok(result) = self.rx.try_recv() {
             match &result {
                 FilePickResult::Native(p) => self.text = p.clone(),
-                FilePickResult::Wasm{ name, .. } => self.text = name.clone(),
+                FilePickResult::Wasm { name, .. } => self.text = name.clone(),
             }
             self.pending_result = Some(result);
         }
@@ -795,8 +896,8 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
         if let Some(result) = &self.pending_result {
             return Some(match result {
                 FilePickResult::Native(p) => p.clone(),
-                FilePickResult::Wasm{ name, .. } => name.clone(),
-            })
+                FilePickResult::Wasm { name, .. } => name.clone(),
+            });
         }
         None
     }
@@ -840,9 +941,7 @@ impl<const FOLDER: bool> FilePicker<FOLDER> {
         #[cfg(not(target_arch = "wasm32"))]
         std::thread::spawn(move || {
             let cur = std::env::current_dir().unwrap_or(PathBuf::from("~"));
-            let dialog = rfd::FileDialog::new()
-                .set_directory(cur)
-                .set_title(&title);
+            let dialog = rfd::FileDialog::new().set_directory(cur).set_title(&title);
             let result = if FOLDER {
                 dialog.pick_folder()
             } else {

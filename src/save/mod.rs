@@ -76,7 +76,7 @@ pub struct SaveContext {
 }
 
 impl SaveFile {
-    pub fn to_bytes(&self, key: u64) -> crate::file::Result<Vec<u8>> {
+    pub fn to_bytes(&self, key: u64, curve_index: Option<usize>) -> crate::file::Result<Vec<u8>> {
         let mut buf = Vec::new();
         let mut wrapper = Cursor::new(&mut buf);
 
@@ -129,8 +129,10 @@ impl SaveFile {
 
         if self.flags.contains(SaveFlags::CITRUS) {
             let decrypted_size = current_data.len() as u64;
-            let citrus = Citrus::new(key, Some(66));
-            current_data = citrus.encrypt(&current_data).unwrap();
+            let citrus = Citrus::new(key, curve_index);
+            current_data = citrus
+                .encrypt(&current_data)
+                .expect("Failed to encrypt with citrus");
             current_data.extend_from_slice(&decrypted_size.to_le_bytes());
         }
 
@@ -152,8 +154,13 @@ impl SaveFile {
         Ok(final_out)
     }
 
-    pub fn save(&self, path: &Path, key: u64) -> crate::file::Result<()> {
-        let bytes = self.to_bytes(key)?;
+    pub fn save(
+        &self,
+        path: &Path,
+        key: u64,
+        curve_index: Option<usize>,
+    ) -> crate::file::Result<()> {
+        let bytes = self.to_bytes(key, curve_index)?;
         std::fs::write(path, bytes)?;
         Ok(())
     }
