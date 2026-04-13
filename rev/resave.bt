@@ -18,7 +18,7 @@ LittleEndian();
 // ===============================================
 // Set this to whatever your decompressed file is offset by 
 // in the original memory space (e.g., 4 bytes).
-local int GLOBAL_VIRTUAL_OFFSET = 0;
+local int GLOBAL_VIRTUAL_OFFSET = 16;
 
 // Use this instead of FTell() for all alignment math!
 int VPos() {
@@ -34,37 +34,17 @@ void AlignUp(int align){
     }
 }
 
-void AlignUpOffset(int align, int offset) {
-    local int vpos = VPos();
-    local int remainder = vpos % align;
-    local int pad;
-    
-    if (remainder <= offset) {
-        pad = offset - remainder;
-    } else {
-        pad = (align - remainder) + offset;
+void EngineAlign(uint size) {
+    if (size == 1) {
+        return;
     }
-    
-    if (pad > 0) {
-        FSkip(pad);
-    }
-}
-
-void AlignUpNoSub(int align){
-    local int vpos = VPos();
-    local int pad = vpos % align;
-    if (pad > 0) {
-        FSkip(pad);
-    }
-}
-
-void AlignUpRelative(int align, int baseOffset) {
-    // Relative alignment cancels out the virtual offset, 
-    // so we can just use normal FTell() here.
-    local int relativePos = FTell() - baseOffset; 
-    local int remainder = relativePos % align;
-    if (remainder > 0) {
-        FSkip(align - remainder);
+    local uint mask = ~(size - 1);
+    local int64 pos = VPos();
+    local int64 new_pos = (pos + size - 1) & mask;
+    //FSeek(new_pos);
+    local int pad_size = new_pos - pos;
+    if (pad_size > 0) {
+        byte align_padding[pad_size] <fgcolor=cDkGray, comment="Bitwise Padding">;
     }
 }
 
@@ -148,59 +128,27 @@ string ReadStruct( Struct &val ) {
     return s;
 } 
 
-int GetStride(int size)
-{
-    if (size <= 0x10) return 0x10;
-    if (size <= 0x20) return 0x20;
-    if (size <= 0x40) return 0x40;
-    return GetAlignment(size);
-}
 
-int GetAlignment(int structSize) {
-    if (structSize == 0) return 1;
-    if (structSize % 16 == 0) return 16; 
-    if (structSize % 8 == 0)  return 8;  
-    if (structSize % 4 == 0)  return 4;
-    if (structSize % 2 == 0)  return 2;
-    return 1;
-}
+struct FieldStruct {
+    // 1. Read the size from the file
+    uint32 size <format=hex>;
+    
+    // 2. Fix the alignment using the broken logic
+    EngineAlign(size);
+    
+    // 3. Read the actual raw struct data
+    if (size > 0) {
+        byte struct_data[size] <fgcolor=cBlue>;
+    }
+};
 
 typedef struct (int field_base) {
     uint32 size <bgcolor=cSilver>;
-    
-    if (size == 24) {
-        AlignUp(8);
-        if (VPos() % 32 < 16) {
-            FSkip(16);
-        }
-    } else if (size == 32) {
-        AlignUpOffset(32, 0x10);
-    } else if (size == 64) {
-        AlignUpOffset(64, 48);
-    } else if (size == 12) {
-        AlignUp(4);
-        if (VPos() % 16 > 4) {
-            FSkip(8);
-        }
-    } else if (size == 112 || size == 114 || size == 116) {
-        AlignUp(16);
-        if (VPos() % 32 == 16) {
-            AlignUpOffset(128, size);
-        } else {
-            AlignUp(128);
-        }
-        if (size == 114) {
-            FSkip(-4);
-        }
-    } else if (size == 16) {
-        AlignUp(size);
-        //FSkip(4);
-    } else {
-        AlignUp(size);
-    }
+
+    EngineAlign(size);
     
     if(size > 0)
-        uint8 data[size] <bgcolor=cLtBlue>;
+        uint8 data[size] <bgcolor=cBlue>;
 } Struct <read=ReadStruct>;
 
 typedef struct {
@@ -265,48 +213,13 @@ struct Array {
                     for (i = 0; i < len; i++) {
                         struct {
                             local int size = arr_member_size;
-                            if (size == 24) {
-                                AlignUp(8);
-                                if (VPos() % 32 < 16) {
-                                    FSkip(16);
-                                }
-                            } else if (size == 12) {
-                                AlignUp(4);
-                                if (VPos() % 16 > 4) {
-                                    FSkip(8);
-                                }
-                            } else if (size == 32) {
-                                AlignUpOffset(32, 0x10);
-                            } else if (size == 64) {
-                                AlignUp(16);
-                                if (VPos() % 32 == 16) {
-                                    AlignUpOffset(128, size);
-                                } else {
-                                    AlignUp(128);
-                                }
-                             } else if (size == 116) {
-                                 AlignUp(16);
-                             }
-                             else if (size == 112 || size == 114) {
-                                AlignUp(16);
-                                if (VPos() % 32 == 16) {
-                                    AlignUpOffset(128, size);
-                                } else {
-                                    AlignUp(128);
-                                }
-                                if (size == 114) {
-                                    FSkip(-4);
-                                }
-                            }
-                            else {
-                                AlignUp(size);
-                            }
+                            EngineAlign(size);
                             if(arr_member_size > 0)
                                 uint8 data[arr_member_size] <bgcolor=cLtYellow>;
                         } value;
                     }
-                    AlignUp(4);
                 } values;
+                AlignUp(4);
             }
         }
     } else {
@@ -317,7 +230,6 @@ struct Array {
 };
 
 struct Field {
-    local int field_base = FTell(); // We keep physical FTell for exact offset recording
     uint32 hash <format=hex, bgcolor=cLtRed>;
     FieldType field_type <bgcolor=cLtPurple>;
 
@@ -326,7 +238,8 @@ struct Field {
     } else if (field_type == FT_Array) {
         Array array;
     } else if (field_type == FT_Struct){
-        Struct value(field_base);
+        FieldStruct value;
+        //Struct value(field_base);
     } else if (field_type == FT_String) {
         StringU16 value;
         AlignUp(4);

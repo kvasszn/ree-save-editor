@@ -187,36 +187,11 @@ impl FieldValue {
         field_type: FieldType,
         size: u32,
     ) -> Result<Self, Box<dyn Error>> {
-        if size == 12 {
-            reader.seek_align_up(4 as u64)?;
+        if size != 1 {
+            let size = size as u64;
             let pos = reader.stream_position()?;
-            if pos % 16 > 4 {
-                reader.seek(std::io::SeekFrom::Current(8))?;
-            }
-        } else if size == 24 {
-            reader.seek_align_up(8 as u64)?;
-            let pos = reader.stream_position()?;
-            if pos % 32 < 16 {
-                reader.seek(std::io::SeekFrom::Current(16))?;
-            }
-        } else if size == 32 {
-            reader.seek_align_up_offset(32, 16)?;
-        } else if size == 64 {
-            reader.seek_align_up_offset(64, 48)?;
-        }
-        // this shit is so fucking stupid but whatever
-        else if size == 112 || size == 114 || size == 116 {
-            reader.seek_align_up(16)?;
-            let pos = reader.stream_position()?;
-            if pos % 32 == 16 {
-                reader.seek_align_up_offset(128, size as u64)?;
-            } else {
-                reader.seek_align_up(128)?;
-            }
-            // i think size == 114 needs an fskip(-4) here for some fucking reason like what the
-            // what the fuck idk what im doing ahhhhhhhh
-        } else {
-            reader.seek_align_up(size as u64)?;
+            let new_offset = (pos + size - 1) & !(size - 1);
+            reader.seek(std::io::SeekFrom::Start(new_offset))?;
         }
         let value = match field_type {
             FieldType::Enum => {
@@ -285,32 +260,11 @@ impl FieldValue {
 
     pub fn write_sized<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
         let size = self.get_size();
-        if size == 12 {
-            w.write_align_up(4 as u64)?;
+        if size != 1 {
+            let size = size as u64;
             let pos = w.stream_position()?;
-            if pos % 16 > 4 {
-                w.write_all(&[0u8; 8])?;
-            }
-        } else if size == 24 {
-            w.write_align_up(8 as u64)?;
-            let pos = w.stream_position()?;
-            if pos % 32 < 16 {
-                w.write_all(&[0u8; 16])?;
-            }
-        } else if size == 32 {
-            w.write_align_up_offset(32, 16)?;
-        } else if size == 64 {
-            w.write_align_up_offset(64, 48)?;
-        } else if size == 112 || size == 114 || size == 116 {
-            w.write_align_up(16)?;
-            let pos = w.stream_position()?;
-            if pos % 32 == 16 {
-                w.write_align_up_offset(128, size as u64)?;
-            } else {
-                w.write_align_up(128)?;
-            }
-        } else {
-            w.write_align_up(size as u64)?;
+            let new_offset = (pos + size - 1) & !(size - 1);
+            w.write_all(&vec![0u8; (new_offset - pos) as usize])?;
         }
         let _ = match self {
             FieldValue::Enum(v) => match v {

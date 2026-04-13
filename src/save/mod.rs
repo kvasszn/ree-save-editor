@@ -55,6 +55,17 @@ impl SaveFlags {
             //_ => SaveFlags::empty(),
         }
     }
+
+    pub fn get_header_length(&self) -> usize {
+        let mut length = 16;
+        if *self == SaveFlags::DEFLATE {
+            length += 24;
+        }
+        if *self == SaveFlags::PHOTO {
+            length += 8;
+        }
+        length
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -69,12 +80,10 @@ impl SaveFile {
         let mut buf = Vec::new();
         let mut wrapper = Cursor::new(&mut buf);
 
-        // this is so dumb but whatever
-        let virtual_offset = if self.flags == SaveFlags::DEFLATE {
-            12
-        } else {
-            0
-        };
+        let mut virtual_offset = 16;
+        if self.flags == SaveFlags::DEFLATE {
+            virtual_offset += 12
+        }
         if virtual_offset > 0 {
             wrapper.write_all(&vec![0u8; virtual_offset])?;
         }
@@ -353,14 +362,9 @@ impl StructRW<SaveContext> for SaveFile {
             data
         };
 
-        //let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
-        //data[0..16].copy_from_slice(&good_header);
-        //let _ = std::fs::write("./outputs/raw_save.bin", &data);
-        // for some reason ps5 saves with just deflate are offset by 4 (might be all deflate
-        // things, but idk)
-
-        let buf = if flags == SaveFlags::DEFLATE {
-            let mut padded = vec![0u8; 12];
+        let virtual_offset = flags.get_header_length();
+        let buf = if virtual_offset != 0 {
+            let mut padded = vec![0u8; virtual_offset];
             padded.extend(&data);
             padded
         } else {
@@ -368,10 +372,8 @@ impl StructRW<SaveContext> for SaveFile {
         };
 
         let mut data = Cursor::new(buf);
+        data.set_position(virtual_offset as u64);
 
-        if flags == SaveFlags::DEFLATE {
-            data.set_position(12);
-        }
         let mut fields = Vec::new();
         while let Ok(h) = u32::read(&mut data, &mut ()) {
             match types::Class::read(&mut data) {
