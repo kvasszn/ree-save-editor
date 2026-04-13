@@ -18,7 +18,7 @@ LittleEndian();
 // ===============================================
 // Set this to whatever your decompressed file is offset by 
 // in the original memory space (e.g., 4 bytes).
-local int GLOBAL_VIRTUAL_OFFSET = -4;
+local int GLOBAL_VIRTUAL_OFFSET = 0;
 
 // Use this instead of FTell() for all alignment math!
 int VPos() {
@@ -185,7 +185,7 @@ typedef struct (int field_base) {
     } else if (size == 112 || size == 114 || size == 116) {
         AlignUp(16);
         if (VPos() % 32 == 16) {
-            AlignUpOffset(128, 112);
+            AlignUpOffset(128, size);
         } else {
             AlignUp(128);
         }
@@ -284,10 +284,13 @@ struct Array {
                                 } else {
                                     AlignUp(128);
                                 }
-                             } else if (size == 112 || size == 114 || size == 116) {
+                             } else if (size == 116) {
+                                 AlignUp(16);
+                             }
+                             else if (size == 112 || size == 114) {
                                 AlignUp(16);
                                 if (VPos() % 32 == 16) {
-                                    AlignUpOffset(128, 112);
+                                    AlignUpOffset(128, size);
                                 } else {
                                     AlignUp(128);
                                 }

@@ -38,7 +38,7 @@ impl SplitMix64 {
 }
 
 pub mod backend {
-// Using rug
+    // Using rug
     #[cfg(target_os = "linux")]
     pub mod rug {
         pub use rug::{Integer, integer::Order};
@@ -103,7 +103,9 @@ pub trait EccInteger: Sized + Clone + PartialOrd {
 
 #[cfg(target_os = "linux")]
 impl EccInteger for rug::Integer {
-    fn from_u64(val: u64) -> Self { rug::Integer::from(val) }
+    fn from_u64(val: u64) -> Self {
+        rug::Integer::from(val)
+    }
     fn mod_exp(&self, exp: &Self, modulus: &Self) -> Self {
         self.pow_mod_ref(exp, modulus).unwrap().into()
     }
@@ -128,16 +130,23 @@ impl EccInteger for rug::Integer {
     }
     fn mul_mod(&self, other: &Self, p: &Self) -> Self {
         use rug::Complete;
-        (self * other).complete() % p 
+        (self * other).complete() % p
     }
-    fn is_odd(&self) -> bool { self.is_odd() }
-    fn div_2(&self) -> Self { self.clone() >> 1 }
+    fn is_odd(&self) -> bool {
+        self.is_odd()
+    }
+    fn div_2(&self) -> Self {
+        self.clone() >> 1
+    }
 }
 
-
 impl EccInteger for num_bigint::BigInt {
-    fn from_u64(val: u64) -> Self { num_bigint::BigInt::from(val) }
-    fn mod_exp(&self, exp: &Self, modulus: &Self) -> Self { self.modpow(exp, modulus) }
+    fn from_u64(val: u64) -> Self {
+        num_bigint::BigInt::from(val)
+    }
+    fn mod_exp(&self, exp: &Self, modulus: &Self) -> Self {
+        self.modpow(exp, modulus)
+    }
     fn from_bytes_le(bytes: &[u8]) -> Self {
         num_bigint::BigInt::from_bytes_le(num_bigint::Sign::Plus, bytes)
     }
@@ -148,14 +157,26 @@ impl EccInteger for num_bigint::BigInt {
         out[..len].copy_from_slice(&digits[..len]);
         out
     }
-    fn add_mod(&self, other: &Self, p: &Self) -> Self { (self + other) % p }
+    fn add_mod(&self, other: &Self, p: &Self) -> Self {
+        (self + other) % p
+    }
     fn sub_mod(&self, other: &Self, p: &Self) -> Self {
         let res = (self - other) % p;
-        if res.sign() == num_bigint::Sign::Minus { res + p } else { res }
+        if res.sign() == num_bigint::Sign::Minus {
+            res + p
+        } else {
+            res
+        }
     }
-    fn mul_mod(&self, other: &Self, p: &Self) -> Self { (self * other) % p }
-    fn is_odd(&self) -> bool { !self.is_even() }
-    fn div_2(&self) -> Self { self >> 1 }
+    fn mul_mod(&self, other: &Self, p: &Self) -> Self {
+        (self * other) % p
+    }
+    fn is_odd(&self) -> bool {
+        !self.is_even()
+    }
+    fn div_2(&self) -> Self {
+        self >> 1
+    }
 }
 
 pub fn mod_inverse<T: EccInteger>(k: &T, p: &T) -> T {
@@ -166,10 +187,10 @@ pub fn mod_inverse<T: EccInteger>(k: &T, p: &T) -> T {
 }
 
 pub fn point_add<T: EccInteger>(
-    p1: Option<(T, T)>, 
-    p2: Option<(T, T)>, 
-    a: &T, 
-    p: &T
+    p1: Option<(T, T)>,
+    p2: Option<(T, T)>,
+    a: &T,
+    p: &T,
 ) -> Option<(T, T)> {
     // Handle identity element (Point at Infinity)
     let (x1, y1) = match &p1 {
@@ -219,12 +240,7 @@ pub fn point_add<T: EccInteger>(
     Some((x3, y3))
 }
 
-pub fn scalar_mult<T: EccInteger>(
-    k: &T, 
-    point: (T, T), 
-    a: &T, 
-    p: &T
-) -> Option<(T, T)> {
+pub fn scalar_mult<T: EccInteger>(k: &T, point: (T, T), a: &T, p: &T) -> Option<(T, T)> {
     let mut result: Option<(T, T)> = None;
     let mut addend = Some(point);
     let mut k = k.clone();

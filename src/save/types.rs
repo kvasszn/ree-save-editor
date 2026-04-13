@@ -1,19 +1,19 @@
-use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek, Write};
-use std::error::Error;
-use num_enum::TryFromPrimitive;
-use serde::Deserialize;
 use crate::save::remap::{Format, Remap};
 use crate::sdk::asset::Assets;
 use crate::sdk::type_map::{self, ContentLanguage, FieldInfo, TypeInfo, TypeMap};
 use crate::sdk::{types::*, value::Value};
+use num_enum::TryFromPrimitive;
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::error::Error;
+use std::io::{Cursor, Read, Seek, Write};
 
 use util::*;
 
 #[derive(Debug, Clone)]
 pub enum Ref {
     Index(usize),
-    Field(String)
+    Field(String),
 }
 
 // Some of this stuff comes from via.reflection.TypeKind
@@ -44,33 +44,33 @@ pub enum FieldType {
 impl FieldType {
     pub fn from_field_info(info: &FieldInfo) -> Self {
         if info.array {
-            return Self::Array
+            return Self::Array;
         }
 
         // enums
         if info.original_type.starts_with("System.Enum") {
-            return Self::Enum
+            return Self::Enum;
         }
         match info.r#type.as_str() {
             "S16" | "S32" | "S64" | "U32" | "U64" => {
                 if !info.original_type.starts_with("System.") {
-                    return Self::Enum
+                    return Self::Enum;
                 }
             }
-            _ => ()
+            _ => (),
         }
 
         match info.r#type.as_str() {
-            "Bool"  => return Self::Boolean,
-            "S8"  => return Self::S8,
+            "Bool" => return Self::Boolean,
+            "S8" => return Self::S8,
             "S16" => return Self::S16,
             "S32" => return Self::S32,
             "S64" => return Self::S64,
-            "U8"  => return Self::U8,
+            "U8" => return Self::U8,
             "U16" => return Self::U16,
             "U32" => return Self::U32,
             "U64" => return Self::U64,
-            "C8"  => return Self::C8,
+            "C8" => return Self::C8,
             "C16" => return Self::C16,
             "F32" => return Self::F32,
             "F64" => return Self::F64,
@@ -130,46 +130,43 @@ pub enum FieldValue {
     C16(u16),
     String(Box<StringU16>),
     Struct(Box<Struct>),
-    Class(Box<Class>)
+    Class(Box<Class>),
 }
 
 impl From<&FieldValue> for Value {
     fn from(value: &FieldValue) -> Self {
         match value {
-            FieldValue::S8(v)  => Value::S8(*v),
+            FieldValue::S8(v) => Value::S8(*v),
             FieldValue::S16(v) => Value::S16(*v),
             FieldValue::S32(v) => Value::S32(*v),
             FieldValue::S64(v) => Value::S64(*v),
-            FieldValue::U8(v)  => Value::U8(*v),
+            FieldValue::U8(v) => Value::U8(*v),
             FieldValue::U16(v) => Value::U16(*v),
             FieldValue::U32(v) => Value::U32(*v),
             FieldValue::U64(v) => Value::U64(*v),
-            _ => {
-                Value::Null
-            }
+            _ => Value::Null,
         }
     }
 }
 
 impl FieldValue {
-    pub fn read<R: Read + Seek>(reader: &mut R, field_type: FieldType) -> Result<Self, Box<dyn Error>> {
+    pub fn read<R: Read + Seek>(
+        reader: &mut R,
+        field_type: FieldType,
+    ) -> Result<Self, Box<dyn Error>> {
         let value = match field_type {
-            FieldType::Unknown => { 
-                /*println!("Unknown Field Type found");*/ 
-                return Err("Unknown Field Type".into())
+            FieldType::Unknown => {
+                /*println!("Unknown Field Type found");*/
+                return Err("Unknown Field Type".into());
             }
-            FieldType::Array => { 
-                FieldValue::Array(Array::read(reader)?.into())
-            }
-            FieldType::Class=> { 
-                FieldValue::Class(Class::read(reader)?.into())
-            }
-            FieldType::String => { 
+            FieldType::Array => FieldValue::Array(Array::read(reader)?.into()),
+            FieldType::Class => FieldValue::Class(Class::read(reader)?.into()),
+            FieldType::String => {
                 reader.seek_align_up(4)?;
                 let size = reader.read_u32()?;
-                let data = (0..size).map(|_| {
-                    Ok(reader.read_u16()?)
-                }).collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                let data = (0..size)
+                    .map(|_| Ok(reader.read_u16()?))
+                    .collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
                 FieldValue::String(Box::new(StringU16::new(data)))
             }
             // TODO: Add Struct weird shit handling
@@ -185,15 +182,18 @@ impl FieldValue {
 
     // When this is run for the Array struct, it should never be able to read an Object, I'm not
     // sure about array though
-    pub fn read_sized<R: Read + Seek>(reader: &mut R, field_type: FieldType, size: u32) -> Result<Self, Box<dyn Error>> {
+    pub fn read_sized<R: Read + Seek>(
+        reader: &mut R,
+        field_type: FieldType,
+        size: u32,
+    ) -> Result<Self, Box<dyn Error>> {
         if size == 12 {
             reader.seek_align_up(4 as u64)?;
             let pos = reader.stream_position()?;
             if pos % 16 > 4 {
                 reader.seek(std::io::SeekFrom::Current(8))?;
             }
-        }
-        else if size == 24 {
+        } else if size == 24 {
             reader.seek_align_up(8 as u64)?;
             let pos = reader.stream_position()?;
             if pos % 32 < 16 {
@@ -209,14 +209,13 @@ impl FieldValue {
             reader.seek_align_up(16)?;
             let pos = reader.stream_position()?;
             if pos % 32 == 16 {
-                reader.seek_align_up_offset(128, 112)?;
+                reader.seek_align_up_offset(128, size as u64)?;
             } else {
                 reader.seek_align_up(128)?;
             }
             // i think size == 114 needs an fskip(-4) here for some fucking reason like what the
             // what the fuck idk what im doing ahhhhhhhh
-        }
-        else {
+        } else {
             reader.seek_align_up(size as u64)?;
         }
         let value = match field_type {
@@ -229,37 +228,43 @@ impl FieldValue {
                     _ => return Err(format!("Invalid Enum size: {}", size).into()),
                 };
                 FieldValue::Enum(enum_val)
-            },
-            FieldType::Boolean => { FieldValue::Boolean(reader.read_bool()?) }
-            FieldType::S8 => { FieldValue::S8(reader.read_i8()?) }
-            FieldType::U8 => { FieldValue::U8(reader.read_u8()?) }
-            FieldType::S16 => { FieldValue::S16(reader.read_i16()?) }
-            FieldType::U16 => { FieldValue::U16(reader.read_u16()?) }
-            FieldType::S32 => { FieldValue::S32(reader.read_i32()?) }
-            FieldType::U32 => { FieldValue::U32(reader.read_u32()?) }
-            FieldType::S64 => { FieldValue::S64(reader.read_i64()?) }
-            FieldType::U64 => { FieldValue::U64(reader.read_u64()?) }
-            FieldType::F32 => { FieldValue::F32(reader.read_f32()?) }
-            FieldType::F64 => { FieldValue::F64(reader.read_f64()?) }
-            FieldType::C8 => { FieldValue::C8(reader.read_u8()?) }
-            FieldType::C16 => { FieldValue::C16(reader.read_u16()?) }
-            FieldType::Array => { FieldValue::Array(Array::read(reader)?.into())}
-            FieldType::Struct => { 
+            }
+            FieldType::Boolean => FieldValue::Boolean(reader.read_bool()?),
+            FieldType::S8 => FieldValue::S8(reader.read_i8()?),
+            FieldType::U8 => FieldValue::U8(reader.read_u8()?),
+            FieldType::S16 => FieldValue::S16(reader.read_i16()?),
+            FieldType::U16 => FieldValue::U16(reader.read_u16()?),
+            FieldType::S32 => FieldValue::S32(reader.read_i32()?),
+            FieldType::U32 => FieldValue::U32(reader.read_u32()?),
+            FieldType::S64 => FieldValue::S64(reader.read_i64()?),
+            FieldType::U64 => FieldValue::U64(reader.read_u64()?),
+            FieldType::F32 => FieldValue::F32(reader.read_f32()?),
+            FieldType::F64 => FieldValue::F64(reader.read_f64()?),
+            FieldType::C8 => FieldValue::C8(reader.read_u8()?),
+            FieldType::C16 => FieldValue::C16(reader.read_u16()?),
+            FieldType::Array => FieldValue::Array(Array::read(reader)?.into()),
+            FieldType::Struct => {
                 let mut data = vec![0u8; size as usize];
                 reader.read_exact(&mut data)?;
-                FieldValue::Struct(Box::new(Struct{ data }))
+                FieldValue::Struct(Box::new(Struct { data }))
             }
-            _ => return Err(format!("Unexpected sized read of {:?} for {:?}", size, field_type).into())
+            _ => {
+                return Err(
+                    format!("Unexpected sized read of {:?} for {:?}", size, field_type).into(),
+                );
+            }
         };
-        return Ok(value)
+        return Ok(value);
     }
 
     pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
         match self {
-            FieldValue::Unknown => { panic!("Unknown Field Type found") }
+            FieldValue::Unknown => {
+                panic!("Unknown Field Type found")
+            }
             FieldValue::Array(v) => v.write(w),
             FieldValue::Class(v) => v.write(w),
-            FieldValue::String(v) => { 
+            FieldValue::String(v) => {
                 w.write_align_up(4)?;
                 w.write(&(v.0.len() as u32).to_le_bytes())?;
                 for e in &v.0 {
@@ -277,7 +282,6 @@ impl FieldValue {
             }
         }
     }
-
 
     pub fn write_sized<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
         let size = self.get_size();
@@ -297,12 +301,11 @@ impl FieldValue {
             w.write_align_up_offset(32, 16)?;
         } else if size == 64 {
             w.write_align_up_offset(64, 48)?;
-        }
-        else if size == 112 || size == 114 || size == 116 {
+        } else if size == 112 || size == 114 || size == 116 {
             w.write_align_up(16)?;
             let pos = w.stream_position()?;
             if pos % 32 == 16 {
-                w.write_align_up_offset(128, 112)?;
+                w.write_align_up_offset(128, size as u64)?;
             } else {
                 w.write_align_up(128)?;
             }
@@ -329,14 +332,17 @@ impl FieldValue {
             FieldValue::S64(v) => w.write(&v.to_le_bytes())?,
             FieldValue::U64(v) => w.write(&v.to_le_bytes())?,
             FieldValue::F64(v) => w.write(&v.to_le_bytes())?,
-            FieldValue::Array(v) => {v.write(w)?; 0},
+            FieldValue::Array(v) => {
+                v.write(w)?;
+                0
+            }
             FieldValue::Struct(v) => {
                 for e in &v.data {
                     w.write(&e.to_le_bytes())?;
                 }
                 v.data.len()
             }
-            _ => 0
+            _ => 0,
         };
         Ok(())
     }
@@ -350,41 +356,69 @@ impl FieldValue {
                 EnumValue::E8(_) => 8,
             },
             FieldValue::Boolean(_) | FieldValue::U8(_) | FieldValue::S8(_) | FieldValue::C8(_) => 1,
-            FieldValue::U16(_) | FieldValue::S16(_) | FieldValue::C16(_)  => 2,
+            FieldValue::U16(_) | FieldValue::S16(_) | FieldValue::C16(_) => 2,
             FieldValue::U32(_) | FieldValue::S32(_) | FieldValue::F32(_) => 4,
             FieldValue::U64(_) | FieldValue::S64(_) | FieldValue::F64(_) => 8,
             FieldValue::Struct(v) => v.data.len() as u32,
-            _ => 0
+            _ => 0,
         }
     }
 
-
-    pub fn to_string(&self, field_type: &str, language: ContentLanguage, remaps: &HashMap<String, Remap>, type_map: &TypeMap, assets: &Assets) -> String {
+    pub fn to_string(
+        &self,
+        field_type: &str,
+        language: ContentLanguage,
+        remaps: &HashMap<String, Remap>,
+        type_map: &TypeMap,
+        assets: &Assets,
+    ) -> String {
         if let Some(remap) = &remaps.get(field_type) {
-            let evaluated = Format::eval(self, field_type, language, &remap.format, type_map, remaps, assets);
+            let evaluated = Format::eval(
+                self,
+                field_type,
+                language,
+                &remap.format,
+                type_map,
+                remaps,
+                assets,
+            );
             if let Some(evaluated) = evaluated {
                 return evaluated;
             }
         }
         match self {
-            FieldValue::Enum(v) => type_map.get_enum_str(&v.as_i64(), field_type).cloned().unwrap_or(v.as_i64().to_string()),
+            FieldValue::Enum(v) => type_map
+                .get_enum_str(&v.as_i64(), field_type)
+                .cloned()
+                .unwrap_or(v.as_i64().to_string()),
             FieldValue::Boolean(v) => v.to_string(),
             FieldValue::U8(v) => v.to_string(),
-            FieldValue::U16(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
-            FieldValue::U32(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::U16(v) => type_map
+                .get_enum_str(&v, field_type)
+                .cloned()
+                .unwrap_or(v.to_string()),
+            FieldValue::U32(v) => type_map
+                .get_enum_str(&v, field_type)
+                .cloned()
+                .unwrap_or(v.to_string()),
             FieldValue::U64(v) => v.to_string(),
             FieldValue::S8(v) => v.to_string(),
-            FieldValue::S16(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
-            FieldValue::S32(v) => type_map.get_enum_str(&v, field_type).cloned().unwrap_or(v.to_string()),
+            FieldValue::S16(v) => type_map
+                .get_enum_str(&v, field_type)
+                .cloned()
+                .unwrap_or(v.to_string()),
+            FieldValue::S32(v) => type_map
+                .get_enum_str(&v, field_type)
+                .cloned()
+                .unwrap_or(v.to_string()),
             FieldValue::S64(v) => v.to_string(),
             FieldValue::Unknown => "Unknown".to_string(),
-            FieldValue::Class(v) => {
-                v.to_string(language, type_map, remaps, assets).unwrap_or("".to_string())
-            }
+            FieldValue::Class(v) => v
+                .to_string(language, type_map, remaps, assets)
+                .unwrap_or("".to_string()),
             FieldValue::String(v) => v.to_string(),
             FieldValue::Struct(_) => "Struct".to_string(),
             _ => "(error) Invalid Field Type in to_string".to_string(),
-
         }
     }
     pub fn to_string_basic(&self) -> String {
@@ -401,7 +435,6 @@ impl FieldValue {
             FieldValue::S64(v) => v.to_string(),
             FieldValue::String(v) => v.to_string(),
             _ => "(error) Invalid Field Type in to_string_basic".to_string(),
-
         }
     }
 }
@@ -570,16 +603,16 @@ macro_rules! impl_generic_primitive {
 }
 
 impl_generic_primitive!(bool, Boolean);
-impl_generic_primitive!(i8,   S8);
-impl_generic_primitive!(u8,   U8);
-impl_generic_primitive!(i16,  S16);
-impl_generic_primitive!(u16,  U16);
-impl_generic_primitive!(i32,  S32);
-impl_generic_primitive!(u32,  U32);
-impl_generic_primitive!(i64,  S64);
-impl_generic_primitive!(u64,  U64);
-impl_generic_primitive!(f32,  F32);
-impl_generic_primitive!(f64,  F64);
+impl_generic_primitive!(i8, S8);
+impl_generic_primitive!(u8, U8);
+impl_generic_primitive!(i16, S16);
+impl_generic_primitive!(u16, U16);
+impl_generic_primitive!(i32, S32);
+impl_generic_primitive!(u32, U32);
+impl_generic_primitive!(i64, S64);
+impl_generic_primitive!(u64, U64);
+impl_generic_primitive!(f32, F32);
+impl_generic_primitive!(f64, F64);
 
 impl<'a> TryFromValue<'a> for &'a Class {
     fn try_from_value(value: &'a FieldValue) -> Option<Self> {
@@ -629,7 +662,6 @@ impl<'a> TryFromValue<'a> for Vec<u8> {
     }
 }
 
-
 impl<'a> TryFromValue<'a> for &'a Vec<u16> {
     fn try_from_value(value: &'a FieldValue) -> Option<Self> {
         match value {
@@ -638,7 +670,6 @@ impl<'a> TryFromValue<'a> for &'a Vec<u16> {
         }
     }
 }
-
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq, Eq)]
@@ -652,7 +683,7 @@ pub struct Array {
     pub member_type: FieldType,
     pub member_size: u32,
     pub array_type: ArrayType,
-    pub values: Vec<FieldValue>
+    pub values: Vec<FieldValue>,
 }
 
 impl Array {
@@ -666,21 +697,23 @@ impl Array {
         for _i in 0..len {
             let value = match array_type {
                 ArrayType::Value => {
-                    if member_type == FieldType::String { 
+                    if member_type == FieldType::String {
                         reader.seek_align_up(4)?;
                         let size = reader.read_u32()?;
-                        let data = (0..size).map(|_| {
-                            Ok(reader.read_u16()?)
-                        }).collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                        let data = (0..size).map(|_| Ok(reader.read_u16()?)).collect::<Result<
+                            Vec<u16>,
+                            Box<dyn Error>,
+                        >>(
+                        )?;
                         FieldValue::String(Box::new(StringU16::new(data)))
                     } else {
                         FieldValue::read_sized(reader, member_type, member_size)?
                     }
-                },
+                }
                 ArrayType::Class => {
                     let class = Class::read(reader)?;
                     FieldValue::Class(class.into())
-                },
+                }
             };
 
             values.push(value);
@@ -690,7 +723,7 @@ impl Array {
             member_type,
             member_size,
             array_type,
-            values
+            values,
         })
     }
 
@@ -712,7 +745,7 @@ impl Array {
                                 w.write(&v.to_le_bytes())?;
                             }
                         } else {
-                            return Err("Expected Array of Strings i think hopefully".into())
+                            return Err("Expected Array of Strings i think hopefully".into());
                         }
                     } else {
                         e.write_sized(w)?;
@@ -779,14 +812,14 @@ impl Field {
         let field_type = FieldType::try_from(reader.read_i32()?)?;
         let value = FieldValue::read(reader, field_type)?;
         /*if hash == 0xEF10B158 && pos == 0x190c {
-          println!("hash={hash:x}, {value:?}, ft={field_type:?}");
-          }*/
+        println!("hash={hash:x}, {value:?}, ft={field_type:?}");
+        }*/
         //println!("v={value:?}");
         seek_align_up(reader, 4)?;
         Ok(Self {
             hash,
             field_type,
-            value
+            value,
         })
     }
 
@@ -807,7 +840,6 @@ impl Field {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub data: Vec<u8>,
@@ -817,12 +849,11 @@ pub struct Struct {
 pub struct Class {
     pub num_fields: u32,
     pub hash: u32,
-    pub fields: Vec<Field>
+    pub fields: Vec<Field>,
 }
 
 impl Class {
     pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error>> {
-
         let num_fields = reader.read_u32()?;
         let hash = reader.read_u32()?;
         //println!("hash: {hash:0x}, num_fields: {num_fields}");
@@ -835,7 +866,7 @@ impl Class {
         Ok(Self {
             num_fields,
             hash,
-            fields
+            fields,
         })
     }
 
@@ -862,13 +893,11 @@ impl Class {
 
     pub fn find<'a>(&'a self, name: &'a str) -> Option<usize> {
         let hash = murmur3(name, 0xffffffff);
-        self.fields.iter().enumerate().find_map(|(i, f)| {
-            if f.hash == hash {
-                Some(i)
-            } else {
-                None
-            }
-        })
+        self.fields.iter().enumerate().find_map(
+            |(i, f)| {
+                if f.hash == hash { Some(i) } else { None }
+            },
+        )
     }
     pub fn get_field<'a>(&'a self, name: &'a str) -> Option<&'a Field> {
         let hash = murmur3(name, 0xffffffff);
@@ -943,7 +972,12 @@ impl Class {
         cur_value
     }
 
-    pub fn eval_refs_type<'a>(&'a self, refs: &'a Vec<Ref>, remaps: &HashMap<String, Remap>, type_map: &TypeMap) -> Option<String> {
+    pub fn eval_refs_type<'a>(
+        &'a self,
+        refs: &'a Vec<Ref>,
+        remaps: &HashMap<String, Remap>,
+        type_map: &TypeMap,
+    ) -> Option<String> {
         let mut cur_value = None;
         let mut cur_type = type_map.get_by_hash(self.hash);
         let mut it = refs.iter();
@@ -985,10 +1019,24 @@ impl Class {
         cur_type.map(|x| x.name.clone())
     }
 
-    pub fn to_string(&self, language: ContentLanguage, type_map: &TypeMap, remaps: &HashMap<String, Remap>, assets: &Assets) -> Option<String> { 
+    pub fn to_string(
+        &self,
+        language: ContentLanguage,
+        type_map: &TypeMap,
+        remaps: &HashMap<String, Remap>,
+        assets: &Assets,
+    ) -> Option<String> {
         let field_type = type_map.get_by_hash(self.hash)?.name.as_str();
         if let Some(remap) = &remaps.get(field_type) {
-            let evaluated = Format::eval_class(self, field_type, language, &remap.format, type_map, remaps, assets);
+            let evaluated = Format::eval_class(
+                self,
+                field_type,
+                language,
+                &remap.format,
+                type_map,
+                remaps,
+                assets,
+            );
             if let Some(evaluated) = evaluated {
                 return Some(evaluated);
             }
@@ -1001,17 +1049,14 @@ impl TryFrom<&Struct> for Mandrake {
     type Error = Box<dyn Error>;
     fn try_from(value: &Struct) -> Result<Self, Self::Error> {
         if value.data.len() > 16 {
-            return Err("Data Length > 16 for Mandrake".into())
+            return Err("Data Length > 16 for Mandrake".into());
         }
         let mut d = Cursor::new(&value.data);
         let v = d.read_i64()?;
         let m = d.read_i64()?;
-        Ok(Mandrake {
-            v, m
-        })
+        Ok(Mandrake { v, m })
     }
 }
-
 
 impl TryFrom<&Struct> for Vec2 {
     type Error = Box<dyn Error>;
