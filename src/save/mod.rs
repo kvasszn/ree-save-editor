@@ -5,7 +5,6 @@ pub mod remap;
 pub mod types;
 
 use std::{
-    fs::File,
     io::{Cursor, Read, Seek, SeekFrom, Write},
     path::Path,
 };
@@ -35,7 +34,7 @@ bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct SaveFlags: u32 {
         const BLOWFISH = 0x1;
-        const PHOTO = 0x2;
+        const RAW = 0x2;
         // const AUTOSTRONG = 0x16 // idk
         const CITRUS = 0x4;
         const DEFLATE = 0x8;
@@ -61,7 +60,7 @@ impl SaveFlags {
         if *self == SaveFlags::DEFLATE {
             length += 24;
         }
-        if *self == SaveFlags::PHOTO {
+        if *self == SaveFlags::RAW {
             length += 8;
         }
         length
@@ -73,6 +72,34 @@ pub struct SaveContext {
     pub key: Option<u64>,
     pub game: Game,
     pub curve_index: Option<usize>,
+}
+
+impl SaveContext {
+    pub fn from_game(game: Game) -> Self {
+        Self {
+            key: None,
+            curve_index: None,
+            game,
+        }
+    }
+
+    pub fn with_key(mut self, key: u64) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    pub fn from_key(key: u64, game: Game) -> Self {
+        Self {
+            key: Some(key),
+            curve_index: None,
+            game,
+        }
+    }
+
+    pub fn with_curve(mut self, curve_index: usize) -> Self {
+        self.curve_index = Some(curve_index);
+        self
+    }
 }
 
 impl SaveFile {
@@ -88,7 +115,7 @@ impl SaveFile {
             wrapper.write_all(&vec![0u8; virtual_offset])?;
         }
 
-        if self.flags.contains(SaveFlags::PHOTO) {
+        if self.flags.contains(SaveFlags::RAW) {
             wrapper.write_all(&(key & 0xffffffff).to_le_bytes())?;
         }
 
@@ -183,7 +210,7 @@ impl SaveFile {
         let flags = SaveFlags::from_bits_truncate(flags);
         println!("Flags: {:?}", flags);
 
-        if flags.contains(SaveFlags::PHOTO) {
+        if flags.contains(SaveFlags::RAW) {
             let _steamid32 = reader.read_u32()?;
             let _null = reader.read_u32()?;
         }
@@ -233,7 +260,13 @@ impl SaveFile {
         } else if flags.contains(SaveFlags::CITRUS) {
             let key = ctx.key.unwrap_or(0);
             let citrus = Citrus::new(key, ctx.curve_index);
+            let mut curve_index = ctx.curve_index;
+            if let Some(curve) = citrus.brute_force_find_params(&encrypted, decrypted_len as usize) {
+                curve_index = Some(curve.index as usize);
+            }
+            let citrus = Citrus::new(key, curve_index);
             let decrypted = citrus.decrypt(&encrypted, decrypted_len as usize).unwrap();
+            ctx.curve_index = curve_index;
             decrypted
         } else {
             encrypted
@@ -285,7 +318,7 @@ impl StructRW<SaveContext> for SaveFile {
         let flags = SaveFlags::from_bits_truncate(flags);
         println!("Flags: {:?}", flags);
 
-        if flags.contains(SaveFlags::PHOTO) {
+        if flags.contains(SaveFlags::RAW) {
             let _steamid32 = reader.read_u32()?;
             let _null = reader.read_u32()?;
         }
@@ -331,12 +364,18 @@ impl StructRW<SaveContext> for SaveFile {
             ctx.key = Some(key);
             let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
             log::info!("[Decrypted]");
-            let _ = std::fs::write("./outputs/raw_save_compressed.bin", &decrypted_buf);
+            //let _ = std::fs::write("./outputs/raw_save_compressed.bin", &decrypted_buf);
             decrypted_buf
         } else if flags.contains(SaveFlags::CITRUS) {
             let key = ctx.key.unwrap_or(0);
             let citrus = Citrus::new(key, ctx.curve_index);
+            let mut curve_index = ctx.curve_index;
+            if let Some(curve) = citrus.brute_force_find_params(&encrypted, decrypted_len as usize) {
+                curve_index = Some(curve.index as usize);
+            }
+            let citrus = Citrus::new(key, curve_index);
             let decrypted = citrus.decrypt(&encrypted, decrypted_len as usize).unwrap();
+            ctx.curve_index = curve_index;
             decrypted
         } else {
             encrypted

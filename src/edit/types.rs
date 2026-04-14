@@ -470,7 +470,6 @@ impl Editable for FieldValue {
 // there's other stuff that's worse
 // this is just a mix of me and gemini cooking stupid shit up
 // but it works kinda decent so its chill
-// TODO: Fix the stupid thing where subsequent scroll areas are smaller than the first
 impl Editable for Array {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
         ui.push_id(ctx.id, |ui| {
@@ -763,6 +762,8 @@ impl Class {
         let edit_bitset = |ui: &mut Ui, a: &mut Array, generic: Option<&str>| {
             ui.horizontal(|ui| {
                 let mut count = 0;
+
+                // button to set all values to 1 or 0
                 if ui.small_button("Check All").clicked() {
                     for v in &mut a.values {
                         if count >= max_element {
@@ -797,7 +798,7 @@ impl Class {
                     ctx.type_map.enums.get(g)
                 }
             });
-            println!("{enums:?}");
+            //println!("{enums:?}");
             let mut count = 0usize;
             for v in &mut a.values {
                 let Some(x) = v.as_u32_mut() else { continue };
@@ -1566,11 +1567,11 @@ impl Class {
         })
     }
 
-    fn edit_as_photodata(&mut self, ui: &mut Ui, ctx: &mut EditContext) {
-        let serialize_data = self.get_array("SerializeData");
+    fn edit_as_photodata(&mut self, ui: &mut Ui, ctx: &mut EditContext, data_field_name: &str) {
+        let serialize_data = self.get_array(data_field_name);
         if let Some(serialize_data) = serialize_data {
             let ptr_address = serialize_data.values.as_ptr() as usize;
-            let cache_id = ui.make_persistent_id(("SerializeData", ctx.id, ptr_address));
+            let cache_id = ui.make_persistent_id((data_field_name, ctx.id, ptr_address));
 
             if ui.button("Upload").clicked() {
                 if let Some(path) = rfd::FileDialog::new()
@@ -1580,7 +1581,7 @@ impl Class {
                     // Read the file from disk
                     if let Ok(new_bytes) = std::fs::read(&path) {
                         // unwrap is safe here because of the previous check
-                        let serialize_data = self.get_array_mut("SerializeData")
+                        let serialize_data = self.get_array_mut(data_field_name)
                             .unwrap();
 
                         let field_values: Vec<FieldValue> = new_bytes.iter().map(|b| FieldValue::U8(*b)).collect();
@@ -1600,7 +1601,7 @@ impl Class {
             }
             let image_bytes: Arc<[u8]> = ui.data_mut(|data| {
                 let bytes: &mut Arc<[u8]> = data.get_temp_mut_or_insert_with(cache_id, || {
-                    self.get::<Vec<u8>>("SerializeData")
+                    self.get::<Vec<u8>>(data_field_name)
                         .unwrap_or_default()
                         .into()
                 });
@@ -1633,30 +1634,19 @@ impl Editable for Class {
                     }
                 }
                 match ti.name.as_str() {
-                    "app.savedata.cPhoto" => self.edit_as_photodata(ui, ctx),
+                    "app.savedata.cPhoto" => self.edit_as_photodata(ui, ctx, "SerializeData"),
+                    //"snow.AlbumSaveService.Photo" => self.edit_as_photodata(ui, ctx, "data"),
                     "ace.Bitset" => {
-                        /*let bitset = ctx.field_info.and_then(|f| {
-                          let x = ctx.parent_type.and_then(|t| {
-                          ctx.remaps.get(&t.name).and_then(|remap| {
-                        // TODO
-                        //remap.bitsets.get(&f.name)
-                        None
-                        })
+                        let bitset = ctx.field_info.and_then(|f| {
+                            let x = ctx.parent_type.and_then(|t| {
+                                ctx.remaps.get(&t.name).and_then(|remap| {
+                                    remap.fields.get(&f.name)
+                                })
+                            });
+                            x
                         });
-                        x
-                        });*/
-                        let bitset = None;
 
-                        /*let generics: Vec<&str> = if let Some(start) = remapped.find('<') {
-                          if let Some(end) = remapped.rfind('>') {
-                          let content = &remapped[start + 1..end];
-                          content.split(',').map(|s| s.trim()).collect::<Vec<&str>>()
-                          } else {
-                          Vec::new()
-                          }
-                          } else {Vec::new()};*/
-
-                        self.edit_as_bitset(bitset, ui, ctx);
+                        self.edit_as_bitset(bitset.map(|s| s.as_str()), ui, ctx);
                     }
                     "app.savedata.cEquipWork" => {
                         self.edit_as_equip_work(ui, ctx);

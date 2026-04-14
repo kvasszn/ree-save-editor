@@ -3,7 +3,7 @@ use std::{collections::HashMap};
 use regex::Regex;
 use serde::{Deserialize, Deserializer, de::Error};
 
-use crate::{rsz::rszserde::Guid, save::types::{Class, FieldValue, Ref}, sdk::{self, asset::Assets, type_map::{self, ContentLanguage, TypeMap}, value::Value}};
+use crate::{sdk::Guid, save::types::{Class, FieldValue, Ref}, sdk::{self, asset::Assets, type_map::{self, ContentLanguage, TypeMap}, value::Value}};
 
 /*#[derive(Deserialize, Debug, Clone)]
 pub struct Remap {
@@ -158,7 +158,7 @@ impl Format {
                                 let FormatType::Data(guid_data_name) = data_key.key.format.get(0)? else {return None};
                                 let data_val = Self::eval_rsz(guid_data_name, field, type_map, remap, assets)?;
                                 if let RszDataType::Value(value) = data_val {
-                                    if let Value::Guid(guid) = value {
+                if let Value::Guid(guid) = value {
                                         let guid = Guid(guid.0);
                                         if let Some(entry) = msg.get_entry(&guid, language) {
                                             let _ = write!(&mut string, "{entry}");
@@ -241,7 +241,7 @@ impl Format {
         if !trailing_literal.is_empty() {
             format.push(FormatType::Literal(trailing_literal.to_string()));
         }
-        println!("{format:?}");
+        //println!("{format:?}");
         Some(Self {
             format_str: format_str.to_string(),
             format

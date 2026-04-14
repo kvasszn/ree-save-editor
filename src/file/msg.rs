@@ -1,15 +1,26 @@
-use std::{collections::HashMap, io::Cursor};
+use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}};
 use std::sync::OnceLock;
 
-use crate::rsz::rszserde::Guid;
-use crate::file::{StructRW, DefaultDump};
+use serde::{Deserialize, Serialize};
+use util::ReadExt;
+use uuid::Uuid; 
+
+use crate::sdk::Guid;
+use crate::file::{StructRW, DefaultDump, Result};
 use crate::sdk::type_map::ContentLanguage;
-use serde::Deserialize;
-use serde::{ser::SerializeStruct, Serialize};
 
 const KEY: [u8; 16] = [
     207, 206, 251, 248, 236, 10, 51, 102, 147, 169, 29, 147, 80, 57, 95, 9,
 ];
+
+type Result2<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+pub struct MsgContext<'a, 'b> {
+    pub data_offset: u64,
+    pub lang_count: u32,
+    pub attr_count: u32,
+    pub cursor: &'a mut Cursor<&'b [u8]>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MsgAttribute {
@@ -19,118 +30,199 @@ pub enum MsgAttribute {
     Unknown(u64),
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct MsgEncryptedData {
-    data: Vec<u8>,
-}
-
-type Result2<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-impl<C> StructRW<C> for MsgEncryptedData {
-    fn read<R: std::io::Read + std::io::Seek>(reader: &mut R, _ctx: &mut C) -> Result2<Self>
-    where
-        Self: Sized,
-    {
-        let mut data = vec![];
-        reader.read_to_end(&mut data)?;
-        let mut prev_byte = 0;
-        for i in 0..data.len() {
-            let cur = data[i];
-            data[i] = prev_byte ^ data[i] ^ KEY[i & 0xf];
-            prev_byte = cur;
-        }
-        Ok(Self { data: data })
+impl<'a, 'b> StructRW<MsgContext<'a, 'b>> for MsgAttribute {
+    fn read<R: Read + Seek>(reader: &mut R, _ctx: &mut MsgContext<'a, 'b>) -> Result2<Self> {
+        let attr = reader.read_u64()?;
+        Ok(Self::Int(attr as i64))
     }
 }
-
-
-#[allow(unused)]
-#[derive(Clone, Debug, file_macros::StructRW, Serialize, Deserialize)]
-#[depends_on(
-    data_offset: u64,
-    //data: &'a MsgEncryptedData,
-    lang_count: u32,
-    attr_count: u32,
-    cursor: Cursor<&'a [u8]>
-    )
-]
-pub struct MsgEntry {
-    guid: Guid,
-    unk: u32,
-    hash: u32,
-    name: MsgString,
-    attributes_offset: u64,
-    #[varlist(ty = MsgString, count = ctx.lang_count)]
-    content: Vec<MsgString>,
-    #[varlist(ty = MsgAttribute, count = ctx.attr_count, offset = attributes_offset)]
-    attributes: Vec<MsgAttribute>,
-}
-
-
-impl<'a> StructRW<MsgEntryContext<'a>> for MsgAttribute {
-    fn read<R: std::io::Read + std::io::Seek>(reader: &mut R, _ctx: &mut MsgEntryContext<'a>) -> Result2<Self>
-            where
-                Self: Sized {
-                    let attr = u64::read(reader, &mut ())?;
-                    Ok(Self::Int(attr as i64))
-    }
-}
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MsgString(pub String);
 
-impl<'a> StructRW<MsgEntryContext<'a>> for MsgString {
-    fn read<R: std::io::Read + std::io::Seek>(reader: &mut R, ctx: &mut MsgEntryContext<'a>) -> Result2<Self>
-    where
-        Self: Sized {
-            let offset = <u64>::read(reader, &mut ())?;
-            ctx.cursor.set_position(offset - ctx.data_offset);
-            let mut buf: Vec<u16> = vec![];
-            loop {
-                let c = <u16>::read(&mut ctx.cursor, &mut ())?;
-                if c == 0 {
-                    break;
-                }
-                buf.push(c);
+impl<'a, 'b> StructRW<MsgContext<'a, 'b>> for MsgString {
+    fn read<R: Read + Seek>(reader: &mut R, ctx: &mut MsgContext<'a, 'b>) -> Result2<Self> {
+        let offset = reader.read_u64()?;
+        ctx.cursor.set_position(offset - ctx.data_offset);
+        
+        let mut buf: Vec<u16> = vec![];
+        loop {
+            let c = ctx.cursor.read_u16()?;
+            if c == 0 {
+                break;
             }
-            let string = String::from_utf16(&buf).unwrap();
-            Ok(Self(string))
+            buf.push(c);
         }
+        let string = String::from_utf16(&buf)?;
+        Ok(Self(string))
+    }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MsgEntry {
+    pub guid: Guid,
+    pub unk: u32,
+    pub hash: u32,
+    pub name: MsgString,
+    pub attributes_offset: u64,
+    pub content: Vec<MsgString>,
+    pub attributes: Vec<MsgAttribute>,
+}
 
-#[derive(Clone, Debug, file_macros::StructRW, Deserialize)]
-#[allow(unused)]
+impl<'a, 'b> StructRW<MsgContext<'a, 'b>> for MsgEntry {
+    fn read<R: Read + Seek>(reader: &mut R, ctx: &mut MsgContext<'a, 'b>) -> Result2<Self> {
+        let guid: Guid = Guid(reader.read_u8_arr()?);
+        //let guid = <Guid>::read(reader, &mut ())?;
+        let unk = reader.read_u32()?;
+        let hash = reader.read_u32()?;
+        let name = MsgString::read(reader, ctx)?;
+        let attributes_offset = reader.read_u64()?;
+
+        let mut content = Vec::with_capacity(ctx.lang_count as usize);
+        for _ in 0..ctx.lang_count {
+            content.push(MsgString::read(reader, ctx)?);
+        }
+
+        // Save position, jump to attributes, read them, and jump back
+        let pos = reader.stream_position()?;
+        reader.seek(SeekFrom::Start(attributes_offset))?;
+        
+        let mut attributes = Vec::with_capacity(ctx.attr_count as usize);
+        for _ in 0..ctx.attr_count {
+            attributes.push(MsgAttribute::read(reader, ctx)?);
+        }
+        
+        reader.seek(SeekFrom::Start(pos))?;
+
+        Ok(MsgEntry {
+            guid,
+            unk,
+            hash,
+            name,
+            attributes_offset,
+            content,
+            attributes,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MsgEncryptedData {
+    pub data: Vec<u8>,
+}
+
+impl<C> StructRW<C> for MsgEncryptedData {
+    fn read<R: Read + Seek>(reader: &mut R, _ctx: &mut C) -> Result2<Self> {
+        let mut data = vec![];
+        reader.read_to_end(&mut data)?;
+        
+        let mut prev_byte = 0;
+        for i in 0..data.len() {
+            let cur = data[i];
+            data[i] = prev_byte ^ cur ^ KEY[i & 0xf];
+            prev_byte = cur;
+        }
+        Ok(Self { data })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Msg {
-    version: u32,
-    #[magic = b"GMSG"]
-    magic: [u8; 4],
-    header_offset: u64,
-    entry_count: u32,
-    attr_count: u32,
-    lang_count: u32,
-    null: u32,
-    data_offset: u64,
-    p_offset: u64,
-    lang_offset: u64,
-    attr_type_offset: u64,
-    attr_type_name_offset: u64,
-    #[varlist(ty = u64, count = entry_count)]
-    entry_offsets: Vec<u64>,
-    #[varlist(ty = u32, count = lang_count, offset = lang_offset)]
-    languages: Vec<u32>,
-    #[var(u64, p_offset)]
-    p: u64,
-    #[varlist(ty = i32, count = attr_count, offset = attr_type_offset)]
-    attr_types: Vec<i32>,
-    #[var(MsgEncryptedData, data_offset)]
-    data: MsgEncryptedData,
-    #[varlist(ty = MsgString, count = attr_count, offset = attr_type_name_offset)]
-    #[context(MsgEntry, data_offset: data_offset, lang_count: lang_count, attr_count: attr_count, cursor: Cursor::new(&data.data))]
-    attr_names: Vec<MsgString>,
-    #[varlist(ty = MsgEntry, count = entry_count, offsets = entry_offsets)]
-    #[context(MsgEntry, data_offset: data_offset, lang_count: lang_count, attr_count: attr_count, cursor: Cursor::new(&data.data))]
-    entries: Vec<MsgEntry>,
+    pub version: u32,
+    pub magic: [u8; 4],
+    pub header_offset: u64,
+    pub entry_count: u32,
+    pub attr_count: u32,
+    pub lang_count: u32,
+    pub null: u32,
+    pub data_offset: u64,
+    pub p_offset: u64,
+    pub lang_offset: u64,
+    pub attr_type_offset: u64,
+    pub attr_type_name_offset: u64,
+    pub entry_offsets: Vec<u64>,
+    pub languages: Vec<u32>,
+    pub p: u64,
+    pub attr_types: Vec<i32>,
+    pub data: MsgEncryptedData,
+    pub attr_names: Vec<MsgString>,
+    pub entries: Vec<MsgEntry>,
+}
+
+impl StructRW<()> for Msg {
+    fn read<R: Read + Seek>(reader: &mut R, _ctx: &mut ()) -> Result2<Self> {
+        let version = reader.read_u32()?;
+        let mut magic = [0u8; 4];
+        reader.read_exact(&mut magic)?;
+        if &magic != b"GMSG" {
+            return Err("Invalid magic, expected GMSG".into());
+        }
+
+        let header_offset = reader.read_u64()?;
+        let entry_count = reader.read_u32()?;
+        let attr_count = reader.read_u32()?;
+        let lang_count = reader.read_u32()?;
+        let null = reader.read_u32()?;
+        let data_offset = reader.read_u64()?;
+        let p_offset = reader.read_u64()?;
+        let lang_offset = reader.read_u64()?;
+        let attr_type_offset = reader.read_u64()?;
+        let attr_type_name_offset = reader.read_u64()?;
+
+        // 1. Read flat arrays immediately
+        let mut entry_offsets = Vec::with_capacity(entry_count as usize);
+        for _ in 0..entry_count {
+            entry_offsets.push(reader.read_u64()?);
+        }
+
+        reader.seek(SeekFrom::Start(lang_offset))?;
+        let mut languages = Vec::with_capacity(lang_count as usize);
+        for _ in 0..lang_count {
+            languages.push(reader.read_u32()?);
+        }
+
+        reader.seek(SeekFrom::Start(p_offset))?;
+        let p = reader.read_u64()?;
+
+        reader.seek(SeekFrom::Start(attr_type_offset))?;
+        let mut attr_types = Vec::with_capacity(attr_count as usize);
+        for _ in 0..attr_count {
+            attr_types.push(reader.read_i32()?);
+        }
+
+        // 2. Read the entire encrypted block into memory
+        reader.seek(SeekFrom::Start(data_offset))?;
+        let data = MsgEncryptedData::read(reader, &mut ())?;
+
+        // 3. Set up the context containing the unencrypted memory buffer
+        let mut cursor = Cursor::new(data.data.as_slice());
+        let mut ctx = MsgContext {
+            data_offset,
+            lang_count,
+            attr_count,
+            cursor: &mut cursor,
+        };
+
+        // 4. Map the complex attributes
+        reader.seek(SeekFrom::Start(attr_type_name_offset))?;
+        let mut attr_names = Vec::with_capacity(attr_count as usize);
+        for _ in 0..attr_count {
+            attr_names.push(MsgString::read(reader, &mut ctx)?);
+        }
+
+        // 5. Map the main entries
+        let mut entries = Vec::with_capacity(entry_count as usize);
+        for offset in &entry_offsets {
+            reader.seek(SeekFrom::Start(*offset))?;
+            entries.push(MsgEntry::read(reader, &mut ctx)?);
+        }
+
+        Ok(Msg {
+            version, magic, header_offset, entry_count, attr_count, lang_count, null,
+            data_offset, p_offset, lang_offset, attr_type_offset, attr_type_name_offset,
+            entry_offsets, languages, p, attr_types, data, attr_names, entries,
+        })
+    }
 }
 
 impl Msg {
@@ -138,62 +230,9 @@ impl Msg {
         if let Some(entry) = self.entries.iter().find(|e| e.guid.0 == guid.0) {
             return entry.content.get(language as usize).map(|x| x.0.as_str())
         }
+        println!("Could not find entry for guid {}, {language:?}", guid.to_string());
         None
     }
 }
 
 impl DefaultDump for Msg {}
-
-impl Serialize for Msg {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
-        let mut state = serializer.serialize_struct("Msg", 3)?;
-        state.serialize_field("entries", &self.entries)?;
-        state.end()
-    }
-}
-
-pub fn lang_map() -> &'static HashMap<String, String> {
-    static HASHMAP: OnceLock<HashMap<String, String>> = OnceLock::new();
-    HASHMAP.get_or_init(|| {
-        let json_data = r#"{
-            "0": "Japanese",
-            "1": "English",
-            "2": "French",
-            "3": "Italian",
-            "4": "German",
-            "5": "Spanish",
-            "6": "Russian",
-            "7": "Polish",
-            "8": "Dutch",
-            "9": "Portuguese",
-            "10": "PortugueseBr",
-            "11": "Korean",
-            "12": "TransitionalChinese",
-            "13": "SimplelifiedChinese",
-            "14": "Finnish",
-            "15": "Swedish",
-            "16": "Danish",
-            "17": "Norwegian",
-            "18": "Czech",
-            "19": "Hungarian",
-            "20": "Slovak",
-            "21": "Arabic",
-            "22": "Turkish",
-            "23": "Bulgarian",
-            "24": "Greek",
-            "25": "Romanian",
-            "26": "Thai",
-            "27": "Ukrainian",
-            "28": "Vietnamese",
-            "29": "Indonesian",
-            "30": "Fiction",
-            "31": "Hindi",
-            "32": "LatinAmericanSpanish",
-            "33": "Unknown"
-        }"#;
-        let hashmap: HashMap<String, String> = serde_json::from_str(&json_data).unwrap();
-        hashmap
-    })
-}

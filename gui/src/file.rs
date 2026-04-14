@@ -57,6 +57,8 @@ impl FileView {
             Game::RE9
         } else if cfg!(feature = "mhst3") {
             Game::MHST3
+        } else if cfg!(feature = "mhrise") {
+            Game::MHRISE
         } else {
             Game::MHWILDS
         };
@@ -284,22 +286,13 @@ impl FileView {
         }
 
         ui.horizontal(|ui| {
-            //ui.label("Try Repairing Corruption (WIP)");
-            //ui.checkbox(&mut self.repair, "");
-            //ui.label("Brute Force SteamID");
             ui.checkbox(&mut self.brute_force, "Brute Force SteamID");
-            let mut has_value = self.curve_index.is_some();
-            if ui
-                .checkbox(&mut has_value, "Citrus Curve Index (for mh rise)")
-                .changed()
-            {
-                if has_value {
-                    self.curve_index = Some(0);
-                } else {
-                    self.curve_index = None;
-                }
-            }
+            ui.checkbox(&mut self.repair, "Try Repairing Corruption (WIP MOSTLY FOR DEBUG)");
+        });
+
+        ui.horizontal(|ui| {
             if let Some(val) = self.curve_index.as_mut() {
+                ui.label("Citrus Curve Index");
                 ui.add(egui::DragValue::new(val).speed(1.0));
             }
         });
@@ -360,7 +353,7 @@ impl FileView {
                     self.steam.steam_id
                 },
                 game: self.game,
-                curve_index: None,
+                curve_index: self.curve_index,
             };
 
             if self.repair {
@@ -385,6 +378,7 @@ impl FileView {
             }
             match SaveFile::read(reader, &mut save_ctx) {
                 Ok(save) => {
+                    self.curve_index = save_ctx.curve_index;
                     if self.brute_force {
                         self.steam.steam_id = save_ctx.key;
                         if let Some(steam_id) = save_ctx.key {
@@ -403,6 +397,7 @@ impl FileView {
                     self.steam.steam_id_text = steam_id.to_string();
                 }
             }
+            self.curve_index = save_ctx.curve_index;
         } else {
             self.set_popup(format!("Cannot load save without steamid, or brute force"));
         }

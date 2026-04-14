@@ -1,11 +1,12 @@
 use std::{collections::HashMap, error::Error, io::{self, Read, Seek, SeekFrom}};
 
+use serde::{Deserialize, Serialize};
 use util::{ReadExt, SeekExt};
 
-use crate::{save::types::Ref, sdk::{Object, deserializer::RszDeserializer, type_map::{self, TypeMap, murmur3}, types::TypeDescriptor, value::{Extern, Instance, Value}}};
+use crate::{save::types::Ref, sdk::{deserializer::RszDeserializer, type_map::{TypeMap, murmur3}, types::TypeDescriptor, value::{Extern, Instance, Value}}};
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rsz {
     pub roots: Vec<u32>,
     pub instances: Vec<Instance>,

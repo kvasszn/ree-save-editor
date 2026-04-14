@@ -1,21 +1,22 @@
 use half::f16;
+use serde::{Deserialize, Serialize};
 
 use crate::sdk::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Instance {
     pub hash: u32,
     pub fields: Vec<Value>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Extern {
     pub index: u32,
     pub r#type: String,
     pub path: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Object(u32),
     Array(Vec<Value>),

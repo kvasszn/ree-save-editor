@@ -9,6 +9,7 @@ use half::f16;
 use indexmap::IndexMap;
 use rsz_macros::{DeRszFrom, DeRszInstance};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use crate::reerr::{self, Result, RszError};
 use util::*;
 use super::{dump::{enum_map, get_enum_name, get_enum_val, RszDump, RszField, RszStruct}, Extern, Rsz, TypeDescriptor};
@@ -1493,6 +1494,12 @@ impl RszFromJson for Struct {
 
 #[derive(Debug, DeRszInstance, Clone, Copy, PartialEq)]
 pub struct Guid(pub [u8; 16]);
+impl ToString for Guid {
+    fn to_string(&self) -> String {
+        let uuid = Uuid::from_bytes_le(self.0);
+        uuid.to_string()
+    }
+}
 
 derive_dersz_from_json!(Guid);
 

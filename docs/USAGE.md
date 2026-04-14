@@ -1,5 +1,9 @@
 # Save Editor Usage Guide
 
+
+> [!IMPORTANT]
+> If using this for MH Rise Save Transferring, please make sure to follow the instructions [for rise](#monster-hunter-rise)
+
 > [!IMPORTANT]
 > ALWAYS MAKE BACKUPS BEFORE EDITING
 > *ALWAYS MAKE BACKUPS BEFORE EDITING*
@@ -17,7 +21,8 @@ Currently, only Wilds is supported, but I'm working other games.
 |-|-|-|
 |MH Wilds|2246340|✅ |
 |MH Stories 3|2852190|✅ WIP|
-|MH Rise|1446780|❌ WIP|
+|MH Rise|1446780|✅ WIP|
+|RE9|1446780|✅ WIP|
 |DD2|2054970|❌ WIP|
 |Pragmata|3357650|❌ WIP|
 
@@ -99,6 +104,17 @@ Transfering between steam accounts can be done by loading the save with the orig
 > For MH Wilds see: [Account Transfer](#account-transfer-and-slot-changing)
 
 ## Game Specific Editing
+
+### Monster Hunter Rise
+
+Transferring saves for rise is a little more complicated then other games due to how the encryption works. To properly transfer follow these steps to transfer to your account:
+1. Get your steamid64 and enter it into the editor
+1. Load your own mh rise save (it has to be attached to your steam account)
+1. Once loaded, a number should appear beside some text saying `Citrus Curve Index`, make note of it
+1. Enter the steamid64 of the save you're transferring to your account
+1. Load that save
+1. Change the `Citrus Curve Index` number to what you found in step 3
+1. Save
 
 ### Monster Hunter Wilds
 

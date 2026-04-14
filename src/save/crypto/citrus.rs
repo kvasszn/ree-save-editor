@@ -41,7 +41,7 @@ impl From<&CurveParamsRaw> for CurveParams {
 pub struct Citrus {
     steamid64: u64,
     d: Integer,
-    param_index: Option<usize>,
+    pub param_index: Option<usize>,
 }
 
 impl Citrus {
@@ -246,7 +246,7 @@ impl Citrus {
     }
 
     // for completeness, just do the whole thang until you find one that works
-    fn brute_force_find_params(&self, buf: &[u8], decrypted_len: usize) -> Option<CurveParams> {
+    pub fn brute_force_find_params(&self, buf: &[u8], decrypted_len: usize) -> Option<CurveParams> {
         let num_blocks = buf.len() / Self::BLOCK_SIZE;
         let mut key = [0u8; 16];
         let mut iv = [0u8; 16];
@@ -255,10 +255,10 @@ impl Citrus {
         let block = &buf[..Self::BLOCK_SIZE];
 
         println!(
-            "decrypted_len: {decrypted_len:x}, num_blocks: {num_blocks}, buflen {:x}",
+            "[INFO] Brute forcing: decrypted_len: {decrypted_len:x}, num_blocks: {num_blocks}, buflen {:x}",
             buf.len()
         );
-        println!(" {:x}", block.len());
+        //println!(" {:x}", block.len());
 
         // Decrypt the ECC encrypted keys
         key.copy_from_slice(&block[0..16]);
@@ -277,7 +277,7 @@ impl Citrus {
                 &block[32 + Self::ENC_KEYS_SIZE..32 + Self::ENC_KEYS_SIZE + Self::ENC_DATA_SIZE],
             );
             Self::aes_decrypt(&mut dec_buf, key, iv);
-            println!("{}, {:?}", curve.index, &dec_buf[0..32]);
+            //println!("{}, {:?}", curve.index, &dec_buf[0..32]);
             /*if &dec_buf[5..8] == &[0u8; 3] {
                 println!("[INFO] Found params at index {}", curve_params.index);
                 return Some(curve_params)
@@ -285,7 +285,7 @@ impl Citrus {
             // idk how much this actually works, could probably lower it to like 10%
             let num_zeros = dec_buf.iter().filter(|&&b| b == 0).count();
             if num_zeros > dec_buf.len() / 2 {
-                println!("[INFO] Found params at index {}", curve_params.index);
+                println!("[INFO] Brute Force: Found params at index {}", curve_params.index);
                 return Some(curve_params);
             }
         }
@@ -317,14 +317,9 @@ impl Citrus {
             let block = &buf[offset..offset + Self::BLOCK_SIZE];
             //println!(" {:x}", block.len());
             // Decrypt the ECC encrypted keys
-            // TODO: figure out how this shit even gets generated lmfao
-            // it probably is just mersennes shitter
-            // they might also be completely random!
-            // hahahahahahahahahahahahahahahaahahahahhaahhahahahah
-            // these are not the same on every save, so i'm hoping they are just completely random
             key.copy_from_slice(&block[0..16]);
             iv.copy_from_slice(&block[16..32]);
-            println!("key={}, iv={}", hex::encode(key), hex::encode(iv));
+            //println!("key={}, iv={}", hex::encode(key), hex::encode(iv));
             ecc_keys.copy_from_slice(&block[32..32 + Self::ENC_KEYS_SIZE]);
             Self::aes_decrypt(&mut ecc_keys, key, iv);
 
@@ -382,7 +377,6 @@ impl Citrus {
             decrypted_bytes += block_size;
         }
 
-        // TODO: FIgure out what the fuck is after this the little 0x1008 sized shit thing
         /* Ok so, 0x8 right after the data is probably a hash of some kind, im guessing the
         * plaintext
 
@@ -397,8 +391,7 @@ impl Citrus {
         // over to a new one?
         // also check the hash
         println!("[INFO] Citrus: total decrypted_bytes: {decrypted_bytes:x}, offset: {offset:x}");
-        println!("[INFO] probably at least a little decrypted");
-        let _ = std::fs::write("./outputs/decrypted.bin", &decrypted);
+        ////let _ = std::fs::write("./outputs/decrypted.bin", &decrypted);
         Some(decrypted)
     }
 

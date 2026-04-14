@@ -4,95 +4,36 @@ use crate::{edit::copy::CopyBuffer, save::{game::Game, remap::Remap}, sdk::{asse
 
 #[derive(Debug, Clone, Default)]
 pub struct AssetPaths {
-    rsz: Option<String>,
-    enums: Option<String>,
-    msgs: Option<String>,
-    mappings: Option<String>,
-    strings: Option<String>,
-    remap: Option<String>,
+    pub rsz: Option<String>,
+    pub enums: Option<String>,
+    pub msgs: Option<String>,
+    pub mappings: Option<String>,
+    pub strings: Option<String>,
+    pub remap: Option<String>,
+    pub packed_assets: Option<String>,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl AssetPaths {
     pub fn from_game(game: Game) -> Self {
         match game {
             Game::MHWILDS => {
                 Self {
-                    rsz: Some("./assets/mhwilds/rszmhwilds_packed.json".to_string()),
-                    enums: Some("./assets/mhwilds/enumsmhwilds.json".to_string()),
-                    msgs: Some("./assets/mhwilds/combined_msgs.json".to_string()),
-                    mappings: Some("./assets/mhwilds/enums_mappings_mhwilds.json".to_string()),
-                    strings: None,
-                    remap: Some("./assets/mhwilds/remapmhwilds.json".to_string())
-                }
-            },
-            Game::MHST3 => {
-                Self {
-                    rsz: Some("./assets/mhst3/rszmhst3.json".to_string()),
-                    enums: Some("./assets/mhst3/mhst3_enums.json".to_string()),
-                    msgs: None,
-                    mappings: None,
-                    strings: Some("./assets/mhst3/mhst3_strings.txt".to_string()),
-                    remap: Some("./assets/mhst3/mhst3_remap.json".to_string())
-                }
-            }
-            Game::DD2 => {
-                Self {
-                    rsz: Some("./assets/dd2/rszdd2.json".to_string()),
-                    enums: None,
-                    msgs: None,
-                    mappings: None,
-                    strings: None,
-                    remap: None,
-                }
-            }
-            Game::PRAGMATA => {
-                Self {
-                    rsz: Some("./assets/pragmata/rszpragmata.json".to_string()),
-                    enums: None,
-                    msgs: None,
-                    mappings: None,
-                    strings: None,
-                    remap: None,
-                }
-            },
-            Game::RE9 => {
-                Self {
-                    rsz: Some("./assets/re9/rszre9.json".to_string()),
-                    enums: Some("./assets/re9/enums_re9.json".to_string()),
-                    msgs: None,
-                    mappings: None,
-                    strings: Some("./assets/re9/strings.txt".to_string()),
-                    remap: Some("./assets/re9/remap.json".to_string()),
-                }
-            },
-            Game::MHRISE => {
-                Self {
-                    rsz: Some("./assets/mhrise/rszmhrise.json".to_string()),
-                    enums: None,
-                    msgs: None,
-                    mappings: None,
-                    strings: None,
-                    remap: None,
-                }
-            },
-            //_ => Self::default(),
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-impl AssetPaths {
-    pub fn from_game(game: Game) -> Self {
-        match game {
-            Game::MHWILDS => {
-                Self {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    rsz: Some("assets/mhwilds/rszmhwilds_packed.json".to_string()),
+                    #[cfg(target_arch = "wasm32")]
                     rsz: Some("assets/mhwilds/rszmhwilds_packed.json.gz".to_string()),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    enums: Some("assets/mhwilds/enumsmhwilds.json".to_string()),
+                    #[cfg(target_arch = "wasm32")]
                     enums: Some("assets/mhwilds/enumsmhwilds.json.gz".to_string()),
+                    #[cfg(not(target_arch = "wasm32"))]
+                    msgs: Some("assets/mhwilds/combined_msgs.json".to_string()),
+                    #[cfg(target_arch = "wasm32")]
                     msgs: Some("assets/mhwilds/combined_msgs.json.gz".to_string()),
                     mappings: Some("assets/mhwilds/enums_mappings_mhwilds.json".to_string()),
                     strings: None,
-                    remap: Some("assets/mhwilds/remapmhwilds.json".to_string())
+                    remap: Some("assets/mhwilds/remapmhwilds.json".to_string()),
+                    packed_assets: Some("assets/mhwilds/packed_assets.bc".to_string()),
                 }
             },
             Game::MHST3 => {
@@ -102,7 +43,8 @@ impl AssetPaths {
                     msgs: None,
                     mappings: None,
                     strings: Some("assets/mhst3/mhst3_strings.txt".to_string()),
-                    remap: Some("assets/mhst3/mhst3_remap.json".to_string())
+                    remap: Some("assets/mhst3/mhst3_remap.json".to_string()),
+                    packed_assets: None,
                 }
             }
             Game::DD2 => {
@@ -113,6 +55,7 @@ impl AssetPaths {
                     mappings: None,
                     strings: None,
                     remap: None,
+                    packed_assets: None,
                 }
             }
             Game::PRAGMATA => {
@@ -123,16 +66,18 @@ impl AssetPaths {
                     mappings: None,
                     strings: None,
                     remap: None,
+                    packed_assets: None,
                 }
-            }
+            },
             Game::RE9 => {
                 Self {
-                    rsz: None,
+                    rsz: Some("assets/re9/rszre9.json".to_string()),
                     enums: Some("assets/re9/enums_re9.json".to_string()),
                     msgs: None,
                     mappings: None,
                     strings: Some("assets/re9/strings.txt".to_string()),
                     remap: Some("assets/re9/remap.json".to_string()),
+                    packed_assets: None,
                 }
             },
             Game::MHRISE => {
@@ -143,6 +88,7 @@ impl AssetPaths {
                     mappings: None,
                     strings: None,
                     remap: None,
+                    packed_assets: None,
                 }
             },
             //_ => Self::default(),
@@ -161,8 +107,6 @@ pub struct GameCtx {
 impl GameCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(paths: &AssetPaths) -> Self {
-        use crate::sdk::type_map;
-
         let mut type_map = TypeMap::default();
         if let Some(path) = &paths.rsz {
             let _ = type_map.load_rsz_from_path(path)
@@ -198,8 +142,18 @@ impl GameCtx {
         };
 
         let mut assets = Assets::default();
-        let res = assets.load_by_remaps(&remaps, &type_map);
-        println!("Loading asset res {res:?}");
+        if let Some(packed_assets_path) = &paths.packed_assets {
+            println!("[INFO] Loading assets from bitcode binary");
+            let a = Assets::load_baked(&packed_assets_path);
+            match a {
+                Ok(a) => assets = a,
+                Err(e) => eprintln!("[ERROR] Loading assets {e}")
+            }
+        } else {
+            let res = assets.load_by_remaps(&remaps, &type_map);
+            println!("Loading asset res {res:?}");
+        };
+        //let res = assets.load_by_remaps(&remaps, &type_map);
 
         Self {
             type_map,

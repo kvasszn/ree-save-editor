@@ -3,7 +3,7 @@ VERSION=$1
 MODE=$2
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: ./build_release.sh <version> [mhwilds|re9|mhst3]"
+    echo "Usage: ./build_release.sh <version> [mhwilds|re9|mhst3|mhrise]"
     exit 1
 fi
 
@@ -32,7 +32,7 @@ if [ -z "$MODE" ] ;then
 	cp scripts/reset_tickets.lua $WINDOWS_PATH/scripts
 	cp scripts/reset_tickets.lua $LINUX_PATH/scripts
 elif [ "$MODE" == "mhwilds" ] ;then
-    ASSETS="combined_msgs.json empty_user_save.bin enums_mappings_mhwilds.json enumsmhwilds.json remapmhwilds.json rszmhwilds_packed.json"
+    ASSETS="combined_msgs.json empty_user_save.bin enums_mappings_mhwilds.json enumsmhwilds.json remapmhwilds.json rszmhwilds_packed.json packed_assets.bc"
 
 	mkdir -p "$WINDOWS_PATH/assets/mhwilds"
 	mkdir -p "$LINUX_PATH/assets/mhwilds"
@@ -65,6 +65,16 @@ elif [ "$MODE" == "mhst3" ] ;then
         echo "Copying $file..."
         cp "assets/mhst3/$file" "$WINDOWS_PATH/assets/mhst3/"
         cp "assets/mhst3/$file" "$LINUX_PATH/assets/mhst3/"
+    done
+elif [ "$MODE" == "mhrise" ] ;then
+    ASSETS="rszmhrise.json"
+
+	mkdir -p "$WINDOWS_PATH/assets/mhrise"
+	mkdir -p "$LINUX_PATH/assets/mhrise"
+    for file in $ASSETS; do
+        echo "Copying $file..."
+        cp "assets/mhrise/$file" "$WINDOWS_PATH/assets/mhrise/"
+        cp "assets/mhrise/$file" "$LINUX_PATH/assets/mhrise/"
     done
 fi
 
