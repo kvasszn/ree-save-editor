@@ -91,6 +91,17 @@ impl AssetPaths {
                     packed_assets: None,
                 }
             },
+            Game::SF6 => {
+                Self {
+                    rsz: Some("assets/sf6/rszsf6.json".to_string()),
+                    enums: None,
+                    msgs: None,
+                    mappings: None,
+                    strings: None,
+                    remap: None,
+                    packed_assets: None,
+                }
+            }
             //_ => Self::default(),
         }
     }

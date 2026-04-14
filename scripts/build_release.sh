@@ -9,7 +9,7 @@ fi
 
 WINDOWS_PATH="./outputs/${VERSION}${MODE}/windows"
 LINUX_PATH="./outputs/${VERSION}${MODE}/linux"
-rm -r "./outputs/$VERSION"
+rm -r "./outputs/$VERSION${MODE}"
 echo "Building Linux..."
 
 if [ -z $MODE ]; then
@@ -22,10 +22,12 @@ cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu  --release ${feature
 echo "Building Windows..."
 cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release ${features}
 
+mkdir -p "$WINDOWS_PATH"
+mkdir -p "$LINUX_PATH"
 
 if [ -z "$MODE" ] ;then
-    cp -r assets $WINDOWS_PATH/
-    cp -r assets $LINUX_PATH/
+	rsync -av --exclude='*.user.3' --exclude='*.msg.23' --exclude='*raw_enums/*' assets/ $WINDOWS_PATH/assets/
+	rsync -av --exclude='*.user.3' --exclude='*.msg.23' --exclude='*raw_enums/*' assets/ $LINUX_PATH/assets/
 
 	mkdir -p $LINUX_PATH/scripts
 	mkdir -p $WINDOWS_PATH/scripts
@@ -75,6 +77,16 @@ elif [ "$MODE" == "mhrise" ] ;then
         echo "Copying $file..."
         cp "assets/mhrise/$file" "$WINDOWS_PATH/assets/mhrise/"
         cp "assets/mhrise/$file" "$LINUX_PATH/assets/mhrise/"
+    done
+elif [ "$MODE" == "sf6" ] ;then
+    ASSETS="rszsf6.json"
+
+	mkdir -p "$WINDOWS_PATH/assets/sf5"
+	mkdir -p "$LINUX_PATH/assets/sf6"
+    for file in $ASSETS; do
+        echo "Copying $file..."
+        cp "assets/sf6/$file" "$WINDOWS_PATH/assets/mhrise/"
+        cp "assets/sf6/$file" "$LINUX_PATH/assets/mhrise/"
     done
 fi
 

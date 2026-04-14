@@ -50,7 +50,7 @@ impl SaveFlags {
             Game::MHST3 => SaveFlags::MANDARIN,
             Game::DD2 => SaveFlags::MANDARIN,
             Game::PRAGMATA => SaveFlags::MANDARIN,
-            Game::MHRISE => SaveFlags::CITRUS,
+            Game::MHRISE | Game::SF6 => SaveFlags::CITRUS,
             //_ => SaveFlags::empty(),
         }
     }
