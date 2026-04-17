@@ -571,13 +571,16 @@ impl Mandarin {
         // prng state to be correct
         let mut len_leftover = data_len;
         let mut num_real_blocks = 0;
+        let mut total_encrypted_len = 0x80;
         for i in 0..num_potential_blocks {
             let b = block_sizes[i as usize] as u64;
+            let block_size = b * 0x4000;
             num_real_blocks += 1;
-            if len_leftover <= b * 0x4000 {
+            total_encrypted_len += block_size + 0x210;
+            if len_leftover <= block_size {
                 break;
             }
-            len_leftover -= b * 0x4000;
+            len_leftover -= block_size;
         }
 
         //state_p = state_p.wrapping_add(unsafe{*(rands.as_ptr() as *const u64)});
@@ -587,7 +590,7 @@ impl Mandarin {
         let mut encrypted_start = 0;
         let mut decrypted_start = 0;
         let mut buf = vec![0u8; 0x20210];
-        let mut encrypted = vec![0u8; 0x200000];
+        let mut encrypted = vec![0u8; total_encrypted_len as usize];
         let mut remaining_bytes = data_len as usize;
 
         let auth = AuthCtx::init(!key).unwrap();
