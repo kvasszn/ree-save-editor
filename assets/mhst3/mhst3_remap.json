@@ -1,6 +1,6 @@
 {
     "app.savedata.cOtomonWork": {
-        "remap": {
+        "fields": {
             "ID_Fixed": "app.OtomonDef.ID_Fixed",
             "DualElement": "app.BattleDef.EREM_ATTR_TYPE_Fixed",
             "TrendSkill": "app.OtomonDef.TREND_SKILL_Fixed",
@@ -16,7 +16,7 @@
         "preview": "ID_Fixed"
     },
     "app.savedata.cEggWork": {
-        "remap": {
+        "fields": {
             "OtID_Fixed": "app.OtomonDef.ID_Fixed",
             "DualElemType_Fixed": "app.BattleDef.EREM_ATTR_TYPE_Fixed",
             "AreaID_Fixed": "app.StageDef.AreaID_Fixed",
@@ -29,7 +29,7 @@
         "preview": "OtID_Fixed"
     },
     "app.savedata.cEquipWork": {
-        "remap": {
+        "fields": {
             "EquipType": "app.EquipDef.DECORATION_EQUIP_TYPE"
         },
         "bitsets": {},

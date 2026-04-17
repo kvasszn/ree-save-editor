@@ -1,6 +1,6 @@
 {
     "app.SavedataObjectBase": {
-        "remap": {
+        "fields": {
             "_ObjectiveIDHash": "app.ObjectiveID.Hash",
             "_PlaceIDHash": "app.PlaceID.Hash",
             "_ThumbnailIDHash": "app.ThumbnailID.Hash"
@@ -9,14 +9,14 @@
         "preview": ""
     },
     "app.AchievementDataContext.Savedata": {
-        "remap": {
+        "fields": {
             "BonusIDHash": "app.BonusID.Hash"
         },
         "bitsets": {},
         "preview": ""
     },
     "app.AnalysisLogManagerApp.AttackKey.SaveData": {
-        "remap": {
+        "fields": {
             "_PlayerIDHash": "app.CharacterKindID.Hash",
             "_EnemyIDHash": "app.CharacterKindID.Hash",
             "_WeaponIDHash": "app.WeaponID.Hash"
@@ -25,7 +25,7 @@
         "preview": ""
     },
     "app.AnalysisLogManagerApp.GameOverKey.SaveData": {
-        "remap": {
+        "fields": {
             "_PlayerIDHash": "app.CharacterKindID.Hash",
             "_EnemyIDHash": "app.CharacterKindID.Hash",
             "_CauseOfDeathHash": "app.WeaponID.Hash"
@@ -34,7 +34,7 @@
         "preview": ""
     },
     "app.AnalysisLogManagerApp.CraftKey.SaveData": {
-        "remap": {
+        "fields": {
             "_PlayerIDHash": "app.CharacterKindID.Hash",
             "_ItemIDHash": "app.ItemID.Hash"
         },
@@ -42,7 +42,7 @@
         "preview": ""
     },
     "app.ConversationContext.BackupBase": {
-        "remap": {
+        "fields": {
             "_PlayerIDHash": "app.CharacterKindID.Hash",
             "_ItemIDHash": "app.ItemID.Hash"
         },
