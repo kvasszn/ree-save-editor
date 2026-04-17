@@ -1572,7 +1572,8 @@ impl Class {
         if let Some(serialize_data) = serialize_data {
             let ptr_address = serialize_data.values.as_ptr() as usize;
             let cache_id = ui.make_persistent_id((data_field_name, ctx.id, ptr_address));
-
+            
+            #[cfg(not(target_arch = "wasm32"))]
             if ui.button("Upload").clicked() {
                 if let Some(path) = rfd::FileDialog::new()
                     .add_filter("Images", &["jpg", "jpeg", "webp", "png"])

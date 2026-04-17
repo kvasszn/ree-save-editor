@@ -47,6 +47,10 @@ impl Assets {
 
     pub fn load_baked(path: &str) -> Result<Self> {
         let bytes = std::fs::read(path)?;
+        Self::load_baked_bytes(&bytes)
+    }
+
+    pub fn load_baked_bytes(bytes: &[u8]) -> Result<Self> {
         let assets: Assets = bincode::deserialize(&bytes)?;
         Ok(assets)
     }

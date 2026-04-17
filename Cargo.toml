@@ -91,6 +91,7 @@ elliptic-curve = "0.13.8"
 cbc = "0.1.2"
 sha3 = "0.11.0"
 rand = "0.10.1"
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
 bincode = "1.3.3"
 
 

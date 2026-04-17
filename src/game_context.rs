@@ -175,11 +175,28 @@ impl GameCtx {
                     .inspect_err(|e| log::error!("[ERROR] Could not load remaps from url {path}: {e}"));
             }
 
+            let mut game_assets = Assets::default();
+            if let Some(path) = &assets.packed_assets {
+                let _ = crate::with_str_loaded_from_url(path, |data| {
+                    println!("[INFO] Loading assets from bitcode binary");
+                    let a = Assets::load_baked_bytes(data.as_bytes());
+                    match a {
+                        Ok(a) => game_assets = a,
+                        Err(e) => eprintln!("[ERROR] Loading assets {e}")
+                    }
+                    Ok(())
+                }).await
+                    .inspect_err(|e| log::error!("[ERROR] Could not load strings from url {path}: {e}"));
+            } else {
+                let res = game_assets.load_by_remaps(&remaps, &type_map);
+                println!("Loading asset res {res:?}");
+            }
+
             let game_ctx = Self {
                 type_map,
                 copy_buffer: CopyBuffer::Null,
                 remaps,
-                assets: HashMap::new(),
+                assets: game_assets,
             };
             let _ = tx.send((game, game_ctx));
         });
