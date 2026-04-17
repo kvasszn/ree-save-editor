@@ -58,6 +58,9 @@ else
         "pragmata")
             ASSETS="rszpragmata.json enumspragmata.json strings_pragmata.txt"
             ;;
+        "dd2")
+            ASSETS="rszdd2.json enumsdd2.json"
+            ;;
         *)
             echo "Unknown mode: $MODE"
             exit 1

@@ -263,7 +263,7 @@ impl Mandarin {
     }*/
 
     #[cfg(target_arch = "wasm32")]
-    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
+    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
         let mut state_p: u64 = self.seed_for_enc_rand;
@@ -293,7 +293,8 @@ impl Mandarin {
             .into_par_iter()
             .find_map_any(|steamid| {
                 let mut mask = [0u8; 8];
-                let inv_key = !steamid;
+                let steamid_game = game.get_key_from_steamid(steamid as u64);
+                let inv_key = !(steamid_game as u64);
                 let mut state_p = initial_state_p.wrapping_add(inv_key);
                 for _ in 0..16 {
                     state_p = SplitMix64::next_int(&mut state_p);
@@ -320,7 +321,7 @@ impl Mandarin {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64) -> u64 {
+    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
         let mut state_p: u64 = self.seed_for_enc_rand;
@@ -356,7 +357,8 @@ impl Mandarin {
                 let mut checked = chunk_size;
                 let mut mask = [0u8; 8];
                 for (i, steamid) in steamids.iter().enumerate() {
-                    let inv_key = !(*steamid as u64);
+                    let steamid_game = game.get_key_from_steamid(*steamid as u64);
+                    let inv_key = !(steamid_game as u64);
                     let mut state_p = initial_state_p.wrapping_add(inv_key);
                     for _ in 0..16 {
                         state_p = SplitMix64::next_int(&mut state_p);

@@ -249,11 +249,11 @@ impl SaveFile {
         //reader.read_to_end(&mut encrypted)?;
         let data = if flags.contains(SaveFlags::MANDARIN) {
             let mandarin = Mandarin::init_from_game(ctx.game)?;
-            let key = ctx
+            let steamid = ctx
                 .key
-                .map(|steamid| ctx.game.get_key_from_steamid(steamid))
-                .unwrap_or_else(|| mandarin.brute_force(&encrypted, decrypted_len));
-            ctx.key = Some(key);
+                .unwrap_or_else(|| mandarin.brute_force(&encrypted, decrypted_len, ctx.game));
+            let key = ctx.game.get_key_from_steamid(steamid);
+            ctx.key = Some(steamid);
             let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
             log::info!("[Decrypted]");
             decrypted_buf
@@ -357,11 +357,11 @@ impl StructRW<SaveContext> for SaveFile {
         //reader.read_to_end(&mut encrypted)?;
         let data = if flags.contains(SaveFlags::MANDARIN) {
             let mandarin = Mandarin::init_from_game(ctx.game)?;
-            let key = ctx
+            let steamid = ctx
                 .key
-                .map(|steamid| ctx.game.get_key_from_steamid(steamid))
-                .unwrap_or_else(|| mandarin.brute_force(&encrypted, decrypted_len));
-            ctx.key = Some(key);
+                .unwrap_or_else(|| mandarin.brute_force(&encrypted, decrypted_len, ctx.game));
+            let key = ctx.game.get_key_from_steamid(steamid);
+            ctx.key = Some(steamid);
             let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
             log::info!("[Decrypted]");
             //let _ = std::fs::write("./outputs/raw_save_compressed.bin", &decrypted_buf);

@@ -48,6 +48,7 @@ impl AssetPaths {
             },
             Game::DD2 => Self {
                 rsz: p("assets/dd2/rszdd2.json"),
+                enums: p("assets/dd2/enumsdd2.json"),
                 ..Default::default()
             },
             Game::PRAGMATA => Self {
