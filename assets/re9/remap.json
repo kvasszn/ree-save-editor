@@ -1,0 +1,52 @@
+{
+    "app.SavedataObjectBase": {
+        "remap": {
+            "_ObjectiveIDHash": "app.ObjectiveID.Hash",
+            "_PlaceIDHash": "app.PlaceID.Hash",
+            "_ThumbnailIDHash": "app.ThumbnailID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AchievementDataContext.Savedata": {
+        "remap": {
+            "BonusIDHash": "app.BonusID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AnalysisLogManagerApp.AttackKey.SaveData": {
+        "remap": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_EnemyIDHash": "app.CharacterKindID.Hash",
+            "_WeaponIDHash": "app.WeaponID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AnalysisLogManagerApp.GameOverKey.SaveData": {
+        "remap": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_EnemyIDHash": "app.CharacterKindID.Hash",
+            "_CauseOfDeathHash": "app.WeaponID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AnalysisLogManagerApp.CraftKey.SaveData": {
+        "remap": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_ItemIDHash": "app.ItemID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.ConversationContext.BackupBase": {
+        "remap": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_ItemIDHash": "app.ItemID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    }
+}
