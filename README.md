@@ -42,6 +42,34 @@ Options:
   -V, --version                        Print version
 ```
 
+## Account Transferring
+To transfer games between steam accounts, see [Steam Account Transferring](/docs/USAGE.md#steam-account-transfering)
+Generally it's as follows
+1. Find your steamid64 (or brute force by selecting the brute force option).
+1. Load the save file into the editor.
+1. Change the steamid to the steamid of the account you want to transfer it to.
+1. Save, the output file will be in the "output path" directory (default "outputs"), and will be named the same as the loaded file
+1. Move the output file back to the remote/win64_save steam path for whatever game you're transferring for
+
+> [!NOTE]
+> Rise and SF6 are different, see [Rise Account Transferring](/docs/USAGE.md#monster-hunter-rise) for details.
+
+### PS5 <-> PC
+This tool supports transferring some games between PC and PS5. You have to load the save file, then change the Save Flags to the correct flags for different each system and game. Mapping these requires more research and save files.
+|Game|PS5|PC|
+|-|-|-|
+|MH Wilds|Deflate|Mandarin & Deflate|
+
+## FAQ
+1. Missing Save Files: If you are having trouble finding your steam files, try following this [guide](https://gist.github.com/mi5hmash/47f1be53d213be9b00f2c7e0aa151b11)
+1. Is this Safe: Generally yes if you know what you are editing. To be extra safe ALWAYS MAKE BACKUPS BEFORE SAVING CHANGES, and FIRST CHECK CHANGES IN OFFLINE MODE ON STEAM. Some things probably shouldn't always be editing, and you have to make sure the values are legal.
+1. Idk what to do/there's too much stuff in the editor: Since the editor gives access to the whole save file, there's alot of things that are shown that aren't necessary, and/or are raw game IDS that I have to semi-manually map to something readable. This takes time and research. Currently MH Wilds is the most useable with this context. I plan on adding better support for more games though, but it will take time.
+
+## Alternatives
+You can also use repos by [mi5hmash](https://github.com/mi5hmash/) such as [MandarinJuice](https://github.com/mi5hmash/MandarinJuice) for resigning/transferring unsupported games.
+
+
+
 ## Previous REPO (file dumping/mhtame)
 File dumping should still work. It can convert some files to json for readability and data mining.
 
