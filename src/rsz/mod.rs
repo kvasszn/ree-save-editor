@@ -158,7 +158,7 @@ impl Rsz {
             }
         } else {
             file.read_to_end(&mut data)?;
-            data.extend(vec![0; 128]);
+            //data.extend(vec![0; 128]);
         };
         Ok(Rsz {
             version,

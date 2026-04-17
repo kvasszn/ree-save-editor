@@ -157,7 +157,7 @@ impl Editable for SaveFlags {
 
 impl Editable for SaveFile {
     fn edit(&mut self, ui: &mut Ui, ctx: &mut EditContext) -> EditResponse {
-        CollapsingHeader::new("Advanced")
+        CollapsingHeader::new("Save Flags")
             .default_open(false)
             .show(ui, |ui| {
                 self.flags.edit(ui, ctx);

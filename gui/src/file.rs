@@ -59,6 +59,8 @@ impl FileView {
             Game::MHST3
         } else if cfg!(feature = "mhrise") {
             Game::MHRISE
+        } else if cfg!(feature = "pragmata") {
+            Game::PRAGMATA
         } else {
             Game::MHWILDS
         };
@@ -324,10 +326,10 @@ impl FileView {
                         }
                         _ => {
                             ui.label("No File Loaded.");
-                            #[cfg(target_arch = "wasm32")]
-                            ui.label("Drag and Drop or use the file dialog");
-                            #[cfg(target_os = "windows")]
-                            ui.label("Drag and Drop or use the file dialog");
+                            //#[cfg(target_arch = "wasm32")]
+                            //ui.label("Drag and Drop or use the file dialog");
+                            //#[cfg(target_os = "windows")]
+                            //ui.label("Drag and Drop or use the file dialog");
                         }
                     }
                 });

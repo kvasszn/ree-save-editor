@@ -1,104 +1,96 @@
 #!/bin/sh
+set -e
+
 VERSION=$1
 MODE=$2
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: ./build_release.sh <version> [mhwilds|re9|mhst3|mhrise]"
+    echo "Usage: $0 <version> [mhwilds|re9|mhst3|mhrise|sf6|pragmata]"
     exit 1
 fi
 
-WINDOWS_PATH="./outputs/${VERSION}${MODE}/windows"
-LINUX_PATH="./outputs/${VERSION}${MODE}/linux"
-rm -r "./outputs/$VERSION${MODE}"
-echo "Building Linux..."
+BASE_OUT="./outputs/${VERSION}${MODE}"
+WINDOWS_PATH="${BASE_OUT}/windows"
+LINUX_PATH="${BASE_OUT}/linux"
 
-if [ -z $MODE ]; then
-	features = ""
+if [ -z "$MODE" ]; then
+    FEATURES=""
 else
-	features = "--features ${MODE}"
+    FEATURES="--features ${MODE}"
 fi
 
-cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu  --release ${features}
+rm -rf "$BASE_OUT"
+
+echo "Building Linux..."
+cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu --release $FEATURES
+
 echo "Building Windows..."
-cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release ${features}
+cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release $FEATURES
 
 mkdir -p "$WINDOWS_PATH"
 mkdir -p "$LINUX_PATH"
 
-if [ -z "$MODE" ] ;then
-	rsync -av --exclude='*.user.3' --exclude='*.msg.23' --exclude='*raw_enums/*' assets/ $WINDOWS_PATH/assets/
-	rsync -av --exclude='*.user.3' --exclude='*.msg.23' --exclude='*raw_enums/*' assets/ $LINUX_PATH/assets/
+COPY_SCRIPTS=false
 
-	mkdir -p $LINUX_PATH/scripts
-	mkdir -p $WINDOWS_PATH/scripts
-	cp scripts/reset_tickets.lua $WINDOWS_PATH/scripts
-	cp scripts/reset_tickets.lua $LINUX_PATH/scripts
-elif [ "$MODE" == "mhwilds" ] ;then
-    ASSETS="combined_msgs.json empty_user_save.bin enums_mappings_mhwilds.json enumsmhwilds.json remapmhwilds.json rszmhwilds_packed.json packed_assets.bc"
+if [ -z "$MODE" ]; then
+    echo "Copying default assets..."
+    rsync -aq --exclude='*.user.3' --exclude='*.msg.23' --exclude='*raw_enums/*' assets/ "$WINDOWS_PATH/assets/"
+    rsync -aq --exclude='*.user.3' --exclude='*.msg.23' --exclude='*raw_enums/*' assets/ "$LINUX_PATH/assets/"
+    COPY_SCRIPTS=true
+else
+    case "$MODE" in
+        "mhwilds")
+            ASSETS="combined_msgs.json empty_user_save.bin enums_mappings_mhwilds.json enumsmhwilds.json remapmhwilds.json rszmhwilds_packed.json packed_assets.bc"
+            COPY_SCRIPTS=true
+            ;;
+        "re9")
+            ASSETS="enums_re9.json rszre9.json remap.json"
+            ;;
+        "mhst3")
+            ASSETS="mhst3_enums.json mhst3_remap.json mhst3_strings.txt rszmhst3.json"
+            ;;
+        "mhrise")
+            ASSETS="rszmhrise.json"
+            ;;
+        "sf6")
+            ASSETS="rszsf6.json"
+            ;;
+        "pragmata")
+            ASSETS="rszpragmata.json enumspragmata.json strings_pragmata.txt"
+            ;;
+        *)
+            echo "Unknown mode: $MODE"
+            exit 1
+            ;;
+    esac
 
-	mkdir -p "$WINDOWS_PATH/assets/mhwilds"
-	mkdir -p "$LINUX_PATH/assets/mhwilds"
+    ASSET_DIR="assets/$MODE"
+    mkdir -p "$WINDOWS_PATH/$ASSET_DIR"
+    mkdir -p "$LINUX_PATH/$ASSET_DIR"
+
     for file in $ASSETS; do
         echo "Copying $file..."
-        cp "assets/mhwilds/$file" "$WINDOWS_PATH/assets/mhwilds/"
-        cp "assets/mhwilds/$file" "$LINUX_PATH/assets/mhwilds/"
-    done
-
-	mkdir -p $LINUX_PATH/scripts
-	mkdir -p $WINDOWS_PATH/scripts
-	cp scripts/reset_tickets.lua $WINDOWS_PATH/scripts
-	cp scripts/reset_tickets.lua $LINUX_PATH/scripts
-elif [ "$MODE" == "re9" ] ;then
-    ASSETS="enums_re9.json rszre9.json remap.json"
-
-	mkdir -p "$WINDOWS_PATH/assets/re9"
-	mkdir -p "$LINUX_PATH/assets/re9"
-    for file in $ASSETS; do
-        echo "Copying $file..."
-        cp "assets/re9/$file" "$WINDOWS_PATH/assets/re9/"
-        cp "assets/re9/$file" "$LINUX_PATH/assets/re9/"
-    done
-elif [ "$MODE" == "mhst3" ] ;then
-    ASSETS="mhst3_enums.json mhst3_remap.json mhst3_strings.txt rszmhst3.json"
-
-	mkdir -p "$WINDOWS_PATH/assets/mhst3"
-	mkdir -p "$LINUX_PATH/assets/mhst3"
-    for file in $ASSETS; do
-        echo "Copying $file..."
-        cp "assets/mhst3/$file" "$WINDOWS_PATH/assets/mhst3/"
-        cp "assets/mhst3/$file" "$LINUX_PATH/assets/mhst3/"
-    done
-elif [ "$MODE" == "mhrise" ] ;then
-    ASSETS="rszmhrise.json"
-
-	mkdir -p "$WINDOWS_PATH/assets/mhrise"
-	mkdir -p "$LINUX_PATH/assets/mhrise"
-    for file in $ASSETS; do
-        echo "Copying $file..."
-        cp "assets/mhrise/$file" "$WINDOWS_PATH/assets/mhrise/"
-        cp "assets/mhrise/$file" "$LINUX_PATH/assets/mhrise/"
-    done
-elif [ "$MODE" == "sf6" ] ;then
-    ASSETS="rszsf6.json"
-
-	mkdir -p "$WINDOWS_PATH/assets/sf5"
-	mkdir -p "$LINUX_PATH/assets/sf6"
-    for file in $ASSETS; do
-        echo "Copying $file..."
-        cp "assets/sf6/$file" "$WINDOWS_PATH/assets/mhrise/"
-        cp "assets/sf6/$file" "$LINUX_PATH/assets/mhrise/"
+        cp "$ASSET_DIR/$file" "$WINDOWS_PATH/$ASSET_DIR/"
+        cp "$ASSET_DIR/$file" "$LINUX_PATH/$ASSET_DIR/"
     done
 fi
 
-cp ./target/x86_64-unknown-linux-gnu/release/mhtame-gui $LINUX_PATH
-cp ./target/x86_64-pc-windows-msvc/release/mhtame-gui.exe $WINDOWS_PATH
+if [ "$COPY_SCRIPTS" = true ]; then
+    mkdir -p "$LINUX_PATH/scripts" "$WINDOWS_PATH/scripts"
+    cp scripts/reset_tickets.lua "$WINDOWS_PATH/scripts/"
+    cp scripts/reset_tickets.lua "$LINUX_PATH/scripts/"
+fi
+
+cp ./target/x86_64-unknown-linux-gnu/release/mhtame-gui "$LINUX_PATH/"
+cp ./target/x86_64-pc-windows-msvc/release/mhtame-gui.exe "$WINDOWS_PATH/"
+
+ZIP_WIN="save-editor-windows-$VERSION-$MODE.zip"
+ZIP_LINUX="save-editor-linux-$VERSION-$MODE.zip"
 
 echo "Zipping Windows release..."
-(cd "$WINDOWS_PATH" && zip -r "../save-editor-windows-$VERSION-$MODE.zip" .)
-echo "Contents:"
-unzip -l "./$WINDOWS_PATH/../save-editor-windows-$VERSION-$MODE.zip"
+(cd "$WINDOWS_PATH" && zip -rq "../$ZIP_WIN" .)
+unzip -l "$BASE_OUT/$ZIP_WIN"
 
 echo "Zipping Linux release..."
-(cd "$LINUX_PATH" && zip -r "../save-editor-linux-$VERSION-$MODE.zip" .)
-echo "Contents:"
-unzip -l "./$LINUX_PATH/../save-editor-linux-$VERSION-$MODE.zip"
+(cd "$LINUX_PATH" && zip -rq "../$ZIP_LINUX" .)
+unzip -l "$BASE_OUT/$ZIP_LINUX"

@@ -1,7 +1,5 @@
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
-use elliptic_curve::zeroize::Zeroize;
-use rand::random;
 use sha3::Digest;
 
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
@@ -312,7 +310,6 @@ impl Citrus {
         );
         for i in 0..num_blocks {
             let mut dec_buf = [0u8; Self::ENC_DATA_SIZE];
-            dec_buf.zeroize();
             //println!("block: {i}");
             let block = &buf[offset..offset + Self::BLOCK_SIZE];
             //println!(" {:x}", block.len());
@@ -341,7 +338,7 @@ impl Citrus {
             Self::aes_decrypt(&mut dec_buf, real_key, real_iv);
             decrypted[decrypted_bytes..decrypted_bytes + block_size]
                 .copy_from_slice(&dec_buf[..block_size]);
-            dec_buf[block_size..].zeroize();
+            dec_buf[block_size..].fill(0);
 
             let mut hasher = sha3::Sha3_256::new();
 

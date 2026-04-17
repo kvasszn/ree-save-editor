@@ -1,74 +1,54 @@
 use serde::Deserialize;
 
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Hash)]
-pub enum Game {
-    MHWILDS = 0,
-    DD2 = 1,
-    PRAGMATA = 2,
-    MHST3 = 3,
-    RE9 = 4,
-    MHRISE,
-    SF6,
+macro_rules! define_games {
+    (
+        $(
+            $variant:ident ( $name:expr, $appid:expr, $seeds:expr, $steam_calc:expr )
+        ),* $(,)?
+    ) => {
+        #[repr(i32)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Hash)]
+        pub enum Game {
+            $( $variant, )*
+        }
+
+        pub const GAME_OPTIONS: &[(&'static str, Game)] = &[
+            $( ($name, Game::$variant), )*
+        ];
+
+        impl Game {
+            pub fn from_string(id: &str) -> Option<Game> {
+                $( if id == stringify!($variant) { return Some(Game::$variant); } )*
+                None
+            }
+
+            pub fn get_mandarin_seeds(&self) -> Option<(u64, u64)> {
+                match self {
+                    $( Game::$variant => $seeds, )*
+                }
+            }
+
+            pub fn get_key_from_steamid(&self, steamid: u64) -> u64 {
+                match self {
+                    $( Game::$variant => ($steam_calc)(steamid), )*
+                }
+            }
+
+            pub fn get_appid(&self) -> u64 {
+                match self {
+                    $( Game::$variant => $appid, )*
+                }
+            }
+        }
+    };
 }
 
-pub const GAME_OPTIONS: [(&'static str, Game); 7] = [
-    ("MH Wilds", Game::MHWILDS),
-    ("Dragon's Dogma 2", Game::DD2),
-    ("Pragmata", Game::PRAGMATA),
-    ("MH Stories 3", Game::MHST3),
-    ("RE Requiem", Game::RE9),
-    ("MH Rise", Game::MHRISE),
-    ("SF6", Game::SF6),
-];
-
-impl Game {
-    pub fn from_string(id: &str) -> Option<Game> {
-        match id {
-            "MHWILDS" => Some(Game::MHWILDS),
-            "DD2" => Some(Game::DD2),
-            "PRAGMATA" => Some(Game::PRAGMATA),
-            "MHST3" => Some(Game::MHST3),
-            "RE9" => Some(Game::RE9),
-            "MHRISE" => Some(Game::MHRISE),
-            "SF6" => Some(Game::SF6),
-            _ => None,
-        }
-    }
-
-    // return (rsa_seed, enc_seed)
-    pub fn get_mandarin_seeds(&self) -> Option<(u64, u64)> {
-        match self {
-            Self::MHWILDS => Some((0xBFACF76C3F96, 0x7A36955255266CED)),
-            Self::DD2 => Some((0x90EDB79172FDBE51, 0x5EC646997D69AE1B)),
-            Self::PRAGMATA => Some((0x3F90D767F13ABE2E, 0x7DA24A9E1479F3D7)),
-            Self::MHST3 => Some((0x4DB2A5EC6AD4005A, 0xA40139F12BA19EDB)),
-            Self::RE9 => Some((0, 0x61f6868699c14dfa)),
-            _ => None
-        }
-    }
-
-    pub fn get_key_from_steamid(&self, steamid: u64) -> u64 {
-        match self {
-            Self::MHWILDS => steamid,
-            Self::DD2 => steamid & 0xffffffff,
-            Self::PRAGMATA => 19284827,
-            Self::MHST3 => steamid,
-            Self::RE9 => steamid,
-            Self::MHRISE => steamid,
-            Self::SF6 => steamid,
-        }
-    }
-
-    pub fn get_appid(&self) -> u64 {
-        match self {
-            Self::MHWILDS => 2246340,
-            Self::DD2 => 2054970,
-            Self::PRAGMATA => 3357650,
-            Self::MHST3 => 2852190,
-            Self::RE9 => 3764200,
-            Self::MHRISE => 1446780,
-            Self::SF6 => 1364780,
-        }
-    }
+define_games! {
+    MHWILDS  ( "MH Wilds",         2246340, Some((0xBFACF76C3F96, 0x7A36955255266CED)),     |id| id             ),
+    DD2      ( "Dragon's Dogma 2", 2054970, Some((0x90EDB79172FDBE51, 0x5EC646997D69AE1B)), |id| id & 0xffffffff),
+    PRAGMATA ( "Pragmata",         3357650, Some((0x3F90D767F13ABE2E, 0x7DA24A9E1479F3D7)), |id| id             ),
+    MHST3    ( "MH Stories 3",     2852190, Some((0x4DB2A5EC6AD4005A, 0xA40139F12BA19EDB)), |id| id             ),
+    RE9      ( "RE Requiem",       3764200, Some((0, 0x61f6868699c14dfa)),                  |id| id             ),
+    MHRISE   ( "MH Rise",          1446780, None,                                           |id| id             ),
+    SF6      ( "SF6",              1364780, None,                                           |id| id             ),
 }

@@ -1,12 +1,10 @@
-use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom}};
-use std::sync::OnceLock;
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 use serde::{Deserialize, Serialize};
 use util::ReadExt;
-use uuid::Uuid; 
 
 use crate::sdk::Guid;
-use crate::file::{StructRW, DefaultDump, Result};
+use crate::file::{StructRW, DefaultDump};
 use crate::sdk::type_map::ContentLanguage;
 
 const KEY: [u8; 16] = [

@@ -15,96 +15,56 @@ pub struct AssetPaths {
 
 impl AssetPaths {
     pub fn from_game(game: Game) -> Self {
+        let p = |s: &str| Some(s.to_string());
+
+        #[cfg(target_arch = "wasm32")]
+        let gz = |s: &str| Some(format!("{s}.gz"));
+        #[cfg(not(target_arch = "wasm32"))]
+        let gz = |s: &str| Some(s.to_string());
+
         match game {
-            Game::MHWILDS => {
-                Self {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    rsz: Some("assets/mhwilds/rszmhwilds_packed.json".to_string()),
-                    #[cfg(target_arch = "wasm32")]
-                    rsz: Some("assets/mhwilds/rszmhwilds_packed.json.gz".to_string()),
-                    #[cfg(not(target_arch = "wasm32"))]
-                    enums: Some("assets/mhwilds/enumsmhwilds.json".to_string()),
-                    #[cfg(target_arch = "wasm32")]
-                    enums: Some("assets/mhwilds/enumsmhwilds.json.gz".to_string()),
-                    #[cfg(not(target_arch = "wasm32"))]
-                    msgs: Some("assets/mhwilds/combined_msgs.json".to_string()),
-                    #[cfg(target_arch = "wasm32")]
-                    msgs: Some("assets/mhwilds/combined_msgs.json.gz".to_string()),
-                    mappings: Some("assets/mhwilds/enums_mappings_mhwilds.json".to_string()),
-                    strings: None,
-                    remap: Some("assets/mhwilds/remapmhwilds.json".to_string()),
-                    packed_assets: Some("assets/mhwilds/packed_assets.bc".to_string()),
-                }
+            Game::MHWILDS => Self {
+                rsz: gz("assets/mhwilds/rszmhwilds_packed.json"),
+                enums: gz("assets/mhwilds/enumsmhwilds.json"),
+                msgs: gz("assets/mhwilds/combined_msgs.json"),
+                mappings: p("assets/mhwilds/enums_mappings_mhwilds.json"),
+                remap: p("assets/mhwilds/remapmhwilds.json"),
+                packed_assets: p("assets/mhwilds/packed_assets.bc"),
+                ..Default::default() // Automatically fills the rest with `None`!
             },
-            Game::MHST3 => {
-                Self {
-                    rsz: Some("assets/mhst3/rszmhst3.json".to_string()),
-                    enums: Some("assets/mhst3/mhst3_enums.json".to_string()),
-                    msgs: None,
-                    mappings: None,
-                    strings: Some("assets/mhst3/mhst3_strings.txt".to_string()),
-                    remap: Some("assets/mhst3/mhst3_remap.json".to_string()),
-                    packed_assets: None,
-                }
-            }
-            Game::DD2 => {
-                Self {
-                    rsz: Some("assets/dd2/rszdd2.json".to_string()),
-                    enums: None,
-                    msgs: None,
-                    mappings: None,
-                    strings: None,
-                    remap: None,
-                    packed_assets: None,
-                }
-            }
-            Game::PRAGMATA => {
-                Self {
-                    rsz: Some("assets/pragmata/rszpragmata.json".to_string()),
-                    enums: None,
-                    msgs: None,
-                    mappings: None,
-                    strings: None,
-                    remap: None,
-                    packed_assets: None,
-                }
+            Game::MHST3 => Self {
+                rsz: p("assets/mhst3/rszmhst3.json"),
+                enums: p("assets/mhst3/mhst3_enums.json"),
+                strings: p("assets/mhst3/mhst3_strings.txt"),
+                remap: p("assets/mhst3/mhst3_remap.json"),
+                ..Default::default()
             },
-            Game::RE9 => {
-                Self {
-                    rsz: Some("assets/re9/rszre9.json".to_string()),
-                    enums: Some("assets/re9/enums_re9.json".to_string()),
-                    msgs: None,
-                    mappings: None,
-                    strings: Some("assets/re9/strings.txt".to_string()),
-                    remap: Some("assets/re9/remap.json".to_string()),
-                    packed_assets: None,
-                }
+            Game::RE9 => Self {
+                rsz: p("assets/re9/rszre9.json"),
+                enums: p("assets/re9/enums_re9.json"),
+                strings: p("assets/re9/strings.txt"),
+                remap: p("assets/re9/remap.json"),
+                ..Default::default()
             },
-            Game::MHRISE => {
-                Self {
-                    rsz: Some("assets/mhrise/rszmhrise.json".to_string()),
-                    enums: None,
-                    msgs: None,
-                    mappings: None,
-                    strings: None,
-                    remap: None,
-                    packed_assets: None,
-                }
+            Game::DD2 => Self {
+                rsz: p("assets/dd2/rszdd2.json"),
+                ..Default::default()
             },
-            Game::SF6 => {
-                Self {
-                    rsz: Some("assets/sf6/rszsf6.json".to_string()),
-                    enums: None,
-                    msgs: None,
-                    mappings: None,
-                    strings: None,
-                    remap: None,
-                    packed_assets: None,
-                }
-            }
-            //_ => Self::default(),
-        }
-    }
+            Game::PRAGMATA => Self {
+                rsz: p("assets/pragmata/rszpragmata.json"),
+                enums: p("assets/pragmata/enumspragmata.json"),
+                strings: p("assets/pragmata/strings_pragmata.txt"),
+                ..Default::default()
+            },
+            Game::MHRISE => Self {
+                rsz: p("assets/mhrise/rszmhrise.json"),
+                ..Default::default()
+            },
+            Game::SF6 => Self {
+                rsz: p("assets/sf6/rszsf6.json"),
+                ..Default::default()
+            },
+        }}
 }
 
 #[derive(Debug, Default)]
