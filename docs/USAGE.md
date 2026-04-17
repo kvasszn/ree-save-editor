@@ -31,8 +31,8 @@ Currently, only Wilds is supported, but I'm working other games.
 
 To start using the editor, you first need:
 - To launch The Editor
-    - [webgui](https://kvasszn.github.io/mhtame)
-    - [Windows or Linux Builds](https://github.com/kvasszn/mhtame/releases/latest)
+    - [webgui](https://kvasszn.github.io/ree-save-editor)
+    - [Windows or Linux Builds](https://github.com/kvasszn/ree-save-editor/releases/latest)
 - [Steam ID](#finding-your-steam-id)
 - [Save Files](#finding-your-save-files)
 

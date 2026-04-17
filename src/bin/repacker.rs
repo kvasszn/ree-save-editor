@@ -1,4 +1,4 @@
-use mhtame::{game_context::AssetPaths, save::{game::Game, remap::Remap}, sdk::{asset::Assets, type_map::TypeMap}}; // Import from your lib
+use ree_lib::{game_context::AssetPaths, save::{game::Game, remap::Remap}, sdk::{asset::Assets, type_map::TypeMap}}; // Import from your lib
 use std::collections::HashMap;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

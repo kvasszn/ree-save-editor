@@ -1,10 +1,10 @@
 [package]
-name = "mhtame-gui"
+name = "ree-save-editor"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "mhtame-gui"
+name = "ree-save-editor"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -48,10 +48,10 @@ web-sys = { version = "0.3", features = [
 ] }
 reqwest = { version = "0.11", features = ["json"] }
 console_error_panic_hook = "0.1"
-mhtame = { path = "../", default-features = false }
+ree-lib = { path = "../", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 mlua = {version = "0.11.5", features = ["lua54", "vendored", "async", "send"] }
 clap = { version = "4.5.20", features = ["derive"] }
 env_logger = "0.11.8"
-mhtame = { path = "../", features = ["scripting"] }
+ree-lib = { path = "../", features = ["scripting"] }

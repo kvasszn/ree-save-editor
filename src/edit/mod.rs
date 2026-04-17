@@ -135,13 +135,10 @@ impl Editable for bool {
 impl Editable for SaveFlags {
     fn edit(&mut self, ui: &mut Ui, _ctx: &mut EditContext) -> EditResponse {
         ui.vertical(|ui| {
-            ui.label("Save Options:");
-
-            // Helper closure to make it ergonomic
             let flag_checkbox = |ui: &mut Ui, flags: &mut SaveFlags, flag: SaveFlags, label: &str| {
                 let mut is_on = flags.contains(flag);
                 if ui.checkbox(&mut is_on, label).changed() {
-                    flags.set(flag, is_on); // set() is a built-in bitflags method
+                    flags.set(flag, is_on);
                 }
             };
 

@@ -1,5 +1,5 @@
 [package]
-name = "mhtame"
+name = "ree-lib"
 version = "0.1.0"
 edition = "2024"
 
@@ -16,6 +16,10 @@ crate-type = ["cdylib", "rlib"]
 [[bin]]
 name = "repacker"
 path = "src/bin/repacker.rs"
+
+[[bin]]
+name = "ree-dump"
+path = "src/main.rs"
 
 [features]
 default = ["scripting"]

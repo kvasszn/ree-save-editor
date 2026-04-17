@@ -35,7 +35,7 @@ jobs:
           ls -lh assets/
 
       - name: Build with Trunk
-        run: trunk build gui/index.html --release --public-url /mhtame/
+        run: trunk build gui/index.html --release --public-url /ree-save-editor/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

@@ -4,9 +4,9 @@ use eframe::egui::{Ui};
 use egui_dock::tab_viewer::OnCloseResponse;
 
 #[cfg(not(target_arch = "wasm32"))]
-use mhtame::bindings::runner::ScriptRunner;
+use ree_lib::bindings::runner::ScriptRunner;
 
-use mhtame::{
+use ree_lib::{
     game_context::{GameCtx, AssetPaths}, save::game::Game, sdk::type_map::ContentLanguage
 };
 

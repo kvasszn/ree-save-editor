@@ -1,5 +1,49 @@
-# MH Tame
-This repo is mainly for dumping RE engine files into readable json. It also does converts textures to png and fonts. and I'm working on recreating some files from json.
+# REE Save Editor
+
+Tool for editing save files from many RE Engine games. This repo was previously mhtame, I just renamed it since the scope changed.
+
+Supported Games:
+
+|Game|Steam AppID|Support|
+|-|-|-|
+|MH Wilds|2246340|✅ |
+|MH Stories 3|2852190|✅ WIP|
+|RE9|1446780|✅ WIP|
+|MH Rise|1446780|✅ WIP|
+|SF6|1364780|✅ WIP|
+|Pragmata|3357650|✅ WIP|
+|DD2|2054970|✅ WIP|
+
+I plan on doing RE Remakes, RE7, RE8 and more upon request.
+
+## Build
+```
+git clone https://github.com/kvasszn/ree-save-editor.git
+cd ree-save-editor
+cargo build --release -p ree-save-editor
+```
+
+## Usage
+Run just run the exe. For a more in-depth usage guide, see the [docs](/docs/USAGE.md)
+```
+Usage: ree-save-editor [OPTIONS]
+
+Options:
+  -f, --file-name <FILE_NAME>
+  -o, --out-dir <OUT_DIR>              [default: outputs]
+      --steamid <STEAMID>
+      --rsz-path <RSZ_PATH>
+      --enums-path <ENUMS_PATH>
+      --msgs-path <MSGS_PATH>
+      --mappings-path <MAPPINGS_PATH>
+      --remap-path <REMAP_PATH>
+      --steam-path <STEAM_PATH>        [default: /home/nikola/.local/share/Steam/]
+  -h, --help                           Print help
+  -V, --version                        Print version
+```
+
+## Previous REPO (file dumping/mhtame)
+File dumping should still work. It can convert some files to json for readability and data mining.
 
 Files that it currently supports are `user, tex, msg, pog, poglst, oft` and `wilds saves`.
 Some basic support exists for `scn` files, but it's rough, RSZ works for it though.
@@ -10,91 +54,27 @@ Also looked at it to figure out how to read some of the file formats.
 
 Uses praydog's emulation dumper for the rsz files.
 
-## Build
-Compiling on Windows might be a little funky. Have fun!
+### Build
 ```
-git clone https://github.com/kvasszn/mhtame.git
-cd mhtame
-git submodule update --init
-cargo build --bin mhtame --release # the release flag optimizes speeds alot
+cargo build --release --bin ree-dump
 ```
 
-## Usage
-
-### Save Editing
-
-In depth documentation is available here [Usage](docs/USAGE.md).
-
-If you'd like to add to documentation, please make open issues or pull requests.
-
-It can finally support editing saves for Monster Hunter Wilds, in a GUI too. Use this carefully, might potentially break things.
-
-**ALSO PLEASE MAKE BACKUPS BEFORE MESSING WITH THIS TOO MUCH. IF YOU FIND BUGS PLEASE REPORT THEM.**
-
-THERES ALSO NOW A WEB GUI. https://kvasszn.github.io/mhtame
-
-I will eventually add features for copying over save data from different saves or slots. I also plan on eventually adding support for more RE games, just takes a while to reverse capcom's save files. Loading and editing requires knowing your Steam ID.
-
-Also minor note: the exe needs to see an `rszmhwilds_packed.json` from where it's run to work, so if you move the exe around, make sure to give it an rsz file. It can also be passed in through CLI.
-
+### Usage
 ```
-cargo build -p mhtame-gui --release
-```
+Usage: ree-dump [OPTIONS]
 
-You can either pass in things through CLI or use the GUI.
+Options:
+  -f, --file-name <FILE_NAME>
+  -r, --root-dir <ROOT_DIR>
+  -l, --list <LIST>
+  -p, --preserve
+  -d, --dump-rsz
+  -s, --dump-sdk
+  -o, --out-dir <OUT_DIR>      [default: outputs]
+      --rsz <RSZ>              [default: assets/mhwilds/rszmhwilds.json]
+      --enums <ENUMS>          [default: assets/mhwilds/enumsmhwilds.json]
+      --save-file <SAVE_FILE>
+      --steamid <STEAMID>
+  -h, --help                   Print help
+  -V, --version                Print version
 ```
-./mhtame-gui -f <path/to/save/file> --steamid <steamid>
-```
-
-#### Web UI building
-```
-trunks build gui/index.html --release
-trunks serve gui/index.html --release
-```
-
-### File Dumping
-
-By default, the program will dump or recreates files based on their extensions and headers. It can only recreate `User` files from json, but this is still WIP and some things don't work.
-
-The rsz dump is already in this repo, but if you want one you can get one at [https://github.com/dtlnor/RE_RSZ], or dump it yourself.
-
-And if you want enums, get an `Enums_Internal.hpp` from RE framework and use the following command to generate a json file.
-You can also use the already generated ones.
-```
-python gen/enumtojson.py <path/to/Enums_Internal.hpp> enums.json
-```
-
-You can then tell the program which ones to use by setting the environment variables: (not recommended anymore, just use flags, --rsz and --enums)
-These two files should be in the repo by default, so unless you know what you're doing, you probably don't have to mess with it.
-```
-RSZ_FILE=<path/to/rszdump.json>
-ENUM_FILE=<path/to/enums.json>
-```
-
-### Single File
-Make sure that the `-r` directory + the file directory of the file combine to the real file location
-```
-./target/<release or debug>/mhtame -r <path/to/game/native> -o <output/directory> -f <path/to/file>
-```
-To specify enums and rsz files, use:
-```
-./target/<release or debug>/mhtame -r <path/to/game/native> -o <output/directory> -f <path/to/file> --rsz <pathtorsz> --enums <pathtoenums>
-```
-
-### Multi File
-Note: the root directory prefix gets removed from the file path when saving
-```
-./target/<release or debug>/mhtame -r <path/to/game/native> -o <output/directory> -l <path/to/list of files to process>
-```
-
-### Dumping Save Files
-It's important to use the packed structs version of the rsz dump, otherwise the file doesnt get read properly.
-```
-./target/release/mhtame -f <path/to/savefile> --rsz rszmhwilds_packed.json --steamid <your steam id>
-```
-For help getting your steamid: https://help.steampowered.com/en/faqs/view/2816-BE67-5B69-0FEC
-If you dont pass one in, the program will try to brute force the key, but i'm pretty sure this is like completely broken atm. Still need to figure some stuff out for it.
-
-
-### Recreating Files
-As mentioned, this is still WIP, but if the program sees a file like `ItemData.user.3.json` (either in a list or single file), it will try and recreate `ItemData.user.3` from the json data.

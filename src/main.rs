@@ -28,7 +28,7 @@ use std::time::SystemTime;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Parser, Debug)]
-#[command(name = "mhtame")]
+#[command(name = "ree-dump")]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(short('f'), long)]

@@ -5,7 +5,7 @@ VERSION=$1
 MODE=$2
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: $0 <version> [mhwilds|re9|mhst3|mhrise|sf6|pragmata]"
+    echo "Usage: $0 <version> [mhwilds|re9|mhst3|mhrise|sf6|pragmata|dd2]"
     exit 1
 fi
 
@@ -22,10 +22,10 @@ fi
 rm -rf "$BASE_OUT"
 
 echo "Building Linux..."
-cargo build -p mhtame-gui --target x86_64-unknown-linux-gnu --release $FEATURES
+cargo build -p ree-save-editor --target x86_64-unknown-linux-gnu --release $FEATURES
 
 echo "Building Windows..."
-cargo xwin build -p mhtame-gui --target x86_64-pc-windows-msvc --release $FEATURES
+cargo xwin build -p ree-save-editor --target x86_64-pc-windows-msvc --release $FEATURES
 
 mkdir -p "$WINDOWS_PATH"
 mkdir -p "$LINUX_PATH"
@@ -84,11 +84,11 @@ if [ "$COPY_SCRIPTS" = true ]; then
     cp scripts/reset_tickets.lua "$LINUX_PATH/scripts/"
 fi
 
-cp ./target/x86_64-unknown-linux-gnu/release/mhtame-gui "$LINUX_PATH/"
-cp ./target/x86_64-pc-windows-msvc/release/mhtame-gui.exe "$WINDOWS_PATH/"
+cp ./target/x86_64-unknown-linux-gnu/release/ree-save-editor "$LINUX_PATH/"
+cp ./target/x86_64-pc-windows-msvc/release/ree-save-editor.exe "$WINDOWS_PATH/"
 
-ZIP_WIN="save-editor-windows-$VERSION-$MODE.zip"
-ZIP_LINUX="save-editor-linux-$VERSION-$MODE.zip"
+ZIP_WIN="ree-save-editor-windows-$VERSION$MODE.zip"
+ZIP_LINUX="ree-save-editor-linux-$VERSION$MODE.zip"
 
 echo "Zipping Windows release..."
 (cd "$WINDOWS_PATH" && zip -rq "../$ZIP_WIN" .)

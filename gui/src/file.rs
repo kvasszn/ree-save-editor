@@ -13,10 +13,10 @@ use eframe::{
     self,
     egui::{ComboBox, ScrollArea, TextEdit, Ui},
 };
-use mhtame::game_context::GameCtx;
-use mhtame::save::corrupt::CorruptSaveReader;
-use mhtame::sdk::type_map::TypeMap;
-use mhtame::{
+use ree_lib::game_context::GameCtx;
+use ree_lib::save::corrupt::CorruptSaveReader;
+use ree_lib::sdk::type_map::TypeMap;
+use ree_lib::{
     edit::{EditContext, Editable},
     file::StructRW,
     save::{
@@ -682,7 +682,7 @@ impl Steam {
             if steam_id.is_none() {
                 if let Some(window) = web_sys::window() {
                     if let Ok(Some(storage)) = window.local_storage() {
-                        if let Ok(Some(saved_str)) = storage.get_item("mhtame_steam_id") {
+                        if let Ok(Some(saved_str)) = storage.get_item("ree_save_editor_steam_id") {
                             // Parse the saved string
                             if let Ok(val) = u64::from_str_radix(&saved_str, 10) {
                                 steam_id = Some(val);
@@ -725,7 +725,7 @@ impl Steam {
                     if let Some(window) = web_sys::window() {
                         if let Ok(Some(storage)) = window.local_storage() {
                             // We save the raw string "7656..."
-                            let _ = storage.set_item("mhtame_steam_id", &self.steam_id_text);
+                            let _ = storage.set_item("ree_save_editor_steam_id", &self.steam_id_text);
                         }
                     }
                 }

@@ -6,7 +6,7 @@ use eframe::{
     egui::{Align, CentralPanel, Layout, MenuBar, TopBottomPanel},
 };
 use egui_dock::{DockArea, DockState};
-use mhtame::{sdk::type_map::ContentLanguage};
+use ree_lib::{sdk::type_map::ContentLanguage};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::code_editor::CodeEditor;
@@ -89,7 +89,7 @@ impl eframe::App for TameApp {
                 ui.label("REE Save Editor");
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.hyperlink_to("GitHub", "https://github.com/kvasszn/mhtame");
+                    ui.hyperlink_to("GitHub", "https://github.com/kvasszn/ree_lib");
                     ui.separator();
                 });
             });

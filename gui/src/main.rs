@@ -2,10 +2,10 @@
 mod native {
     use clap::Parser;
     use eframe::egui;
-    use mhtame_gui::{Config, app::TameApp, configure_fonts};
+    use ree_save_editor::{Config, app::TameApp, configure_fonts};
 
     #[derive(Parser, Debug)]
-    #[command(name = "mhtame-gui")]
+    #[command(name = "ree-save-editor")]
     #[command(version, about, long_about = None)]
     struct GuiArgs {
         #[arg(short('f'), long)]
@@ -57,7 +57,7 @@ mod native {
             remap_path: args.remap_path,
         };
 
-        eframe::run_native("mhtame",
+        eframe::run_native("ree-save-editor",
             options,
             Box::new(|_cc| {
                 configure_fonts(&_cc.egui_ctx);

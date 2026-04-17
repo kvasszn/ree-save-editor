@@ -1,6 +1,6 @@
 use std::{collections::HashMap, error::Error, path::{Path, PathBuf}};
 
-use mhtame::save::game::Game;
+use ree_lib::save::game::Game;
 use serde::{self,Deserialize};
 
 #[derive(Deserialize, Debug, Clone)]
