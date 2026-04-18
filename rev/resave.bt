@@ -18,7 +18,7 @@ LittleEndian();
 // ===============================================
 // Set this to whatever your decompressed file is offset by 
 // in the original memory space (e.g., 4 bytes).
-local int GLOBAL_VIRTUAL_OFFSET = 16;
+local int GLOBAL_VIRTUAL_OFFSET = 28;
 
 // Use this instead of FTell() for all alignment math!
 int VPos() {
@@ -157,33 +157,33 @@ typedef struct {
     if (size > 0) {
         if (field_type == FT_Unknown) {
         } else if (field_type == FT_Enum) {
-            uint8 value[size] <bgcolor=cWhite>;
+            uint8 value[size] <bgcolor=cGreen>;
         } else if (field_type == FT_Boolean) {
-            uint8 value <bgcolor=cWhite>;
+            uint8 value <bgcolor=cGreen>;
         } else if (field_type == FT_S8) {
-            int8 value <bgcolor=cWhite>;
+            int8 value <bgcolor=cGreen>;
         } else if (field_type == FT_U8) {
-            uint8 value <bgcolor=cWhite>;
+            uint8 value <bgcolor=cGreen>;
         } else if (field_type == FT_S16) {
-            int16 value <bgcolor=cWhite>;
+            int16 value <bgcolor=cGreen>;
         } else if (field_type == FT_U16) {
-            uint16 value <bgcolor=cWhite>;
+            uint16 value <bgcolor=cGreen>;
         } else if (field_type == FT_S32) {
-            int32 value <bgcolor=cWhite>;
+            int32 value <bgcolor=cGreen>;
         } else if (field_type == FT_U32) {
-            uint32 value <bgcolor=cWhite>;
+            uint32 value <bgcolor=cGreen>;
         } else if (field_type == FT_S64) {
-            int64 value <bgcolor=cWhite>;
+            int64 value <bgcolor=cGreen>;
         } else if (field_type == FT_U64) {
-            uint64 value <bgcolor=cWhite>;
+            uint64 value <bgcolor=cGreen>;
         } else if (field_type == FT_F32) {
-            float value <bgcolor=cWhite>;
+            float value <bgcolor=cGreen>;
         } else if (field_type == FT_F64) {
-            double value <bgcolor=cWhite>;
+            double value <bgcolor=cGreen>;
         } else if (field_type == FT_C8) {
-            uchar value <bgcolor=cWhite>;
+            uchar value <bgcolor=cGreen>;
         } else if (field_type == FT_C16) {
-            wchar_t value <bgcolor=cWhite>;
+            wchar_t value <bgcolor=cGreen>;
         }
     }
 } Value <read=ReadValue>;

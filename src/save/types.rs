@@ -648,6 +648,11 @@ impl Array {
         let len = reader.read_u32()?;
         let array_type = ArrayType::try_from(reader.read_i32()?)?;
         let mut values: Vec<FieldValue> = Vec::with_capacity(len as usize);
+
+        if array_type == ArrayType::Class {
+            //TODO: 0xffeeffee parsing
+        }
+
         for _i in 0..len {
             let value = match array_type {
                 ArrayType::Value => {

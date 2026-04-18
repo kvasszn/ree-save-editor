@@ -13,6 +13,7 @@ Supported Games:
 |SF6|1364780|✅ WIP|
 |Pragmata|3357650|✅ WIP|
 |DD2|2054970|✅ WIP|
+|RE2|883710|❌WIP|
 
 I plan on doing RE Remakes, RE7, RE8 and more upon request.
 
@@ -56,9 +57,10 @@ Generally it's as follows
 
 ### PS5 <-> PC
 This tool supports transferring some games between PC and PS5. You have to load the save file, then change the Save Flags to the correct flags for different each system and game. Mapping these requires more research and save files.
-|Game|PS5|PC|
-|-|-|-|
-|MH Wilds|Deflate|Mandarin & Deflate|
+|Game|PS5|PC|Notes|
+|-|-|-|-|
+|MH Wilds|Deflate|Mandarin & Deflate||
+|Pragmata|Mandarin|Mandarin|on PS5, use the id 526253637 and change _RegionHash to 3208943443|
 
 ## FAQ
 1. Missing Save Files: If you are having trouble finding your steam files, try following this [guide](https://gist.github.com/mi5hmash/47f1be53d213be9b00f2c7e0aa151b11)

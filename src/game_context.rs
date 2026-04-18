@@ -65,6 +65,10 @@ impl AssetPaths {
                 rsz: p("assets/sf6/rszsf6.json"),
                 ..Default::default()
             },
+            Game::RE2 => Self {
+                rsz: p("assets/re2/rszre2.json"),
+                ..Default::default()
+            },
         }}
 }
 

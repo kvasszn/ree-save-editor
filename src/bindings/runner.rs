@@ -221,13 +221,10 @@ impl ScriptRunner {
                     .type_map;
 
                 let mut reader = File::open(path.as_ref())?;
+                let mut save_ctx = SaveContext::from_key(steamid, game);
                 let data = SaveFile::read_data(
                     &mut reader,
-                    &mut SaveContext {
-                        key: Some(steamid),
-                        game: game,
-                        curve_index: None,
-                    },
+                    &mut save_ctx
                 )
                 .map_err(|e| {
                     mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
@@ -278,13 +275,10 @@ impl ScriptRunner {
                     .type_map;
 
                 let mut reader = File::open(path.as_ref())?;
+                let mut save_ctx = SaveContext::from_key(steamid, game);
                 let data = SaveFile::read_data(
                     &mut reader,
-                    &mut SaveContext {
-                        curve_index: None,
-                        key: Some(steamid),
-                        game: game,
-                    },
+                    &mut save_ctx
                 )
                 .map_err(|e| {
                     mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
@@ -346,13 +340,11 @@ impl ScriptRunner {
                         .type_map;
 
                     let mut reader = File::open(path.as_ref())?;
+
+                    let mut save_ctx = SaveContext::from_key(steamid, game);
                     let data = SaveFile::read_data(
                         &mut reader,
-                        &mut SaveContext {
-                            key: Some(steamid),
-                            game: game,
-                            curve_index: None,
-                        },
+                        &mut save_ctx
                     )
                     .map_err(|e| {
                         mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
@@ -394,13 +386,10 @@ impl ScriptRunner {
                     Game::MHWILDS
                 });
                 let mut reader = File::open(path.as_ref())?;
+                let mut save_ctx = SaveContext::from_key(steamid, game);
                 let save_file = match SaveFile::read(
                     &mut reader,
-                    &mut SaveContext {
-                        curve_index: None,
-                        key: Some(steamid),
-                        game: game,
-                    },
+                    &mut save_ctx
                 ) {
                     Ok(s) => Ok(s),
                     Err(e) => Err(mlua::Error::RuntimeError(format!(

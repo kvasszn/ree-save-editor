@@ -45,6 +45,7 @@ pub struct FileView {
     repair: bool,
     brute_force: bool,
     curve_index: Option<usize>,
+    brute_force_options: (usize, usize)
 }
 
 impl FileView {
@@ -78,6 +79,7 @@ impl FileView {
             repair: false,
             brute_force: false,
             curve_index: None,
+            brute_force_options: (0x0110000100000000, 0xffffffff)
         }
     }
 
@@ -291,6 +293,14 @@ impl FileView {
             ui.checkbox(&mut self.brute_force, "Brute Force SteamID");
             ui.checkbox(&mut self.repair, "Try Repairing Corruption (WIP MOSTLY FOR DEBUG)");
         });
+        if self.brute_force {
+            ui.horizontal(|ui| {
+                ui.label("Base:");
+                ui.add(egui::DragValue::new(&mut self.brute_force_options.0).speed(1.0).hexadecimal(8, true, false));
+                ui.label("Count:");
+                ui.add(egui::DragValue::new(&mut self.brute_force_options.1).speed(1.0).hexadecimal(8, true, false));
+            });
+        }
 
         ui.horizontal(|ui| {
             if let Some(val) = self.curve_index.as_mut() {
@@ -356,6 +366,8 @@ impl FileView {
                 },
                 game: self.game,
                 curve_index: self.curve_index,
+                brute_force_base: self.brute_force_options.0,
+                brute_force_count: self.brute_force_options.1,
             };
 
             if self.repair {

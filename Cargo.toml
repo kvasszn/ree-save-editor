@@ -60,10 +60,6 @@ mlua = {version = "0.11.5", features = ["lua54", "vendored", "async", "send"], o
 # codegen
 quote = "1.0.40"
 syn = "2.0.100"
-
-# crypto
-aes = "0.8.4"
-ofb = "0.6.1"
 cityhasher = "0.1.0"
 murmur3 = "0.5.2"
 
@@ -92,11 +88,16 @@ hex = "0.4.3"
 web-time = "1.1.0"
 regex = "1.12.3"
 elliptic-curve = "0.13.8"
-cbc = "0.1.2"
+cbc = "0.2.0"
 sha3 = "0.11.0"
 rand = "0.10.1"
 getrandom = { version = "0.4.2", features = ["wasm_js"] }
 bincode = "1.3.3"
+blowfish = "0.10.0"
+cipher = "0.5.1"
+byteorder = "1.5.0"
+aes = "0.9.0"
+ofb = "0.7.0"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]

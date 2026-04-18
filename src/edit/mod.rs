@@ -143,7 +143,7 @@ impl Editable for SaveFlags {
             };
 
             flag_checkbox(ui, self, SaveFlags::BLOWFISH, "Blowfish");
-            flag_checkbox(ui, self, SaveFlags::RAW, "Raw");
+            flag_checkbox(ui, self, SaveFlags::HAS_ID, "HasID");
             flag_checkbox(ui, self, SaveFlags::CITRUS, "Citrus");
             flag_checkbox(ui, self, SaveFlags::DEFLATE, "Deflate");
             flag_checkbox(ui, self, SaveFlags::MANDARIN, "Mandarin");

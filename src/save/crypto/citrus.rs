@@ -1,5 +1,5 @@
 use aes::cipher::block_padding::NoPadding;
-use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use sha3::Digest;
 
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
@@ -75,7 +75,7 @@ impl Citrus {
         }
 
         Aes128CbcEnc::new(&key.into(), &iv.into())
-            .encrypt_padded_mut::<NoPadding>(buf, buf.len())
+            .encrypt_padded::<NoPadding>(buf, buf.len())
             .unwrap();
 
         &buf[..]
@@ -83,7 +83,7 @@ impl Citrus {
 
     fn aes_decrypt(buf: &mut [u8], key: [u8; 16], iv: [u8; 16]) -> &[u8] {
         let pt = Aes128CbcDec::new(&key.into(), &iv.into())
-            .decrypt_padded_mut::<NoPadding>(buf)
+            .decrypt_padded::<NoPadding>(buf)
             .unwrap();
 
         let mut patch = key;

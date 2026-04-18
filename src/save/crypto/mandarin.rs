@@ -37,6 +37,8 @@ struct AuthCtx {
     e: Integer, // 0x14
 }
 
+type Aes128Ofb = ofb::Ofb<Aes128>;
+
 impl AuthCtx {
     pub const P: [u8; 32] =
         hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
@@ -263,7 +265,7 @@ impl Mandarin {
     }*/
 
     #[cfg(target_arch = "wasm32")]
-    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game) -> u64 {
+    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game, game: Game, base: usize, count: usize) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
         let mut state_p: u64 = self.seed_for_enc_rand;
@@ -321,7 +323,7 @@ impl Mandarin {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game) -> u64 {
+    pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game, base: usize, count: usize) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
         let mut state_p: u64 = self.seed_for_enc_rand;
@@ -345,8 +347,6 @@ impl Mandarin {
         let progress = AtomicUsize::new(0);
         let initial_state_p = state_p;
         let s = Instant::now();
-        let base = 0x0110000100000000u64 as usize;
-        let count = 0xffffffffu64 as usize;
         let chunk_size = 1_000_000;
         println!("[BRUTE FORCE] Starting brute force for {} keys", count);
         let good_key = (base..base + count)
@@ -498,7 +498,6 @@ impl Mandarin {
             }
 
             let target_checksum = auth_block.checksum;
-            type Aes128Ofb = ofb::Ofb<Aes128>;
             let mut cipher = Aes128Ofb::new(&key.into(), &iv.into());
             let mut data = &mut buf[0x210..0x210 + block_size];
             cipher.apply_keystream(&mut data);
@@ -507,7 +506,7 @@ impl Mandarin {
             //checksum
             let checksum = cityhasher::hash::<u64>(&data[..bytes_to_copy]);
             if checksum != target_checksum {
-                println!("[Checksum] block {i}: failed");
+                log::error!("[Checksum] block {i}: failed");
                 return Err(MandarinError::InvalidChecksum {
                     target: target_checksum,
                     real: checksum,
@@ -583,7 +582,6 @@ impl Mandarin {
             len_leftover -= block_size;
         }
 
-        //state_p = state_p.wrapping_add(unsafe{*(rands.as_ptr() as *const u64)});
         state_p = state_p.wrapping_add(!key);
 
         // loop through each real block that fits in the decrypted length
