@@ -71,6 +71,23 @@ impl AssetPaths {
                 enums: p("assets/re2/enumsre2.json"),
                 ..Default::default()
             },
+            Game::RE3 => Self {
+                rsz: p("assets/re3/rszre3.json"),
+                ..Default::default()
+            },
+            Game::RE7 => Self {
+                rsz: p("assets/re7/rszre7.json"),
+                enums: p("assets/re7/enumsre7.json"),
+                ..Default::default()
+            },
+            Game::RE8 => Self {
+                rsz: p("assets/re8/rszre8.json"),
+                enums: p("assets/re8/enumsre8.json"),
+                ..Default::default()
+            },
+            _ => Self {
+                ..Default::default()
+            },
         }}
 }
 

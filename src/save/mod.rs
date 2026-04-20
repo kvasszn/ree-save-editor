@@ -44,7 +44,7 @@ impl SaveFlags {
             Game::PRAGMATA => SaveFlags::MANDARIN,
             Game::MHRISE | Game::SF6 => SaveFlags::CITRUS,
             Game::RE2 => SaveFlags::BLOWFISH | SaveFlags::HAS_ID,
-            //_ => SaveFlags::empty(),
+            _ => SaveFlags::empty(),
         }
     }
 
@@ -201,7 +201,7 @@ impl SaveFile {
                 // i think there is some other logic if its not 3,
                 // but it usually should be three
                 else if blowfish_option == 3 { 
-                    crypto::blowfish::decrypt_in_place(&mut dsss_dsss)?;
+                    crypto::blowfish::decrypt_in_place(&mut dsss_dsss, options.game)?;
                     if &dsss_dsss != b"DSSSDSSS" {
                         log::error!("expected DSSSDSSS in header");
                         return Err(BlowfishError::HeaderError.into());
@@ -214,7 +214,7 @@ impl SaveFile {
             seek_align_up(&mut cursor, 8)?;
             let mut id = cursor.read_u64::<LE>()?.to_le_bytes();
             if blowfish_option > 0 && flags.contains(SaveFlags::BLOWFISH) {
-                crypto::blowfish::decrypt_in_place(&mut id)?;
+                crypto::blowfish::decrypt_in_place(&mut id, options.game)?;
             }
             let id = u64::from_le_bytes(id);
             // the game does check that the steam id is good here, but we can kinda just soft check
@@ -247,7 +247,7 @@ impl SaveFile {
             let offset = cursor.position() as usize;
             let data = cursor.get_mut().as_mut_slice();
             let enc_len = len - offset - 4; // minus the murmur3 hash size
-            crypto::blowfish::decrypt_in_place(&mut data[offset..offset+enc_len])?;
+            crypto::blowfish::decrypt_in_place(&mut data[offset..offset+enc_len], options.game)?;
             log::info!("Decrypted Blowfish");
         }
 
@@ -371,7 +371,7 @@ impl SaveFile {
             if blowfish_opt > 0 {
                 let mut dsss = *b"DSSSDSSS";
                 if blowfish_opt == 3 {
-                    crypto::blowfish::encrypt_in_place(&mut dsss)?;
+                    crypto::blowfish::encrypt_in_place(&mut dsss, self.game)?;
                 }
                 cursor.write_all(&dsss)?;
             }
@@ -383,7 +383,7 @@ impl SaveFile {
             let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::HAS_ID))? & 0xffffffff;
             let mut id_bytes = id.to_le_bytes();
             if blowfish_opt > 0 && self.flags.contains(SaveFlags::BLOWFISH) {
-                crypto::blowfish::encrypt_in_place(&mut id_bytes)?;
+                crypto::blowfish::encrypt_in_place(&mut id_bytes, self.game)?;
             }
             cursor.write_all(&id_bytes)?;
         }
@@ -438,7 +438,7 @@ impl SaveFile {
         }
 
         if self.flags.contains(SaveFlags::BLOWFISH) {
-            crypto::blowfish::encrypt_in_place(&mut payload)?;
+            crypto::blowfish::encrypt_in_place(&mut payload, self.game)?;
         }
 
         file_buf.extend_from_slice(&payload);
