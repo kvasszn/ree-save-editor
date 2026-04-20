@@ -5,7 +5,7 @@ VERSION=$1
 MODE=$2
 
 if [ -z "$VERSION" ]; then
-    echo "Usage: $0 <version> [mhwilds|re9|mhst3|mhrise|sf6|pragmata|dd2]"
+    echo "Usage: $0 <version> [mhwilds|re9|mhst3|mhrise|sf6|pragmata|dd2|re2]"
     exit 1
 fi
 
@@ -50,7 +50,7 @@ else
             ASSETS="mhst3_enums.json mhst3_remap.json mhst3_strings.txt rszmhst3.json"
             ;;
         "mhrise")
-            ASSETS="rszmhrise.json"
+            ASSETS="rszmhrise.json enumsmhrise.json"
             ;;
         "sf6")
             ASSETS="rszsf6.json"
@@ -60,6 +60,9 @@ else
             ;;
         "dd2")
             ASSETS="rszdd2.json enumsdd2.json"
+            ;;
+        "re2")
+            ASSETS="rszre2.json enumsre2.json"
             ;;
         *)
             echo "Unknown mode: $MODE"
