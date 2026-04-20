@@ -3,6 +3,7 @@ pub mod crypto;
 pub mod game;
 pub mod remap;
 pub mod types;
+pub mod error;
 
 use std::{
     io::{Cursor, Read, Seek, SeekFrom, Write},
@@ -10,18 +11,17 @@ use std::{
 };
 
 use crate::{
-    file::{Magic, StructRW},
-    save::{crypto::citrus::Citrus, game::Game, types::Class},
+    save::{crypto::{blowfish::BlowfishError, citrus::Citrus}, error::SaveError, game::Game, types::Class},
 };
 use bitflags::bitflags;
+use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use flate2::{
     Compression,
     write::{DeflateDecoder, DeflateEncoder},
 };
 
-use util::*;
-
 use crypto::Mandarin;
+use util::{WriteAlign, align_up, murmur3, seek_align_up};
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,48 +63,47 @@ impl SaveFlags {
 }
 
 #[derive(Debug, Clone)]
-pub struct SaveContext {
-    pub key: Option<u64>,
+pub struct SaveOptions {
     pub game: Game,
+    pub id: Option<u64>,
     pub curve_index: Option<usize>,
-    pub brute_force_base: usize,
-    pub brute_force_count: usize,
+    pub brute_force: Option<(usize, usize)>
 }
 
-impl SaveContext {
-    pub fn from_game(game: Game) -> Self {
+impl SaveOptions {
+    pub const STEAM_ID_BASE: usize = 0x0110000100000000;
+    pub fn new(game: Game) -> Self {
         Self {
-            key: None,
-            curve_index: None,
             game,
-            brute_force_base: 0x0110000100000000,
-            brute_force_count: 0xffffffff,
+            id: None,
+            curve_index: None,
+            brute_force: None
         }
     }
 
-    pub fn with_key(mut self, key: u64) -> Self {
-        self.key = Some(key);
+    pub fn id(mut self, id: u64) -> Self {
+        self.id = Some(id);
         self
     }
 
-    pub fn from_key(key: u64, game: Game) -> Self {
-        Self {
-            key: Some(key),
-            curve_index: None,
-            game,
-            brute_force_base: 0x0110000100000000,
-            brute_force_count: 0xffffffff,
-        }
-    }
-
-    pub fn with_curve(mut self, curve_index: usize) -> Self {
-        self.curve_index = Some(curve_index);
+    pub fn curve_index(mut self, index: usize) -> Self {
+        self.curve_index = Some(index);
         self
     }
 
-    pub fn with_brute_force(&mut self, base: usize, count: usize) {
-        self.brute_force_base = base;
-        self.brute_force_count = count;
+    pub fn brute_force(mut self, base: usize, count: usize) -> Self {
+        self.brute_force = Some((base, count));
+        self
+    }
+
+    pub fn brute_force_steam(mut self) -> Self {
+        self.brute_force = Some((Self::STEAM_ID_BASE, u32::MAX as usize));
+        self
+    }
+
+    pub fn brute_force_ps5(mut self) -> Self {
+        self.brute_force = Some((0, u32::MAX as usize));
+        self
     }
 }
 
@@ -112,297 +111,33 @@ impl SaveContext {
 pub struct SaveFile {
     pub game: Game,
     pub flags: SaveFlags,
+    pub blowfish_options: u32,
     pub fields: Vec<(u32, Class)>,
 }
 
 impl SaveFile {
-    pub fn to_bytes(&self, key: u64, curve_index: Option<usize>) -> crate::file::Result<Vec<u8>> {
-        let mut buf = Vec::new();
-        let mut wrapper = Cursor::new(&mut buf);
-
-        let mut virtual_offset = 16;
-        if self.flags == SaveFlags::DEFLATE {
-            virtual_offset += 12
-        }
-        if virtual_offset > 0 {
-            wrapper.write_all(&vec![0u8; virtual_offset])?;
-        }
-
-        // headers
-        if self.flags.contains(SaveFlags::BLOWFISH) {
-
-        }
-
-        if self.flags.contains(SaveFlags::HAS_ID) {
-            wrapper.write_all(&(key & 0xffffffff).to_le_bytes())?;
-        }
-
-        for (hash, class) in &self.fields {
-            wrapper.write_all(&hash.to_le_bytes())?;
-            class.write(&mut wrapper)?;
-        }
-
-        let mut current_data = buf[virtual_offset..].to_vec();
-
-        if self.flags.contains(SaveFlags::BLOWFISH) {
-
-        }
-
-        if self.flags.contains(SaveFlags::DEFLATE) {
-            let decompressed_size = current_data.len() as u64;
-
-            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(5));
-            encoder.write_all(&current_data)?;
-            let compressed = encoder.finish()?;
-            let compressed_size = compressed.len() as u64;
-
-            let mut packed = Vec::with_capacity(compressed.len() + 24);
-            packed.extend_from_slice(&(compressed_size + 0x10).to_le_bytes());
-            packed.extend_from_slice(&1u32.to_le_bytes());
-            // this is actually so fucking stupid when i think about it, above its a u64, here its a
-            // u32, same number but 0x10 diff
-            packed.extend_from_slice(&(compressed_size as u32).to_le_bytes());
-            packed.extend_from_slice(&decompressed_size.to_le_bytes());
-            packed.extend_from_slice(&compressed[..compressed_size as usize]);
-
-            current_data = packed;
-        }
-
-        if self.flags.contains(SaveFlags::MANDARIN) {
-            let decrypted_size = current_data.len() as u64;
-            let mandarin = Mandarin::init_from_game(self.game)?;
-            let steam_key = self.game.get_key_from_steamid(key);
-            current_data = mandarin.encrypt(&current_data, steam_key)?;
-            current_data.extend_from_slice(&decrypted_size.to_le_bytes());
-        }
-
-        if self.flags.contains(SaveFlags::CITRUS) {
-            let decrypted_size = current_data.len() as u64;
-            let citrus = Citrus::new(key, curve_index);
-            current_data = citrus
-                .encrypt(&current_data)
-                .expect("Failed to encrypt with citrus");
-            current_data.extend_from_slice(&decrypted_size.to_le_bytes());
-        }
-
-
-        let mut final_out = Vec::with_capacity(current_data.len() + 20);
-        final_out.extend_from_slice(b"DSSS");
-        final_out.extend_from_slice(&2u32.to_le_bytes());
-        final_out.extend_from_slice(&self.flags.bits().to_le_bytes());
-        final_out.extend_from_slice(&0u32.to_le_bytes());
-        final_out.extend_from_slice(&current_data);
-
-        // the game JUST takes the LAST 4 bytes of the buffer as the murmur, so anything between the
-        // actual data and the murmur can be wahtever, literally just doesnt matter (the
-        // deflate/compression defines the size)
-        let aligned = align_up(final_out.len(), 4);
-        final_out.resize(aligned, 0);
-        let file_hash = murmur3(&final_out, 0xffffffff);
-        final_out.extend_from_slice(&file_hash.to_le_bytes());
-
-        Ok(final_out)
-    }
-
-    pub fn save(
-        &self,
-        path: &Path,
-        key: u64,
-        curve_index: Option<usize>,
-    ) -> crate::file::Result<()> {
-        let bytes = self.to_bytes(key, curve_index)?;
+    pub fn save<P: AsRef<Path>>(&self, path: P, options: &SaveOptions) -> error::Result<()> {
+        let bytes = self.write_save(options)?;
         std::fs::write(path, bytes)?;
         Ok(())
     }
 
-    pub fn read_data<R: Read + Seek>(
-        reader: &mut R,
-        ctx: &mut SaveContext,
-    ) -> crate::file::Result<Vec<u8>> {
-        let magic = Magic::<4>::read(reader, &mut ())?;
-        if &magic != b"DSSS" {
-            return Err(format!("Magic {:#04X?}, != DSSS", &magic.0).into());
-        }
-        let version = u32::read(reader, &mut ())?;
-        if version != 2 {
-            return Err(format!("Save file version incorrect I think: {version}").into());
-        }
-        let flags = u32::read(reader, &mut ())?;
-        let mut idfk = u32::read(reader, &mut ())?; // this might be blowfish specific (flag 1), but i
-                                                // think it always gets read anyways?, or alignment
-                                                // just works out so its always skipped
-        println!("Version={version}, Save Flags: {:034b}, idfk: {:08x}", flags, idfk); // theres flags for encryption type, compression,
-        let flags = SaveFlags::from_bits_truncate(flags);
-        println!("Flags: {:?}", flags);
-
-        if flags.contains(SaveFlags::BLOWFISH) {
-            if idfk > 0 {
-                let mut dsss_dsss = reader.read_u8_arr::<8>()?;
-                if idfk == 3 {
-                    crypto::blowfish::decrypt_in_place(&mut dsss_dsss)?;
-                } else {
-                    idfk &= 0xfffffffc;
-                }
-                if &dsss_dsss != b"DSSSDSSS" {
-                    log::error!("expected DSSSDSSS in header");
-                    return Err(format!("expected DSSSDSSS in header, found {}", hex::encode(dsss_dsss)).into());
-                }
-            }
-        }
-        if flags.contains(SaveFlags::HAS_ID) {
-            let mut steamid32 = reader.read_u64()?.to_le_bytes();
-            if idfk > 0 {
-                crypto::blowfish::decrypt_in_place(&mut steamid32)?;
-            }
-            log::info!("[INFO] Has ID {}={}", hex::encode(steamid32), u64::from_le_bytes(steamid32));
-        }
-
-        let data_start = reader.tell()?;
-        reader.seek(std::io::SeekFrom::End(-12))?;
-        let real_data_len = reader.stream_position()? - data_start;
-        let decrypted_len = u64::read(reader, &mut ())?; // i read this here, it gets used by citrus
-                                                         // and mandarin, technically dont need to,
-                                                         // but why jump around twice ig idfk?
-        let end_hash = u32::read(reader, &mut ())?;
-        log::info!("end_hash={end_hash:x}");
-        let len = reader.stream_position()?;
-        reader.seek(SeekFrom::Start(0))?;
-        let mut file_bytes: Vec<u8> = vec![];
-        reader.read_to_end(&mut file_bytes)?;
-        let file_hash = murmur3(&file_bytes[..(len as usize - 4)], 0xffffffff);
-        if end_hash != file_hash {
-            log::info!(
-                "[File Hash Check] Invalid File Hashes: target={:x}, calculated={:x}",
-                end_hash,
-                file_hash
-            );
-        } else {
-            log::info!(
-                "[File Hash Check] File Hashes equal: target={:x}, calculated={:x}",
-                end_hash,
-                file_hash
-            );
-        }
-
-        // Decryption
-        reader.seek(SeekFrom::Start(data_start))?;
-        // TODO: figure out the magical + 8, oh its probably just me being dumb and assuming some
-        // dumb shit about some shit
-        let mut encrypted = vec![0; real_data_len as usize + 8];
-        reader.read_exact(&mut encrypted)?;
-        //reader.read_to_end(&mut encrypted)?;
-        let mut data = if flags.contains(SaveFlags::MANDARIN) {
-            let mandarin = Mandarin::init_from_game(ctx.game)?;
-            let steamid = ctx
-                .key
-                .unwrap_or_else(|| mandarin.brute_force(&encrypted, decrypted_len, ctx.game, ctx.brute_force_base, ctx.brute_force_count));
-            let key = ctx.game.get_key_from_steamid(steamid);
-            ctx.key = Some(steamid);
-            let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
-            log::info!("[Decrypted]");
-            decrypted_buf
-        } else if flags.contains(SaveFlags::CITRUS) {
-            let key = ctx.key.unwrap_or(0);
-            let citrus = Citrus::new(key, ctx.curve_index);
-            let mut curve_index = ctx.curve_index;
-            if let Some(curve) = citrus.brute_force_find_params(&encrypted, decrypted_len as usize) {
-                curve_index = Some(curve.index as usize);
-            }
-            let citrus = Citrus::new(key, curve_index);
-            let decrypted = citrus.decrypt(&encrypted, decrypted_len as usize).unwrap();
-            ctx.curve_index = curve_index;
-            decrypted
-        } else {
-            encrypted
-        };
-
-        if flags.contains(SaveFlags::BLOWFISH) {
-            crypto::blowfish::decrypt_in_place(&mut data).unwrap();
-        }
-
-        let data = if flags.contains(SaveFlags::DEFLATE) {
-            // Decompression
-            let mut decrypted_buf = Cursor::new(&data);
-            // this is so fucking stupid
-            let _compressed_size_from_afterthis = u64::read(&mut decrypted_buf, &mut ())?;
-            let _unk = u32::read(&mut decrypted_buf, &mut ())?; // this is just 1?
-            let compressed_buffer_size = u32::read(&mut decrypted_buf, &mut ())?;
-            let decompressed_size = u64::read(&mut decrypted_buf, &mut ())?;
-            let pos = decrypted_buf.position() as usize;
-            let compressed = &decrypted_buf.get_ref()[pos..pos + compressed_buffer_size as usize];
-            let mut decoder = DeflateDecoder::new(Vec::new());
-            decoder.write_all(&compressed)?;
-            let decompressed = decoder.finish()?;
-            if decompressed_size != decompressed.len() as u64 {
-                log::info!("[Decompression] expected size not equal to buffer size: continuing...");
-            }
-            log::info!("[Decompressed]");
-            decompressed
-        } else {
-            data
-        };
-
-        //let good_header = [0x99, 0xF1, 0xE3, 0xDB, 0x03, 0x00, 0x00, 0x00, 0xDC, 0xCC, 0x7F, 0x82, 0x27, 0x36, 0x5A, 0x69];
-        //data[0..16].copy_from_slice(&good_header);
-        Ok(data)
+    pub fn load<P: AsRef<Path>>(path: P, options: &mut SaveOptions) -> error::Result<Self> {
+        let bytes = std::fs::read(path)?;
+        let file = Self::read_save(bytes, options)?;
+        Ok(file)
     }
-}
 
-impl StructRW<SaveContext> for SaveFile {
-    fn read<R: Read + Seek>(reader: &mut R, ctx: &mut SaveContext) -> crate::file::Result<Self>
-    where
-        Self: Sized,
-    {
-        let magic = Magic::<4>::read(reader, &mut ())?;
-        if &magic != b"DSSS" {
-            return Err(format!("Magic {:#04X?}, != DSSS", &magic.0).into());
-        }
-        let version = u32::read(reader, &mut ())?;
-        if version != 2 {
-            return Err(format!("Save file version incorrect I think: {version}").into());
-        }
-        let flags = u32::read(reader, &mut ())?;
-        let mut idfk = u32::read(reader, &mut ())?; // this might be blowfish specific (flag 1), but i
-                                                // think it always gets read anyways?, or alignment
-                                                // just works out so its always skipped
-        println!("Version={version}, Save Flags: {:034b}, idfk: {:08x}", flags, idfk); // theres flags for encryption type, compression,
-        let flags = SaveFlags::from_bits_truncate(flags);
-        println!("Flags: {:?}", flags);
+    // returns the decrypted/decompressed save data and the data offset where reading would starts
+    pub fn process_bytes_to_stream(data: Vec<u8>, options: &mut SaveOptions) -> error::Result<(Vec<u8>, u64, u32, SaveFlags)> {
+        let len = data.len();
 
-        if flags.contains(SaveFlags::BLOWFISH) {
-            if idfk > 0 {
-                let mut dsss_dsss = reader.read_u8_arr::<8>()?;
-                if idfk == 3 {
-                    crypto::blowfish::decrypt_in_place(&mut dsss_dsss)?;
-                } else {
-                    idfk &= 0xfffffffc;
-                }
-                if &dsss_dsss != b"DSSSDSSS" {
-                    log::error!("expected DSSSDSSS in header");
-                    return Err(format!("expected DSSSDSSS in header, found {}", hex::encode(dsss_dsss)).into());
-                }
-            }
-        }
-        if flags.contains(SaveFlags::HAS_ID) {
-            let mut steamid32 = reader.read_u64()?.to_le_bytes();
-            if idfk > 0 {
-                crypto::blowfish::decrypt_in_place(&mut steamid32)?;
-            }
-            log::info!("[INFO] Has ID {}={}", hex::encode(steamid32), u64::from_le_bytes(steamid32));
-        }
-
-        // calculate file murmur3 hash
-        let data_start = reader.tell()?;
-        reader.seek(std::io::SeekFrom::End(-4))?;
-        let end_hash = u32::read(reader, &mut ())?;
-        log::info!("end_hash={end_hash:x}");
-        let len = reader.stream_position()?;
-        reader.seek(SeekFrom::Start(0))?;
-        let mut file_bytes: Vec<u8> = vec![];
-        reader.read_to_end(&mut file_bytes)?;
-        let file_hash = murmur3(&file_bytes[..(len as usize - 4)], 0xffffffff);
+        let mut end_hash = [0u8; 4];
+        end_hash.copy_from_slice(&data[len-4..len]);
+        let end_hash = u32::from_le_bytes(end_hash);
+        let file_hash = murmur3(&data[..(len - 4)], 0xffffffff);
         if end_hash != file_hash {
-            log::info!(
+            log::warn!(
                 "[File Hash Check] Invalid File Hashes: target={:x}, calculated={:x}",
                 end_hash,
                 file_hash
@@ -415,109 +150,306 @@ impl StructRW<SaveContext> for SaveFile {
             );
         }
 
-
-        let mut data_len = len - data_start;
-
-        // Decryption
-        reader.seek(SeekFrom::Start(data_start))?;
-        let mut encrypted = vec![0; data_len as usize];
-        reader.read_exact(&mut encrypted)?;
-        let mut data = if flags.contains(SaveFlags::MANDARIN) {
-            reader.seek(std::io::SeekFrom::End(-12))?;
-            let decrypted_len = u64::read(reader, &mut ())?;
-            let mandarin = Mandarin::init_from_game(ctx.game)?;
-            let steamid = ctx
-                .key
-                .unwrap_or_else(|| mandarin.brute_force(&encrypted, decrypted_len, ctx.game, ctx.brute_force_base, ctx.brute_force_count));
-            let key = ctx.game.get_key_from_steamid(steamid);
-            ctx.key = Some(steamid);
-            let decrypted_buf = mandarin.decrypt(&encrypted, decrypted_len as u64, key)?;
-            log::info!("[Decrypted]");
-            decrypted_buf
-        } else if flags.contains(SaveFlags::CITRUS) {
-            reader.seek(std::io::SeekFrom::End(-12))?;
-            let decrypted_len = u64::read(reader, &mut ())?;
-            let key = ctx.key.unwrap_or(0);
-            let citrus = Citrus::new(key, ctx.curve_index);
-            let mut curve_index = ctx.curve_index;
-            if let Some(curve) = citrus.brute_force_find_params(&encrypted, decrypted_len as usize)
-            {
-                curve_index = Some(curve.index as usize);
-            }
-            let citrus = Citrus::new(key, curve_index);
-            let decrypted = citrus.decrypt(&encrypted, decrypted_len as usize).unwrap();
-            ctx.curve_index = curve_index;
-            decrypted
-        } else {
-            encrypted
-        };
-
-        if flags.contains(SaveFlags::BLOWFISH) {
-            crypto::blowfish::decrypt_in_place(&mut data)?;
-            println!("[INFO] Decrypted with Blowfish")
+        let mut cursor = Cursor::new(data);
+        let magic = cursor.read_u32::<LE>()?.to_le_bytes();
+        if &magic != b"DSSS" {
+            return Err(SaveError::InvalidMagic)
+        }
+        let version = cursor.read_u32::<LE>()?;
+        if version != 2 {
+            return Err(SaveError::UnsupportedVersion(version))
         }
 
+        let flags = cursor.read_u32::<LE>()?;
+        let mut flags = SaveFlags::from_bits_truncate(flags);
+        log::info!("Flags: {flags:?}");
+        let mut blowfish_option = 0;
+
+        // Parse the header according to the flags and version
+        if flags.contains(SaveFlags::BLOWFISH) {
+            blowfish_option = cursor.read_u32::<LE>()?;
+            log::info!("blowfish_option={blowfish_option}");
+            if blowfish_option > 0 {
+                let mut dsss_dsss = [0u8; 8];
+                cursor.read_exact(&mut dsss_dsss)?;
+
+                if &dsss_dsss == b"DSSSDSSS" {
+                    blowfish_option &= 0xfffffffc; // this forces the lower two bits to 0, meaning
+                                                   // the other id isnt encrypted
+                    log::warn!("DSSSDSSS not encrypted while blowfish flag is set");
+                    flags.remove(SaveFlags::BLOWFISH); // already decrypted
+                }
+                // i think there is some other logic if its not 3,
+                // but it usually should be three
+                else if blowfish_option == 3 { 
+                    crypto::blowfish::decrypt_in_place(&mut dsss_dsss)?;
+                    if &dsss_dsss != b"DSSSDSSS" {
+                        log::error!("expected DSSSDSSS in header");
+                        return Err(BlowfishError::HeaderError.into());
+                    }
+                }
+            }
+        }
+
+        if flags.contains(SaveFlags::HAS_ID) {
+            seek_align_up(&mut cursor, 8)?;
+            let mut id = cursor.read_u64::<LE>()?.to_le_bytes();
+            if blowfish_option > 0 && flags.contains(SaveFlags::BLOWFISH) {
+                crypto::blowfish::decrypt_in_place(&mut id)?;
+            }
+            let id = u64::from_le_bytes(id);
+            // the game does check that the steam id is good here, but we can kinda just soft check
+            // since we might not care, I could maybe add a strict flag
+            if let Some(option_id) = options.id.as_mut() {
+                if *option_id != id && *option_id & 0xffffffff != id {
+                    log::warn!("Invalid id: {:x} != {:x}", *option_id, id);
+                    *option_id = id;
+                }
+            } else {
+                log::info!("Found id {id:016x}={id}");
+                options.id = Some(id);
+            }
+        }
+
+        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS) {
+            seek_align_up(&mut cursor, 16)?;
+        }
+
+        // Read the actual data in the file according to flags
+        // I think games accept versions from some minimum up to 2, (0, 1, 2 maybe?), but I
+        // already check for that above, strictly for 2
+        // it also actually does strictly check for v2 i think, ive never seen lower
+
+        // the game also checks some passed in options for what flags are accepted, and only
+        // decrypts if the files flags match that, this is irrelevant here
+
+        // first check blowfish
+        if flags.contains(SaveFlags::BLOWFISH) {
+            let offset = cursor.position() as usize;
+            let data = cursor.get_mut().as_mut_slice();
+            let enc_len = len - offset - 4; // minus the murmur3 hash size
+            crypto::blowfish::decrypt_in_place(&mut data[offset..offset+enc_len])?;
+            log::info!("Decrypted Blowfish");
+        }
+
+        // After blowfish, citrus and mandarin are checked
+        // I haven't found a game where both occur at the same time so I'll just assume that citrus
+        // happens first
+        if flags.intersects(SaveFlags::CITRUS | SaveFlags::MANDARIN) {
+            let offset = cursor.position() as usize;
+            cursor.seek(SeekFrom::End(-12))?;
+            let decrypted_len = cursor.read_u64::<LE>()?;
+            cursor.seek(SeekFrom::Start(offset as u64))?;
+            let enc_len = len - offset - 4; // minus the murmur3 hash size
+            let data = &mut cursor.get_mut().as_mut_slice()[offset..offset+enc_len];
+            if flags.contains(SaveFlags::MANDARIN) {
+                let mandarin = Mandarin::init_from_game(options.game)?;
+                let id = if let Some((base, count)) = options.brute_force {
+                    let id = mandarin.brute_force(&data, decrypted_len, options.game, base, count);
+                    if id == 0 {
+                        log::warn!("likely could not brute force the id");
+                    } else {
+                        log::info!("brute forced id={id}");
+                    }
+                    options.id = Some(id);
+                    id
+                } else {
+                    options.id
+                        .ok_or(SaveError::RequiresID(SaveFlags::MANDARIN))?
+                };
+                let key = options.game.get_key_from_steamid(id);
+                let decrypted = mandarin.decrypt(&data, decrypted_len as u64, key)?;
+                data[..decrypted.len()].copy_from_slice(&decrypted);
+                cursor.get_mut().truncate(offset + decrypted.len());
+                log::info!("Decrypted Mandarin");
+            }
+            else if flags.contains(SaveFlags::CITRUS) {
+                let key = options.id
+                        .ok_or(SaveError::RequiresID(SaveFlags::CITRUS))?;
+                let citrus = Citrus::new(key, options.curve_index);
+                let mut curve_index = options.curve_index;
+                if let Some(curve) = citrus.brute_force_find_params(&data, decrypted_len as usize) {
+                    curve_index = Some(curve.index as usize);
+                }
+                let citrus = Citrus::new(key, curve_index);
+                let decrypted = citrus.decrypt(&data, decrypted_len as usize).unwrap();
+                options.curve_index = curve_index;
+                data[..decrypted.len()].copy_from_slice(&decrypted);
+                cursor.get_mut().truncate(offset + decrypted.len());
+                log::info!("Decrypted Citrus");
+            }
+
+            if decrypted_len > 0 {
+                cursor.get_mut().truncate(offset + decrypted_len as usize);
+            }
+        }
+        //let _ = std::fs::write("./outputs/decrypted.bin", cursor.get_ref().as_slice());
+
+        // the game parses the data based on the offset position before decompression
+        let data_offset = cursor.position();
+
         let data = if flags.contains(SaveFlags::DEFLATE) {
-            // Decompression
-            let mut decrypted_buf = Cursor::new(&data);
-            // this is so fucking stupid
-            let _compressed_size_from_afterthis = u64::read(&mut decrypted_buf, &mut ())?;
-            let _unk = u32::read(&mut decrypted_buf, &mut ())?; // this is just 1?
-            let compressed_buffer_size = u32::read(&mut decrypted_buf, &mut ())?;
-            let decompressed_size = u64::read(&mut decrypted_buf, &mut ())?;
-            let pos = decrypted_buf.position() as usize;
-            log::debug!(
-                "{}, {}, {}",
-                pos,
-                compressed_buffer_size,
-                decrypted_buf.get_ref().len()
-            );
-            let compressed = &decrypted_buf.get_ref()[pos..pos + compressed_buffer_size as usize];
+            seek_align_up(&mut cursor, 8)?;
+            let _compressed_size_plus_0x10 = cursor.read_u64::<LE>()?;
+            let _unk_one = cursor.read_u32::<LE>()?;
+            let compressed_size = cursor.read_u32::<LE>()? as usize;
+            let decompressed_size = cursor.read_u64::<LE>()? as usize;
+            //println!("{:x}, {:x}, {:x}, {:x}, {:x}", data_offset, _compressed_size_plus_0x10, _unk_one, compressed_size, decompressed_size);
+            let offset = cursor.position() as usize;
+            let data = &mut cursor.get_mut().as_mut_slice();
+            let compressed = &mut data[offset..offset + compressed_size];
             let mut decoder = DeflateDecoder::new(Vec::new());
-            decoder.write_all(&compressed)?;
-            let decompressed = decoder.finish()?;
-            if decompressed_size != decompressed.len() as u64 {
+            decoder.write_all(&compressed)
+                .map_err(SaveError::CompressionError)?;
+            let decompressed = decoder.finish()
+                .map_err(SaveError::CompressionError)?;
+            if decompressed_size != decompressed.len() {
                 log::warn!("[Decompression] expected size not equal to buffer size: continuing...");
             }
-            log::info!("[Decompressed]");
-            decompressed
+            let mut new_buffer = cursor.get_ref()[..data_offset as usize].to_vec();
+            new_buffer.extend_from_slice(&decompressed);
+            log::info!("Deflated");
+            new_buffer
         } else {
-            data
+            cursor.into_inner()
         };
 
-        let _ = std::fs::write("./outputs/decrypted.bin", &data);
-        let virtual_offset = flags.get_header_length();
-        let buf = if virtual_offset != 0 {
-            let mut padded = vec![0u8; virtual_offset];
-            padded.extend(&data);
-            padded
+        Ok((data, data_offset, blowfish_option, flags))
+    }
+
+    // just pass in the data as mutable so that we can do decryption in place, no copies, no reference
+    pub fn read_save(data: Vec<u8>, options: &mut SaveOptions) -> error::Result<Self> {
+        let (data, data_offset, blowfish_options, flags): (Vec<u8>, u64, u32, SaveFlags) = Self::process_bytes_to_stream(data, options)?;
+        let mut cursor = Cursor::new(data.as_slice());
+        cursor.set_position(data_offset);
+
+        let end = data.len() as u64 - 7;
+        let classes = Self::parse_classes(&mut cursor, end)?;
+
+        Ok(SaveFile {
+            fields: classes,
+            flags,
+            game: options.game,
+            blowfish_options
+        })
+    }
+
+    pub fn write_save(&self, options: &SaveOptions) -> error::Result<Vec<u8>> {
+        let file_buf = Vec::new();
+        let mut cursor = Cursor::new(file_buf);
+        cursor.write_all(b"DSSS")?;
+        cursor.write_u32::<LE>(2)?;
+        cursor.write_u32::<LE>(self.flags.bits())?;
+
+        let blowfish_opt = self.blowfish_options; 
+
+        if self.flags.contains(SaveFlags::BLOWFISH) {
+            cursor.write_u32::<LE>(blowfish_opt)?;
+            if blowfish_opt > 0 {
+                let mut dsss = *b"DSSSDSSS";
+                if blowfish_opt == 3 {
+                    crypto::blowfish::encrypt_in_place(&mut dsss)?;
+                }
+                cursor.write_all(&dsss)?;
+            }
+        }
+
+        if self.flags.contains(SaveFlags::HAS_ID) {
+            cursor.write_align_up(8)?;
+            // i think this is supposed to be steamid32, so just use that in case with a mask
+            let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::HAS_ID))? & 0xffffffff;
+            let mut id_bytes = id.to_le_bytes();
+            if blowfish_opt > 0 && self.flags.contains(SaveFlags::BLOWFISH) {
+                crypto::blowfish::encrypt_in_place(&mut id_bytes)?;
+            }
+            cursor.write_all(&id_bytes)?;
+        }
+
+        if self.flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS) {
+            cursor.write_align_up(16)?;
+        }
+
+        let data_offset = cursor.position() as usize;
+        self.write_classes(&mut cursor)?;
+        let mut file_buf = cursor.into_inner();
+        let raw_classes = file_buf.split_off(data_offset);
+
+        let mut payload = if self.flags.contains(SaveFlags::DEFLATE) {
+            let decompressed_size = raw_classes.len() as u64;
+
+            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::new(5));
+            encoder.write_all(&raw_classes).map_err(SaveError::CompressionError)?;
+            let compressed = encoder.finish().map_err(SaveError::CompressionError)?;
+            let compressed_size = compressed.len() as u64;
+
+            let mut packed = Vec::with_capacity(compressed.len() + 24);
+
+            let pad_len = (8 - (data_offset % 8)) % 8;
+            packed.extend_from_slice(&vec![0u8; pad_len]); // this should usually just be 4 if no
+                                                           // mandarin, otherwise 0
+            packed.extend_from_slice(&(compressed_size + 0x10u64).to_le_bytes());
+            packed.extend_from_slice(&1u32.to_le_bytes());
+            packed.extend_from_slice(&(compressed_size as u32).to_le_bytes()); 
+            packed.extend_from_slice(&decompressed_size.to_le_bytes());
+            packed.extend_from_slice(&compressed);
+            packed
         } else {
-            data
+            raw_classes
         };
 
-        log::info!("virtual_offset={virtual_offset}");
-        let end = buf.len() as u64 - 7; // this might not be completely right
-        let mut data = Cursor::new(buf);
-        data.set_position(virtual_offset as u64);
+        let decrypted_size = payload.len() as u64;
 
-        log::info!("Reading save data");
+        if self.flags.contains(SaveFlags::MANDARIN) {
+            let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::MANDARIN))?;
+            let mandarin = Mandarin::init_from_game(options.game)?;
+            let steam_key = options.game.get_key_from_steamid(id);
+            payload = mandarin.encrypt(&payload, steam_key)?;
+        } else if self.flags.contains(SaveFlags::CITRUS) {
+            let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::CITRUS))?;
+            let citrus = Citrus::new(id, options.curve_index);
+            payload = citrus.encrypt(&payload).expect("Failed to encrypt with citrus");
+        }
+
+        if self.flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS) {
+            payload.extend_from_slice(&decrypted_size.to_le_bytes());
+        }
+
+        if self.flags.contains(SaveFlags::BLOWFISH) {
+            crypto::blowfish::encrypt_in_place(&mut payload)?;
+        }
+
+        file_buf.extend_from_slice(&payload);
+
+        let aligned_len = align_up(file_buf.len(), 4);
+        file_buf.resize(aligned_len, 0);
+
+        let file_hash = murmur3(&file_buf, 0xffffffff);
+        file_buf.extend_from_slice(&file_hash.to_le_bytes());
+
+        Ok(file_buf)
+    }
+
+    pub fn parse_classes(data: &mut Cursor<&[u8]>, end: u64) -> Result<Vec<(u32, Class)>, SaveError> {
         let mut fields = Vec::new();
-        while let Ok(h) = u32::read(&mut data, &mut ()) {
-            match types::Class::read(&mut data) {
+        while let Ok(h) = data.read_u32::<LE>() {
+            match types::Class::read(data) {
                 Ok(field_value) => fields.push((h, field_value)),
                 Err(e) => {
-                    //log::error!("[ERROR] Error reading class native_field_hash={h:010x}: {e}");
+                    log::error!("error reading class native_field_hash={h:010x}: {e}");
                 }
             }
             if data.position() >= end {
                 break
             }
         }
+        Ok(fields)
+    }
 
-        Ok(SaveFile {
-            fields,
-            flags,
-            game: ctx.game,
-        })
+    pub fn write_classes<W: Write + Seek>(&self, writer: &mut W) -> Result<(), SaveError> {
+        for (hash, class) in &self.fields {
+            writer.write_all(&hash.to_le_bytes())?;
+            class.write(writer)?;
+        }
+        Ok(())
     }
 }

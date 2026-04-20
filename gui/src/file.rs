@@ -14,13 +14,14 @@ use eframe::{
     egui::{ComboBox, ScrollArea, TextEdit, Ui},
 };
 use ree_lib::game_context::GameCtx;
+use ree_lib::save::SaveOptions;
 use ree_lib::save::corrupt::CorruptSaveReader;
 use ree_lib::sdk::type_map::TypeMap;
 use ree_lib::{
     edit::{EditContext, Editable},
     file::StructRW,
     save::{
-        SaveContext, SaveFile,
+        SaveFile,
         game::{GAME_OPTIONS, Game},
     },
     sdk::type_map::ContentLanguage,
@@ -184,59 +185,61 @@ impl FileView {
             self.input_file_picker.update();
             self.output_path_picker.update();
             if ui.button("Save").clicked() {
-                if let Some(steamid) = self.steam.steam_id {
-                    match self
-                        .current_file
-                        .write_save_to_buf(steamid, self.curve_index)
-                    {
-                        Ok((file_path, data)) => {
-                            // quite disgusting but oh well
-                            #[cfg(not(target_arch = "wasm32"))]
-                            {
-                                let output_path = self.output_path_picker.text.clone();
-                                use std::fs::File;
-                                let mut path = PathBuf::from(output_path.clone());
-                                let _ = std::fs::create_dir_all(&path);
-                                let in_file_path = PathBuf::from(&file_path);
-                                let file_name = in_file_path
-                                    .file_name()
-                                    .map(|x| x.to_string_lossy().to_string())
-                                    .unwrap_or("data.bin".to_string());
-                                path.push(file_name);
-                                log::info!("Saving to {path:?}");
-                                match File::create(&path) {
-                                    Ok(mut file) => {
-                                        // idk wtf im doing here uh
-                                        use std::io::Write;
-                                        let _ = file.write_all(&data);
-                                        let path = output_path.clone();
-                                        let path = shellexpand::full(&path)
-                                            .unwrap_or(output_path.clone().into());
-                                        let path = std::fs::canonicalize(path.to_string())
-                                            .unwrap_or(output_path.clone().into());
-                                        self.set_popup(format!("Saved to {:?}", path));
-                                    }
-                                    Err(e) => {
-                                        self.set_popup(format!(
-                                            "Could not create file {:?}: error: {e}",
-                                            path
-                                        ));
-                                    }
+                let mut save_options = SaveOptions::new(self.game);
+                if let Some(id) = self.steam.steam_id {
+                    save_options = save_options.id(id);
+                }
+                if let Some(curve_index) = self.curve_index {
+                    save_options = save_options.curve_index(curve_index);
+                }
+
+                match self
+                    .current_file
+                    .write_save(&save_options)
+                {
+                    Ok((file_path, data)) => {
+                        // quite disgusting but oh well
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            let output_path = self.output_path_picker.text.clone();
+                            use std::fs::File;
+                            let mut path = PathBuf::from(output_path.clone());
+                            let _ = std::fs::create_dir_all(&path);
+                            let in_file_path = PathBuf::from(&file_path);
+                            let file_name = in_file_path
+                                .file_name()
+                                .map(|x| x.to_string_lossy().to_string())
+                                .unwrap_or("data.bin".to_string());
+                            path.push(file_name);
+                            log::info!("Saving to {}", path.to_string_lossy().to_string());
+                            match File::create(&path) {
+                                Ok(mut file) => {
+                                    // idk wtf im doing here uh
+                                    use std::io::Write;
+                                    let _ = file.write_all(&data);
+                                    let path = path.clone().to_string_lossy().to_string();
+                                    let path = std::fs::canonicalize(path.to_string())
+                                        .unwrap_or(PathBuf::from(path.to_string()));
+                                    self.set_popup(format!("Saved to {:?}", path));
+                                }
+                                Err(e) => {
+                                    self.set_popup(format!(
+                                        "Could not create file {:?}: error: {e}",
+                                        path
+                                    ));
                                 }
                             }
-
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                crate::save_file_dialog(&file_path, data);
-                                self.set_popup(format!("Saved/Downloaded"));
-                            }
                         }
-                        Err(e) => {
-                            self.set_popup(format!("Error saving {}", e));
+
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            crate::save_file_dialog(&file_path, data);
+                            self.set_popup(format!("Saved/Downloaded"));
                         }
                     }
-                } else {
-                    self.set_popup(format!("Need a steamid to save"));
+                    Err(e) => {
+                        self.set_popup(format!("Error saving file {}", e));
+                    }
                 }
             }
 
@@ -352,70 +355,60 @@ impl FileView {
         self.show_popup = true;
     }
 
-    fn read_save<R: Read + Seek>(
-        &mut self,
-        reader: &mut R,
-        game_ctx: &mut GameCtx,
-    ) -> Option<SaveFile> {
-        if self.steam.steam_id.is_some() || self.brute_force {
-            let mut save_ctx = SaveContext {
-                key: if self.brute_force {
-                    None
-                } else {
-                    self.steam.steam_id
-                },
-                game: self.game,
-                curve_index: self.curve_index,
-                brute_force_base: self.brute_force_options.0,
-                brute_force_count: self.brute_force_options.1,
-            };
+    fn read_save(&mut self, data: Vec<u8>, game_ctx: &mut GameCtx) -> Option<SaveFile> {
+        let mut save_options = SaveOptions::new(self.game);
+        if self.brute_force {
+            save_options = save_options.brute_force(self.brute_force_options.0, self.brute_force_options.1);
+        }
+        if let Some(id) = self.steam.steam_id {
+            save_options = save_options.id(id);
+        }
+        if let Some(curve_index) = self.curve_index {
+            save_options = save_options.curve_index(curve_index);
+        }
 
-            if self.repair {
-                let data = SaveFile::read_data(reader, &mut save_ctx).ok()?;
-                let mut reader = Cursor::new(data);
-                let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
-                //let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);
-                let save_file = corrupted_reader.read_missing(
-                    &mut reader,
-                    &[
-                        (0xdbe3f199, "app.savedata.cUserSaveData"),
-                        (0x85e904c1, "via.storage.saveService.SaveFileDetail"),
-                    ],
-                );
-                if self.brute_force {
-                    self.steam.steam_id = save_ctx.key;
-                    if let Some(steam_id) = save_ctx.key {
-                        self.steam.steam_id_text = steam_id.to_string();
-                    }
-                }
-                return Some(save_file);
-            }
-            match SaveFile::read(reader, &mut save_ctx) {
-                Ok(save) => {
-                    self.curve_index = save_ctx.curve_index;
-                    if self.brute_force {
-                        self.steam.steam_id = save_ctx.key;
-                        if let Some(steam_id) = save_ctx.key {
-                            self.steam.steam_id_text = steam_id.to_string();
-                        }
-                    }
-                    return Some(save);
-                }
-                Err(e) => {
-                    self.set_popup(format!("Error reading save: {e:?}"));
-                }
-            }
+        if self.repair {
+            let data: Vec<u8> = SaveFile::process_bytes_to_stream(data, &mut save_options).ok()?.0;
+            let mut reader = Cursor::new(data);
+            let mut corrupted_reader = CorruptSaveReader::new(&game_ctx.type_map, self.game);
+            //let save_file = corrupted_reader.read_n_objects(&mut reader, "app.savedata.cUserSaveParam", 3);
+            let save_file = corrupted_reader.read_missing(
+                &mut reader,
+                &[
+                    (0xdbe3f199, "app.savedata.cUserSaveData"),
+                    (0x85e904c1, "via.storage.saveService.SaveFileDetail"),
+                ],
+            );
             if self.brute_force {
-                self.steam.steam_id = save_ctx.key;
-                if let Some(steam_id) = save_ctx.key {
+                self.steam.steam_id = save_options.id;
+                if let Some(steam_id) = save_options.id{
                     self.steam.steam_id_text = steam_id.to_string();
                 }
             }
-            self.curve_index = save_ctx.curve_index;
-        } else {
-            self.set_popup(format!("Cannot load save without steamid, or brute force"));
+            return Some(save_file);
         }
+        match SaveFile::read_save(data, &mut save_options) {
+            Ok(save) => {
+                self.update_from_save_options(&save_options);
+                return Some(save);
+            }
+            Err(e) => {
+                self.set_popup(format!("Error reading save: {e}"));
+            }
+        }
+        self.update_from_save_options(&save_options);
+
         None
+    }
+
+    fn update_from_save_options(&mut self, opts: &SaveOptions) {
+        if self.brute_force {
+            self.steam.steam_id = opts.id;
+            if let Some(steam_id) = opts.id {
+                self.steam.steam_id_text = steam_id.to_string();
+            }
+        }
+        self.curve_index = opts.curve_index;
     }
 
     pub fn load(&mut self, current_file: CurrentFile, game_ctx: &mut GameCtx) {
@@ -425,9 +418,9 @@ impl FileView {
                     shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
                 let path = PathBuf::from(expanded.as_ref());
                 if path.exists() {
-                    match std::fs::File::open(&path) {
-                        Ok(mut reader) => {
-                            let save = self.read_save(&mut reader, game_ctx);
+                    match std::fs::read(&path) {
+                        Ok(data) => {
+                            let save = self.read_save(data, game_ctx);
                             if let Some(save) = save {
                                 self.current_file = CurrentFile::Loaded {
                                     file_name: path.display().to_string(),
@@ -442,9 +435,8 @@ impl FileView {
                 }
             }
             CurrentFile::FileData { file_name, bytes } => {
-                let mut reader = Cursor::new(&bytes);
-
-                let save = self.read_save(&mut reader, game_ctx);
+                // clone is fine here, i think give the reader the whole buffer is just better
+                let save = self.read_save(bytes.clone(), game_ctx);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::LoadedWeb {
                         file_name,
@@ -470,13 +462,13 @@ impl FileView {
             CurrentFile::Path(path) => {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    let expanded =
-                        shellexpand::full(&path).unwrap_or(std::borrow::Cow::Borrowed(&path));
+                    let expanded = shellexpand::full(&path)
+                        .unwrap_or(std::borrow::Cow::Borrowed(&path));
                     let path = PathBuf::from(expanded.as_ref());
                     if path.exists() {
-                        match std::fs::File::open(&path) {
-                            Ok(mut reader) => {
-                                let save = self.read_save(&mut reader, game_ctx);
+                        match std::fs::read(&path) {
+                            Ok(data) => {
+                                let save = self.read_save(data, game_ctx);
                                 if let Some(save) = save {
                                     self.current_file = CurrentFile::Loaded {
                                         file_name: path.display().to_string(),
@@ -486,8 +478,7 @@ impl FileView {
                                 }
                             }
                             Err(e) => {
-                                eprintln!("[ERROR] opening file {e:?}");
-                                //self.set_popup(format!("Failed to open file: {e}"));
+                                self.set_popup(format!("Failed to open file: {e}"));
                                 return true;
                             }
                         }
@@ -499,8 +490,7 @@ impl FileView {
                 );
             }
             CurrentFile::FileData { file_name, bytes } => {
-                let mut reader = Cursor::new(&bytes);
-                let save = self.read_save(&mut reader, game_ctx);
+                let save = self.read_save(bytes.clone(), game_ctx);
                 #[cfg(target_arch = "wasm32")]
                 if let Some(save) = save {
                     self.current_file = CurrentFile::LoadedWeb {
@@ -535,8 +525,7 @@ impl FileView {
                 original_bytes,
                 ..
             } => {
-                let mut reader = Cursor::new(&original_bytes);
-                let save = self.read_save(&mut reader, game_ctx);
+                let save = self.read_save(original_bytes.clone(), game_ctx);
                 if let Some(save) = save {
                     self.current_file = CurrentFile::LoadedWeb {
                         file_name: file_name.to_string(),
@@ -549,7 +538,7 @@ impl FileView {
             CurrentFile::Loaded { .. } | CurrentFile::Null => {
                 self.current_file = CurrentFile::Path(self.input_file_picker.text.clone());
                 if self.reload(game_ctx) == false {
-                    //self.set_popup(format!("Could not open file {:?}", self.input_file_picker.text));
+                    self.set_popup(format!("Could not open file {}", self.input_file_picker.text));
                     return false;
                 };
             }
@@ -856,10 +845,10 @@ impl CurrentFile {
             }
         }
     }
-    pub fn write_save_to_buf(
+
+    pub fn write_save(
         &self,
-        key: u64,
-        curve_index: Option<usize>,
+        options: &SaveOptions
     ) -> Result<(String, Vec<u8>), Box<dyn Error>> {
         match self {
             CurrentFile::Null | CurrentFile::Path(_) | CurrentFile::FileData { .. } => {
@@ -868,7 +857,7 @@ impl CurrentFile {
             CurrentFile::Loaded { file_name, loaded }
             | CurrentFile::LoadedWeb {
                 file_name, loaded, ..
-            } => Ok((file_name.clone(), loaded.to_bytes(key, curve_index)?)),
+            } => Ok((file_name.clone(), loaded.write_save(options)?)),
         }
     }
 }

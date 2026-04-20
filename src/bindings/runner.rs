@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    fs::File,
     io::Cursor,
     iter::zip,
     path::PathBuf,
@@ -10,11 +9,10 @@ use std::{
 use eframe::egui::Window;
 use mlua::{Lua, Thread};
 
-use crate::game_context::GameCtx;
+use crate::{game_context::GameCtx, save::SaveOptions};
 use crate::{
     bindings::SaveDataRef,
-    file::StructRW,
-    save::{SaveContext, SaveFile, corrupt::CorruptSaveReader, game::Game},
+    save::{SaveFile, corrupt::CorruptSaveReader, game::Game},
     sdk::type_map::TypeMap,
 };
 
@@ -220,15 +218,15 @@ impl ScriptRunner {
                     })?
                     .type_map;
 
-                let mut reader = File::open(path.as_ref())?;
-                let mut save_ctx = SaveContext::from_key(steamid, game);
-                let data = SaveFile::read_data(
-                    &mut reader,
-                    &mut save_ctx
-                )
-                .map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
-                })?;
+                let bytes = std::fs::read(path.as_ref())?;
+                let mut save_opts = SaveOptions::new(game)
+                    .id(steamid);
+                let data: Vec<u8> = SaveFile::process_bytes_to_stream(
+                    bytes,
+                    &mut save_opts
+                ).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes: {e}"))
+                })?.0;
 
                 let mut reader = Cursor::new(data);
                 let mut corrupted_reader = CorruptSaveReader::new(&type_map, game);
@@ -243,7 +241,7 @@ impl ScriptRunner {
 
         let scan_missing = lua.create_function(
             move |lua,
-                  (path, hashes, names, steamid, game): (
+            (path, hashes, names, steamid, game): (
                 String,
                 Vec<u32>,
                 Vec<String>,
@@ -269,20 +267,22 @@ impl ScriptRunner {
                     .get(&game)
                     .ok_or_else(|| {
                         mlua::Error::RuntimeError(format!(
-                            "Game Context not loaded for game {game:?}"
+                                "Game Context not loaded for game {game:?}"
                         ))
                     })?
-                    .type_map;
+                .type_map;
 
-                let mut reader = File::open(path.as_ref())?;
-                let mut save_ctx = SaveContext::from_key(steamid, game);
-                let data = SaveFile::read_data(
-                    &mut reader,
-                    &mut save_ctx
+                //let mut reader = File::open(path.as_ref())?;
+                let bytes = std::fs::read(path.as_ref())?;
+                let mut save_opts = SaveOptions::new(game)
+                    .id(steamid);
+                let data: Vec<u8> = SaveFile::process_bytes_to_stream(
+                    bytes,
+                    &mut save_opts
                 )
-                .map_err(|e| {
-                    mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
-                })?;
+                    .map_err(|e| {
+                        mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes: {e}"))
+                    })?.0;
 
                 let mut types = Vec::new();
                 for (hash, name) in zip(&hashes, &names) {
@@ -298,12 +298,12 @@ impl ScriptRunner {
                 println!("[INFO] Loaded Save File");
                 Ok(save_ref)
             },
-        )?;
+                )?;
 
         let scan_n_objects =
             lua.create_function(
                 move |lua,
-                      (path, class_name, count, steamid, game): (
+                (path, class_name, count, steamid, game): (
                     String,
                     String,
                     u64,
@@ -334,21 +334,20 @@ impl ScriptRunner {
                         .get(&game)
                         .ok_or_else(|| {
                             mlua::Error::RuntimeError(format!(
-                                "Game Context not loaded for game {game:?}"
+                                    "Game Context not loaded for game {game:?}"
                             ))
                         })?
-                        .type_map;
+                    .type_map;
 
-                    let mut reader = File::open(path.as_ref())?;
-
-                    let mut save_ctx = SaveContext::from_key(steamid, game);
-                    let data = SaveFile::read_data(
-                        &mut reader,
-                        &mut save_ctx
-                    )
-                    .map_err(|e| {
-                        mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes {e}"))
-                    })?;
+                    let bytes = std::fs::read(path.as_ref())?;
+                    let mut save_opts = SaveOptions::new(game)
+                        .id(steamid);
+                    let data: Vec<u8> = SaveFile::process_bytes_to_stream(
+                        bytes,
+                        &mut save_opts
+                    ).map_err(|e| {
+                        mlua::Error::RuntimeError(format!("Could not Read Save Data Bytes: {e}"))
+                    })?.0;
 
                     let mut reader = Cursor::new(data);
                     let mut corrupted_reader = CorruptSaveReader::new(&*type_map, game);
@@ -362,7 +361,7 @@ impl ScriptRunner {
                     println!("[INFO] Loaded Save File");
                     Ok(save_ref)
                 },
-            )?;
+                    )?;
 
         let save_file_table = lua.create_table()?;
         save_file_table.set("scan_classes", scan_classes)?;
@@ -385,17 +384,11 @@ impl ScriptRunner {
                     eprintln!("[LUA ERROR] Unknown Game {game}, defaulting to MHWILDS");
                     Game::MHWILDS
                 });
-                let mut reader = File::open(path.as_ref())?;
-                let mut save_ctx = SaveContext::from_key(steamid, game);
-                let save_file = match SaveFile::read(
-                    &mut reader,
-                    &mut save_ctx
-                ) {
-                    Ok(s) => Ok(s),
-                    Err(e) => Err(mlua::Error::RuntimeError(format!(
-                        "Failed to load save file {e}"
-                    ))),
-                }?;
+
+                let mut save_options = SaveOptions::new(game)
+                    .id(steamid);
+                let save_file = SaveFile::load(path.as_ref(), &mut save_options)
+                    .map_err(|e| mlua::Error::RuntimeError(format!( "Failed to load save file {e}")))?;
                 let save_ref = SaveDataRef {
                     root: Arc::new(RwLock::new(save_file)),
                     path: vec![],

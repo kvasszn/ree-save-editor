@@ -22,7 +22,7 @@ pub use pog::*;
 use std::{collections::HashSet, error::Error, fs::File, io::{BufReader, Cursor, Read, Seek, Write}, mem::MaybeUninit, path::{Path, PathBuf}};
 
 
-use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveContext, game::Game}};
+use crate::{rsz::rszserde::{Guid, StringU16}, save::{SaveOptions, game::Game}};
 use crate::save::SaveFile;
 use serde::Serialize;
 use util::*;
@@ -322,10 +322,9 @@ impl FileReader {
                         u64::from_str_radix(steamid, 10)
                     }?;
                     //Mandarin::sanity_check(&file_path);
-                    let mut reader = File::open(&file)?;
-
-                    let mut save_ctx = SaveContext::from_key(steamid, Game::MHWILDS);
-                    let mut _save = SaveFile::read(&mut reader, &mut save_ctx)?;
+                    let mut options = SaveOptions::new(Game::MHWILDS)
+                        .id(steamid);
+                    let mut _save = SaveFile::load(&file, &mut options)?;
                     /*println!("here\n");
                     for field in &_save.fields {
                         println!("save1={:?},{:?},{:?}", field.0, field.1.fields.len(), field.1.hash);
@@ -365,9 +364,9 @@ impl FileReader {
                     let mut reader = File::open(&file).unwrap();
                     let mut buf = vec![];
                     reader.read_to_end(&mut buf).unwrap();
-                    let mut reader = Cursor::new(&buf);
-                    let mut save_ctx = SaveContext::from_game(Game::MHWILDS);
-                    let mut _save = SaveFile::read(&mut reader, &mut save_ctx)?;
+                    let mut options = SaveOptions::new(Game::MHWILDS)
+                        .brute_force_steam();
+                    let mut _save = SaveFile::load(&file, &mut options)?;
                     /*(0..c).into_par_iter().for_each(|i| {
                         let key = 0x0110000100000000 + i;
                         let mut reader = Cursor::new(&buf);

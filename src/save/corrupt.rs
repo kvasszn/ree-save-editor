@@ -468,6 +468,7 @@ impl<'a> CorruptSaveReader<'a> {
         SaveFile {
             fields,
             flags: SaveFlags::game_default(self.game),
+            blowfish_options: 0,
             game: self.game,
         }
     }
@@ -492,6 +493,7 @@ impl<'a> CorruptSaveReader<'a> {
             fields,
             flags: SaveFlags::game_default(self.game),
             game: self.game,
+            blowfish_options: 0,
         }
     }
 
@@ -515,6 +517,7 @@ impl<'a> CorruptSaveReader<'a> {
             fields,
             flags: SaveFlags::game_default(self.game),
             game: self.game,
+            blowfish_options: 0,
         }
     }
 
@@ -529,6 +532,7 @@ impl<'a> CorruptSaveReader<'a> {
             game: self.game,
             flags: SaveFlags::game_default(self.game),
             fields,
+            blowfish_options: 0,
         };
         save_file
     }

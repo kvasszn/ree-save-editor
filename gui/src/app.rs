@@ -169,6 +169,8 @@ impl eframe::App for TameApp {
         //let style = ctx.style();
         CentralPanel::default()
             //.frame(egui::Frame::central_panel(style)).inner_margin(0.))
+            // TODO: fix bug in egui_dock where it crashes if you close a panel while one is being
+            // dragged
             .show(ctx, |ui| {
                 DockArea::new(&mut self.tree)
                     .show_close_buttons(true)

@@ -13,9 +13,7 @@ use crate::{
     bindings::save::set_fieldvalue_from_lua,
     game_context::GameCtx,
     save::{
-        SaveFile,
-        game::Game,
-        types::{Array, Class, Field, FieldValue},
+        SaveFile, SaveOptions, game::Game, types::{Array, Class, Field, FieldValue}
     },
     sdk::type_map,
 };
@@ -672,8 +670,10 @@ impl LuaUserData for SaveDataRef {
             }
 
             let save_file = this.root.read().unwrap();
+            let save_opts = SaveOptions::new(save_file.game)
+                .id(steamid);
             save_file
-                .save(&path, steamid, None)
+                .save(&path, &save_opts)
                 .map_err(|e| mlua::Error::RuntimeError(format!("Failed to save file: {e}")))?;
             Ok(path_og)
         });
