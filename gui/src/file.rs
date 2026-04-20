@@ -46,7 +46,8 @@ pub struct FileView {
     repair: bool,
     brute_force: bool,
     curve_index: Option<usize>,
-    brute_force_options: (usize, usize)
+    brute_force_options: (usize, usize),
+    dump: bool
 }
 
 impl FileView {
@@ -80,7 +81,8 @@ impl FileView {
             repair: false,
             brute_force: false,
             curve_index: None,
-            brute_force_options: (0x0110000100000000, 0xffffffff)
+            brute_force_options: (0x0110000100000000, 0xffffffff),
+            dump: false
         }
     }
 
@@ -293,9 +295,18 @@ impl FileView {
         }
 
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.brute_force, "Brute Force SteamID");
-            ui.checkbox(&mut self.repair, "Try Repairing Corruption (WIP MOSTLY FOR DEBUG)");
+            if let Some(val) = self.curve_index.as_mut() {
+                ui.label("Citrus Curve Index");
+                ui.add(egui::DragValue::new(val).speed(1.0));
+            }
         });
+
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.brute_force, "Brute Force SteamID");
+            ui.checkbox(&mut self.repair, "Try Repair (don't use)");
+            ui.checkbox(&mut self.dump, "Dump Bytes");
+        });
+
         if self.brute_force {
             ui.horizontal(|ui| {
                 ui.label("Base:");
@@ -305,12 +316,7 @@ impl FileView {
             });
         }
 
-        ui.horizontal(|ui| {
-            if let Some(val) = self.curve_index.as_mut() {
-                ui.label("Citrus Curve Index");
-                ui.add(egui::DragValue::new(val).speed(1.0));
-            }
-        });
+
 
         if let Some(game_ctx) = game_ctx {
             ScrollArea::both()
@@ -365,6 +371,9 @@ impl FileView {
         }
         if let Some(curve_index) = self.curve_index {
             save_options = save_options.curve_index(curve_index);
+        }
+        if self.dump {
+            save_options = save_options.debug_dump();
         }
 
         if self.repair {

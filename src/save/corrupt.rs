@@ -51,6 +51,24 @@ impl<'a> CorruptSaveReader<'a> {
         let mut values: Vec<FieldValue> = Vec::with_capacity(len as usize);
         let mut broken = false;
         let type_info = field_info.get_original_type_array(self.type_map).unwrap();
+
+        let mut hashes = None;
+
+        if array_type == ArrayType::Class {
+            let marker = reader.read_u32()?;
+            if marker == 0xffeeffee || marker == 0xeeffeeff {
+                log::info!("marker found for {len} classes");
+                let mut class_hashes = Vec::new();
+                for _i in 0..len {
+                    class_hashes.push(reader.read_u32()?);
+                }
+                hashes = Some(class_hashes);
+            } else {
+                reader.seek_relative(-4)?;
+            }
+        }
+
+
         for _i in 0..len {
             let value = match array_type {
                 ArrayType::Value => {
@@ -97,6 +115,7 @@ impl<'a> CorruptSaveReader<'a> {
             member_size,
             array_type,
             values,
+            hashes
         })
     }
 

@@ -638,6 +638,7 @@ pub struct Array {
     pub member_size: u32,
     pub array_type: ArrayType,
     pub values: Vec<FieldValue>,
+    pub hashes: Option<Vec<u32>>
 }
 
 impl Array {
@@ -648,9 +649,20 @@ impl Array {
         let len = reader.read_u32()?;
         let array_type = ArrayType::try_from(reader.read_i32()?)?;
         let mut values: Vec<FieldValue> = Vec::with_capacity(len as usize);
+        let mut hashes = None;
 
         if array_type == ArrayType::Class {
-            //TODO: 0xffeeffee parsing
+            let marker = reader.read_u32()?;
+            if marker == 0xffeeffee {
+                //log::info!("marker found for {len} classes");
+                let mut class_hashes = Vec::new();
+                for _i in 0..len {
+                    class_hashes.push(reader.read_u32()?);
+                }
+                hashes = Some(class_hashes);
+            } else {
+                reader.seek_relative(-4)?;
+            }
         }
 
         for _i in 0..len {
@@ -659,11 +671,8 @@ impl Array {
                     if member_type == FieldType::String {
                         reader.seek_align_up(4)?;
                         let size = reader.read_u32()?;
-                        let data = (0..size).map(|_| Ok(reader.read_u16()?)).collect::<Result<
-                            Vec<u16>,
-                            Box<dyn Error>,
-                        >>(
-                        )?;
+                        let data = (0..size)
+                            .map(|_| Ok(reader.read_u16()?)).collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
                         FieldValue::String(Box::new(StringU16::new(data)))
                     } else {
                         FieldValue::read_sized(reader, member_type, member_size)?
@@ -683,6 +692,7 @@ impl Array {
             member_size,
             array_type,
             values,
+            hashes
         })
     }
 
@@ -692,6 +702,16 @@ impl Array {
         w.write(&self.member_size.to_le_bytes())?;
         w.write(&(self.values.len() as u32).to_le_bytes())?;
         w.write(&(self.array_type as i32).to_le_bytes())?;
+
+        if self.array_type == ArrayType::Class {
+            if let Some(hashes) = &self.hashes {
+                w.write(&0xffeeffeeu32.to_le_bytes())?;
+                for hash in hashes {
+                    w.write(&hash.to_le_bytes())?;
+                }
+            }
+        }
+
         for e in &self.values {
             match self.array_type {
                 ArrayType::Value => {
@@ -771,8 +791,8 @@ impl Field {
         let field_type = FieldType::try_from(reader.read_i32()?)?;
         let value = FieldValue::read(reader, field_type)?;
         /*if hash == 0xEF10B158 && pos == 0x190c {
-        println!("hash={hash:x}, {value:?}, ft={field_type:?}");
-        }*/
+          println!("hash={hash:x}, {value:?}, ft={field_type:?}");
+          }*/
         //println!("v={value:?}");
         seek_align_up(reader, 4)?;
         Ok(Self {

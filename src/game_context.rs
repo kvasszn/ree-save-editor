@@ -59,6 +59,7 @@ impl AssetPaths {
             },
             Game::MHRISE => Self {
                 rsz: p("assets/mhrise/rszmhrise.json"),
+                enums: p("assets/mhrise/enumsmhrise.json"),
                 ..Default::default()
             },
             Game::SF6 => Self {
@@ -67,6 +68,7 @@ impl AssetPaths {
             },
             Game::RE2 => Self {
                 rsz: p("assets/re2/rszre2.json"),
+                enums: p("assets/re2/enumsre2.json"),
                 ..Default::default()
             },
         }}

@@ -67,7 +67,8 @@ pub struct SaveOptions {
     pub game: Game,
     pub id: Option<u64>,
     pub curve_index: Option<usize>,
-    pub brute_force: Option<(usize, usize)>
+    pub brute_force: Option<(usize, usize)>,
+    pub dump: bool,
 }
 
 impl SaveOptions {
@@ -77,8 +78,14 @@ impl SaveOptions {
             game,
             id: None,
             curve_index: None,
-            brute_force: None
+            brute_force: None,
+            dump: false
         }
+    }
+
+    pub fn debug_dump(mut self) -> Self {
+        self.dump = true;
+        self
     }
 
     pub fn id(mut self, id: u64) -> Self {
@@ -283,7 +290,6 @@ impl SaveFile {
                 cursor.get_mut().truncate(offset + decrypted_len as usize);
             }
         }
-        //let _ = std::fs::write("./outputs/decrypted.bin", cursor.get_ref().as_slice());
 
         // the game parses the data based on the offset position before decompression
         let data_offset = cursor.position();
@@ -320,6 +326,11 @@ impl SaveFile {
     // just pass in the data as mutable so that we can do decryption in place, no copies, no reference
     pub fn read_save(data: Vec<u8>, options: &mut SaveOptions) -> error::Result<Self> {
         let (data, data_offset, blowfish_options, flags): (Vec<u8>, u64, u32, SaveFlags) = Self::process_bytes_to_stream(data, options)?;
+        if options.dump {
+            std::fs::create_dir_all("./outputs")?;
+            std::fs::write("./outputs/dump.bin", &data)?;
+            log::info!("Dumped raw processed data to outputs/dump.bin")
+        }
         let mut cursor = Cursor::new(data.as_slice());
         cursor.set_position(data_offset);
 
@@ -435,7 +446,7 @@ impl SaveFile {
             match types::Class::read(data) {
                 Ok(field_value) => fields.push((h, field_value)),
                 Err(e) => {
-                    log::error!("error reading class native_field_hash={h:010x}: {e}");
+                    //log::error!("error reading class native_field_hash={h:010x}: {e}");
                 }
             }
             if data.position() >= end {
