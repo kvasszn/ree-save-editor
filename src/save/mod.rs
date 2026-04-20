@@ -67,12 +67,12 @@ pub struct SaveOptions {
     pub game: Game,
     pub id: Option<u64>,
     pub curve_index: Option<usize>,
-    pub brute_force: Option<(usize, usize)>,
+    pub brute_force: Option<(u64, u64)>,
     pub dump: bool,
 }
 
 impl SaveOptions {
-    pub const STEAM_ID_BASE: usize = 0x0110000100000000;
+    pub const STEAM_ID_BASE: u64 = 0x0110000100000000;
     pub fn new(game: Game) -> Self {
         Self {
             game,
@@ -98,18 +98,18 @@ impl SaveOptions {
         self
     }
 
-    pub fn brute_force(mut self, base: usize, count: usize) -> Self {
+    pub fn brute_force(mut self, base: u64, count: u64) -> Self {
         self.brute_force = Some((base, count));
         self
     }
 
     pub fn brute_force_steam(mut self) -> Self {
-        self.brute_force = Some((Self::STEAM_ID_BASE, u32::MAX as usize));
+        self.brute_force = Some((Self::STEAM_ID_BASE, u32::MAX as u64));
         self
     }
 
     pub fn brute_force_ps5(mut self) -> Self {
-        self.brute_force = Some((0, u32::MAX as usize));
+        self.brute_force = Some((0, u32::MAX as u64));
         self
     }
 }
@@ -123,6 +123,18 @@ pub struct SaveFile {
 }
 
 impl SaveFile {
+    pub fn from_reader<R: Read + Seek>(mut reader: R, options: &mut SaveOptions) -> error::Result<Self> {
+        let mut data = Vec::new();
+        reader.read_to_end(&mut data)?;
+        Self::read_save(data, options)
+    }
+
+    pub fn to_writer<W: Write>(&self, mut writer: W, options: &SaveOptions) -> error::Result<()> {
+        let bytes = self.write_save(options)?;
+        writer.write_all(&bytes)?;
+        Ok(())
+    }
+
     pub fn save<P: AsRef<Path>>(&self, path: P, options: &SaveOptions) -> error::Result<()> {
         let bytes = self.write_save(options)?;
         std::fs::write(path, bytes)?;

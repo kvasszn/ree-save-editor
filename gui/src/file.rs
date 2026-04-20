@@ -46,7 +46,7 @@ pub struct FileView {
     repair: bool,
     brute_force: bool,
     curve_index: Option<usize>,
-    brute_force_options: (usize, usize),
+    brute_force_options: (u64, u64),
     dump: bool
 }
 
@@ -304,6 +304,7 @@ impl FileView {
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.brute_force, "Brute Force SteamID");
             ui.checkbox(&mut self.repair, "Try Repair (don't use)");
+            #[cfg(not(target_arch = "wasm32"))]
             ui.checkbox(&mut self.dump, "Dump Bytes");
         });
 
