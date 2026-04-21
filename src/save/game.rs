@@ -91,6 +91,6 @@ define_games! {
     RE3     ("RE 3", 952060,  blowfish: crypto::blowfish::KEY_RE3),
     RE7     ("RE 7", 418370, blowfish: crypto::blowfish::KEY_RE7),
     RE8     ("RE 8", 1196590, blowfish: crypto::blowfish::KEY_RE8),
-    RE4     ("RE 4", 2050650, calc: |id: u64| id),// & 0xffffffff),
+    RE4     ("RE 4", 2050650, calc: |id: u64| id & 0xffffffff),// & 0xffffffff),
     MISC    ("Misc", 0),
 }

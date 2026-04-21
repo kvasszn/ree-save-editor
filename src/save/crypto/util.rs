@@ -327,6 +327,12 @@ pub mod elgamal {
             int_to_bytes_le::<8>(&k)
         }
 
+        pub fn decrypt_ex_integers(pair: &(Integer, Integer), p: &Integer, u: &Integer) -> [u8; 8] {
+            let x = mod_exp(&pair.0, &u, p);
+            let k = &pair.1 / x;
+            int_to_bytes_le::<8>(&k)
+        }
+
         pub fn decrypt(&self, chunk: &Pair) -> [u8; 8] {
             let x0 = bytes_to_int(&chunk.0);
             let ct = bytes_to_int(&chunk.1);

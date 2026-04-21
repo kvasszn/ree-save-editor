@@ -6,7 +6,7 @@ Supported Games:
 
 |Game|Steam AppID|Support|
 |-|-|-|
-|MH Wilds|2246340|✅ |
+|MH Wilds|2246340|✅|
 |MH Stories 3|2852190|✅|
 |MH Rise|1446780|✅|
 |SF6|1364780|✅|
@@ -20,8 +20,8 @@ Supported Games:
 |RE9|1446780|✅|
 
 > [!NOTE]
-> I would like to add more games, but these are all the one's I own (except for DD2 and Pragmata, but I had help with those, and MHST3 was the same as the demo)
-> Also, only MH Wilds has an actual decent editing interface at the moment, the others are pretty barebones, but I plan on adding a system to make it easier to make a nice inerface
+> I would like to add more games, but these are all the one's I own (except for DD2 and Pragmata, but I had help with those, and MHST3 was the same as the demo).
+> Also, only MH Wilds has an actual decent editing interface at the moment, the others are pretty barebones, but I plan on adding a system to make it easier to make a nice interface
 
 ## Build
 ```

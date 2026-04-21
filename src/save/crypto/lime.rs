@@ -133,59 +133,26 @@ impl Lime {
         base: u64, count: u64,
     ) -> Option<u64> {
 
-        let c1 = bytes_to_int(&block.enc_key[0].0); 
+        let mut pairs = Vec::new(); 
+        for pair in block.enc_key.iter() {
+            let c1 = bytes_to_int(&pair.0); 
+            let c2 = bytes_to_int(&pair.1); 
+            pairs.push((c1, c2));
+        }
 
         let progress = AtomicUsize::new(0);
         let s = web_time::Instant::now();
-        let chunk_size = 1024;
-        println!("[BRUTE FORCE] Starting brute force for {} keys", count);
-        /*let found = (0..count as usize)
-            .into_par_iter()
-            .chunks(chunk_size)
-            .find_map_any(|steamids| {
-                let mut checked = chunk_size;
-                let mut found_key = None;
-                for (i, steamid) in steamids.iter().enumerate() {
-                    let steamid = *steamid as u64 + base;
-                    let inv_key = !steamid;
-                    let private_key = Integer::from(inv_key);
-                    let shared_secret = c1.clone().secure_pow_mod(&private_key, p);
-                    let aes_material = Elgamal::decrypt_pairs_ex(&block.enc_key, p, &shared_secret);
-                    let key = &aes_material[0..16];
-                    let iv = &aes_material[16..32];
-                    let mut cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
-                    let mut first_block = block.data[0..16].to_vec();
-                    cipher.apply_keystream(&mut first_block);
-                    let mut len = [0u8; 4];
-                    len.copy_from_slice(&first_block[4..8]);
-                    let len = u32::from_le_bytes(len);
-                    if len > 1000 {
-                        continue;
-                    }
-                    let mut full_data = block.data.clone();
-                    let mut full_cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
-                    full_cipher.apply_keystream(&mut full_data);
-                    let checksum: [u8; 32] = sha3::Sha3_256::digest(&full_data).into();
-                    if checksum == block.checksum {
-                        found_key = Some(steamid);
-                        break;
-                    }
-                }
-
-                let completed = progress.fetch_add(checked, Ordering::Relaxed);
-                print!("\rChecked {} / {} keys", completed, count);
-                use std::io::Write;
-                let _ = std::io::stdout().flush();
-                found_key
-
-            });*/
+        log::info!("[LIME BRUTE FORCE] Starting brute force for {} keys (this could take a very long time)", count);
         let found = (base..base+count).into_par_iter().find_any(|&steamid| {
             let inv_key = !steamid;
-            let private_key = Integer::from(inv_key);
-            let shared_secret = c1.clone().secure_pow_mod(&private_key, p);
-            let aes_material = Elgamal::decrypt_pairs_ex(&block.enc_key, p, &shared_secret);
-            let key = &aes_material[0..16];
-            let iv = &aes_material[16..32];
+            let u = Integer::from(inv_key);
+            let mut res = [0u8; 32];
+            for (i, pair) in pairs.iter().enumerate() {
+                let x = Elgamal::decrypt_ex_integers(pair, p, &u);
+                res[i * 8..i * 8 + 8].copy_from_slice(&x);
+            }
+            let key = &res[0..16];
+            let iv = &res[16..32];
             let mut cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
             let mut first_block = block.data[0..16].to_vec();
             cipher.apply_keystream(&mut first_block);
@@ -193,7 +160,7 @@ impl Lime {
             len.copy_from_slice(&first_block[4..8]);
             let len = u32::from_le_bytes(len);
             let mut is_match = false;
-
+            
             if len <= 1000 {
                 let mut full_data = block.data.clone();
                 let mut full_cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
@@ -203,7 +170,7 @@ impl Lime {
             }
             let current_progress = progress.fetch_add(1, Ordering::Relaxed) + 1;
 
-            if current_progress % 256 == 0 {
+            if current_progress % 10000 == 0 {
                 use std::io::Write;
                 print!("\rChecked {} / {} keys", current_progress, count);
                 let _ = std::io::stdout().flush();
