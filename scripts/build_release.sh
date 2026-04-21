@@ -64,6 +64,18 @@ else
         "re2")
             ASSETS="rszre2.json enumsre2.json"
             ;;
+        "re3")
+            ASSETS="rszre3.json"
+            ;;
+        "re4")
+            ASSETS="rszre4.json enumsre4.json"
+            ;;
+        "re7")
+            ASSETS="rszre7.json enumsre7.json"
+            ;;
+        "re8")
+            ASSETS="rszre8.json enumsre8.json"
+            ;;
         *)
             echo "Unknown mode: $MODE"
             exit 1

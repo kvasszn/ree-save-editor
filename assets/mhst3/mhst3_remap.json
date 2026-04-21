@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a910a7f91501fce21b336d30d201300a2290a0d32c708ce2656c7eb76287f4a8
-size 1519
+{
+    "app.savedata.cOtomonWork": {
+        "fields": {
+            "ID_Fixed": "app.OtomonDef.ID_Fixed",
+            "DualElement": "app.BattleDef.EREM_ATTR_TYPE_Fixed",
+            "TrendSkill": "app.OtomonDef.TREND_SKILL_Fixed",
+            "TrendStamina": "app.OtomonDef.TREND_STAMINA_Fixed",
+            "RegionSkill": "app.RegionSkill.ID_Fixed",
+            "FieldBonusTypes_Fixed": "app.EcoDef.FIELD_BONUS_TYPE_Fixed",
+            "HomeRegionID_Fixed": "app.StageDef.RegionID_Fixed",
+            "HomeAreaID_Fixed": "app.StageDef.AreaID_Fixed",
+            "TrainingRegionD_Fixed": "app.StageDef.RegionID_Fixed",
+            "EcoRank_Fixed": "app.EcoDef.ECOLOGY_RANK_Fixed"
+        },
+        "bitsets": {},
+        "preview": "ID_Fixed"
+    },
+    "app.savedata.cEggWork": {
+        "fields": {
+            "OtID_Fixed": "app.OtomonDef.ID_Fixed",
+            "DualElemType_Fixed": "app.BattleDef.EREM_ATTR_TYPE_Fixed",
+            "AreaID_Fixed": "app.StageDef.AreaID_Fixed",
+            "RegionID_Fixed": "app.StageDef.RegionID_Fixed",
+            "NestRarity_Fixed": "app.NestDef.NEST_RARITY_Fixed",
+            "EcoRank_Fixed": "app.EcoDef.ECOLOGY_RANK_Fixed",
+            "GeneLotteryMainStoryFlag": "app.AppMissionDef.MAIN_STORY_FLAG_Fixed"
+        },
+        "bitsets": {},
+        "preview": "OtID_Fixed"
+    },
+    "app.savedata.cEquipWork": {
+        "fields": {
+            "EquipType": "app.EquipDef.DECORATION_EQUIP_TYPE"
+        },
+        "bitsets": {},
+        "preview": "EquipID_Fixed"
+    }
+}

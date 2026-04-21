@@ -4119,7 +4119,7 @@ dependencies = [
 
 [[package]]
 name = "ree-lib"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "aes",
  "bincode",
@@ -4189,7 +4189,7 @@ dependencies = [
 
 [[package]]
 name = "ree-save-editor"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "clap",
  "console_error_panic_hook",

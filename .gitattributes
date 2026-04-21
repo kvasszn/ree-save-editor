@@ -1,2 +1,4 @@
-*.json filter=lfs diff=lfs merge=lfs -text
-assets/mhwilds/*.json filter=lfs diff=lfs merge=lfs -text
+assets/mhwilds/rszmhwilds.json filter=lfs diff=lfs merge=lfs -text
+assets/mhwilds/combined_msgs.json filter=lfs diff=lfs merge=lfs -text
+assets/mhwilds/rszmhwilds_packed.json filter=lfs diff=lfs merge=lfs -text
+assets/mhrise/rszmhrise.json filter=lfs diff=lfs merge=lfs -text

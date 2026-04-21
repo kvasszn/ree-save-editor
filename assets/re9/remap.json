@@ -1,3 +1,52 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6ceca047442cdbe2d2f5108d97e2132f5b393521074d76fae3f95ce03258b8b6
-size 1522
+{
+    "app.SavedataObjectBase": {
+        "fields": {
+            "_ObjectiveIDHash": "app.ObjectiveID.Hash",
+            "_PlaceIDHash": "app.PlaceID.Hash",
+            "_ThumbnailIDHash": "app.ThumbnailID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AchievementDataContext.Savedata": {
+        "fields": {
+            "BonusIDHash": "app.BonusID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AnalysisLogManagerApp.AttackKey.SaveData": {
+        "fields": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_EnemyIDHash": "app.CharacterKindID.Hash",
+            "_WeaponIDHash": "app.WeaponID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AnalysisLogManagerApp.GameOverKey.SaveData": {
+        "fields": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_EnemyIDHash": "app.CharacterKindID.Hash",
+            "_CauseOfDeathHash": "app.WeaponID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.AnalysisLogManagerApp.CraftKey.SaveData": {
+        "fields": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_ItemIDHash": "app.ItemID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    },
+    "app.ConversationContext.BackupBase": {
+        "fields": {
+            "_PlayerIDHash": "app.CharacterKindID.Hash",
+            "_ItemIDHash": "app.ItemID.Hash"
+        },
+        "bitsets": {},
+        "preview": ""
+    }
+}
