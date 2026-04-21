@@ -7,15 +7,21 @@ Supported Games:
 |Game|Steam AppID|Support|
 |-|-|-|
 |MH Wilds|2246340|✅ |
-|MH Stories 3|2852190|✅ WIP|
-|RE9|1446780|✅ WIP|
-|MH Rise|1446780|✅ WIP|
-|SF6|1364780|✅ WIP|
-|Pragmata|3357650|✅ WIP|
-|DD2|2054970|✅ WIP|
-|RE2|883710|❌WIP|
+|MH Stories 3|2852190|✅|
+|MH Rise|1446780|✅|
+|SF6|1364780|✅|
+|Pragmata|3357650|✅|
+|DD2|2054970|✅|
+|RE2|883710|✅|
+|RE3|952060|✅|
+|RE4|2050650|✅|
+|RE7|418370|✅|
+|RE8|1196590|✅|
+|RE9|1446780|✅|
 
-I plan on doing RE Remakes, RE7, RE8 and more upon request.
+> [!NOTE]
+> I would like to add more games, but these are all the one's I own (except for DD2 and Pragmata, but I had help with those, and MHST3 was the same as the demo)
+> Also, only MH Wilds has an actual decent editing interface at the moment, the others are pretty barebones, but I plan on adding a system to make it easier to make a nice inerface
 
 ## Build
 ```
@@ -38,7 +44,7 @@ Options:
       --msgs-path <MSGS_PATH>
       --mappings-path <MAPPINGS_PATH>
       --remap-path <REMAP_PATH>
-      --steam-path <STEAM_PATH>        [default: /home/nikola/.local/share/Steam/]
+      --steam-path <STEAM_PATH>        [default: ~/.local/share/Steam/]
   -h, --help                           Print help
   -V, --version                        Print version
 ```
@@ -69,8 +75,6 @@ This tool supports transferring some games between PC and PS5. You have to load 
 
 ## Alternatives
 You can also use repos by [mi5hmash](https://github.com/mi5hmash/) such as [MandarinJuice](https://github.com/mi5hmash/MandarinJuice) for resigning/transferring unsupported games.
-
-
 
 ## Previous REPO (file dumping/mhtame)
 File dumping should still work. It can convert some files to json for readability and data mining.

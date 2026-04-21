@@ -1,4 +1,3 @@
-use bytemuck::{Pod, Zeroable};
 use num_integer::Integer;
 
 pub struct SplitMix64;
@@ -263,6 +262,9 @@ pub fn scalar_mult<T: EccInteger>(k: &T, point: (T, T), a: &T, p: &T) -> Option<
 pub mod elgamal {
     use bytemuck::{Pod, Zeroable};
     use hex_literal::hex;
+    #[cfg(target_os = "linux")]
+    use super::backend::rug::*;
+    #[cfg(not(target_os = "linux"))]
     use super::backend::num_bigint::*;
 
     #[repr(C)]
@@ -317,6 +319,14 @@ pub mod elgamal {
             Pair(res0, res1)
         }
 
+        pub fn decrypt_ex(chunk: &Pair, p: &Integer, u: &Integer) -> [u8; 8] {
+            let x0 = bytes_to_int(&chunk.0);
+            let ct = bytes_to_int(&chunk.1);
+            let x = mod_exp(&x0, &u, p);
+            let k = ct / x;
+            int_to_bytes_le::<8>(&k)
+        }
+
         pub fn decrypt(&self, chunk: &Pair) -> [u8; 8] {
             let x0 = bytes_to_int(&chunk.0);
             let ct = bytes_to_int(&chunk.1);
@@ -348,6 +358,15 @@ pub mod elgamal {
             let mut res = [0u8; 32];
             for (i, chunk) in block.chunks.iter().enumerate() {
                 let x = self.decrypt(chunk);
+                res[i * 8..i * 8 + 8].copy_from_slice(&x);
+            }
+            res
+        }
+
+        pub fn decrypt_pairs_ex(pairs: &[Pair; 4], p: &Integer, u: &Integer) -> [u8; 32] {
+            let mut res = [0u8; 32];
+            for (i, pair) in pairs.iter().enumerate() {
+                let x = Self::decrypt_ex(pair, p, u);
                 res[i * 8..i * 8 + 8].copy_from_slice(&x);
             }
             res

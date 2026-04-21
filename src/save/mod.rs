@@ -230,7 +230,8 @@ impl SaveFile {
             }
         }
 
-        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS | SaveFlags::LIME) {
+        // flags.is_empty is for when i fix a dumped save and just want it to load
+        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS | SaveFlags::LIME) || flags.is_empty() {
             seek_align_up(&mut cursor, 16)?;
         }
 
@@ -266,8 +267,17 @@ impl SaveFile {
                 // I think DD2 PS5 also uses it
                 if options.game == Game::RE4 {
                     log::info!("Doing Lime instead of Mandarin for RE4");
-                    let id = options.id
-                        .ok_or(SaveError::RequiresID(SaveFlags::LIME))?;
+                    let id = if let Some((base, count)) = options.brute_force {
+                        let id = Lime::brute_force(&data, decrypted_len, options.game, base, count)
+                            .ok_or(SaveError::RequiresID(SaveFlags::LIME))?;
+                        options.id = Some(id);
+                        id
+                    } else {
+                        options.id
+                            .ok_or(SaveError::RequiresID(SaveFlags::LIME))?
+                    };
+                    //let id = options.id
+                    //    .ok_or(SaveError::RequiresID(SaveFlags::LIME))?;
                     let key = options.game.get_key_from_steamid(id);
                     let decrypted = Lime::decrypt(data, key, decrypted_len)?;
                     data[..decrypted.len()].copy_from_slice(&decrypted);

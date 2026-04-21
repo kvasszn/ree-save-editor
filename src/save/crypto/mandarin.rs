@@ -364,6 +364,8 @@ impl Mandarin {
 
     pub fn encrypt(&self, data: &[u8], key: u64) -> Result<Vec<u8>, MandarinError> {
         //let mut state_a: u64 = 0xBFACF76C3F96;
+        // TODO: switch to I think this one, idk if the other one is right when i was checking
+        // factordb
         //let n = hex!("c2d3bdb583ed63f803f400647714aabbc306ead0a00978cf096a06372ec19df37cea8d83b958b3133b4cbd8cfa9bc028b75d28d232e3e31eb26b122f95a6076141f6a8528469339dc80c59642115aecc9f29a20c2238b6d0fa5d7079fedd85488650ed625c0ad55931d5742c9696efedbd9419c25c0745e907355b4f3648a44f");
         let mut state_a: u64 = self.seed_for_rsa_rand;
         let mut rands: [u8; 0x20] = [0u8; 0x20];

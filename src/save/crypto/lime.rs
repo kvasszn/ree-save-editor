@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(target_os = "linux")]
 use super::util::backend::rug::*;
@@ -121,53 +121,106 @@ impl Lime {
         Ok(encrypted)
     }
 
+    pub fn brute_force(encrypted: &[u8], decrypted_len: u64, game: Game, base: u64, count: u64) -> Option<u64> {
+        let block = bytemuck::from_bytes::<Block>(&encrypted[..0x1220]);
+        let p = bytes_to_int(&Elgamal::P);
+        Self::brute_force_block(block, &p, base, count)
+    }
 
-
-    /*pub fn optimized_lime_brute_force(
+    pub fn brute_force_block(
         block: &Block, 
         p: &Integer, 
-        known_magic_bytes: &[u8], 
-        steamid_list: &[u64]
+        base: u64, count: u64,
     ) -> Option<u64> {
 
-        // C1 from the ElGamal ciphertext
         let c1 = bytes_to_int(&block.enc_key[0].0); 
 
-        let found = steamid_list.into_par_iter().find_any(|&steamid| {
-            // 1. Init private key
+        let progress = AtomicUsize::new(0);
+        let s = web_time::Instant::now();
+        let chunk_size = 1024;
+        println!("[BRUTE FORCE] Starting brute force for {} keys", count);
+        /*let found = (0..count as usize)
+            .into_par_iter()
+            .chunks(chunk_size)
+            .find_map_any(|steamids| {
+                let mut checked = chunk_size;
+                let mut found_key = None;
+                for (i, steamid) in steamids.iter().enumerate() {
+                    let steamid = *steamid as u64 + base;
+                    let inv_key = !steamid;
+                    let private_key = Integer::from(inv_key);
+                    let shared_secret = c1.clone().secure_pow_mod(&private_key, p);
+                    let aes_material = Elgamal::decrypt_pairs_ex(&block.enc_key, p, &shared_secret);
+                    let key = &aes_material[0..16];
+                    let iv = &aes_material[16..32];
+                    let mut cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
+                    let mut first_block = block.data[0..16].to_vec();
+                    cipher.apply_keystream(&mut first_block);
+                    let mut len = [0u8; 4];
+                    len.copy_from_slice(&first_block[4..8]);
+                    let len = u32::from_le_bytes(len);
+                    if len > 1000 {
+                        continue;
+                    }
+                    let mut full_data = block.data.clone();
+                    let mut full_cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
+                    full_cipher.apply_keystream(&mut full_data);
+                    let checksum: [u8; 32] = sha3::Sha3_256::digest(&full_data).into();
+                    if checksum == block.checksum {
+                        found_key = Some(steamid);
+                        break;
+                    }
+                }
+
+                let completed = progress.fetch_add(checked, Ordering::Relaxed);
+                print!("\rChecked {} / {} keys", completed, count);
+                use std::io::Write;
+                let _ = std::io::stdout().flush();
+                found_key
+
+            });*/
+        let found = (base..base+count).into_par_iter().find_any(|&steamid| {
             let inv_key = !steamid;
             let private_key = Integer::from(inv_key);
-
-            // 2. Heavy Math: GMP-accelerated ModPow
-            // shared_secret = C1^private_key mod P
             let shared_secret = c1.clone().secure_pow_mod(&private_key, p);
-
-            // 3. Extract AES Key/IV (Requires BigInt division/multiplicative inverse)
-            let aes_material = decrypt_elgamal_payload(&block.enc_key, &shared_secret, p);
+            let aes_material = Elgamal::decrypt_pairs_ex(&block.enc_key, p, &shared_secret);
             let key = &aes_material[0..16];
             let iv = &aes_material[16..32];
-
-            // 4. EARLY EXIT: Only decrypt the first 16 bytes (1 AES Block)
             let mut cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
             let mut first_block = block.data[0..16].to_vec();
             cipher.apply_keystream(&mut first_block);
+            let mut len = [0u8; 4];
+            len.copy_from_slice(&first_block[4..8]);
+            let len = u32::from_le_bytes(len);
+            let mut is_match = false;
 
-            // 5. Check Magic Bytes before wasting time on SHA3
-            if !first_block.starts_with(known_magic_bytes) {
-                return false;
+            if len <= 1000 {
+                let mut full_data = block.data.clone();
+                let mut full_cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
+                full_cipher.apply_keystream(&mut full_data);
+                let checksum: [u8; 32] = sha3::Sha3_256::digest(&full_data).into();
+                is_match = checksum == block.checksum;
+            }
+            let current_progress = progress.fetch_add(1, Ordering::Relaxed) + 1;
+
+            if current_progress % 256 == 0 {
+                use std::io::Write;
+                print!("\rChecked {} / {} keys", current_progress, count);
+                let _ = std::io::stdout().flush();
             }
 
-            // 6. Full Verification (Only runs if magic bytes match)
-            let mut full_data = block.data.clone();
-            let mut full_cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
-            full_cipher.apply_keystream(&mut full_data);
-
-            let checksum: [u8; 32] = sha3::Sha3_256::digest(&full_data).into();
-            checksum == block.checksum
+            is_match
         });
 
-        found.copied()
-    }*/
+        let taken = s.elapsed().as_secs_f64();
+        let completed = progress.load(Ordering::Relaxed);
+        println!(
+            "time taken for {completed} keys: {taken:.2}s @ {} keys/s",
+            completed as f64 / taken
+        );
+
+        found
+    }
 }
 
 #[repr(C)]
