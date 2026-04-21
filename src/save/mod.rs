@@ -10,9 +10,7 @@ use std::{
     path::Path,
 };
 
-use crate::{
-    save::{crypto::{blowfish::BlowfishError, citrus::Citrus}, error::SaveError, game::Game, types::Class},
-};
+use crate::save::{crypto::{Lime, blowfish::BlowfishError, citrus::Citrus}, error::SaveError, game::Game, types::Class};
 use bitflags::bitflags;
 use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use flate2::{
@@ -31,6 +29,7 @@ bitflags! {
         const CITRUS = 0x4;
         const DEFLATE = 0x8;
         const MANDARIN = 0x10;
+        const LIME = 0x10;
     }
 }
 
@@ -43,7 +42,8 @@ impl SaveFlags {
             Game::DD2 => SaveFlags::MANDARIN,
             Game::PRAGMATA => SaveFlags::MANDARIN,
             Game::MHRISE | Game::SF6 => SaveFlags::CITRUS,
-            Game::RE2 => SaveFlags::BLOWFISH | SaveFlags::HAS_ID,
+            Game::RE2 | Game::RE3 | Game::RE7 | Game::RE8 => SaveFlags::BLOWFISH | SaveFlags::HAS_ID,
+            Game::RE4 => SaveFlags::LIME,
             _ => SaveFlags::empty(),
         }
     }
@@ -230,7 +230,7 @@ impl SaveFile {
             }
         }
 
-        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS) {
+        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS | SaveFlags::LIME) {
             seek_align_up(&mut cursor, 16)?;
         }
 
@@ -262,25 +262,37 @@ impl SaveFile {
             let enc_len = len - offset - 4; // minus the murmur3 hash size
             let data = &mut cursor.get_mut().as_mut_slice()[offset..offset+enc_len];
             if flags.contains(SaveFlags::MANDARIN) {
-                let mandarin = Mandarin::init_from_game(options.game)?;
-                let id = if let Some((base, count)) = options.brute_force {
-                    let id = mandarin.brute_force(&data, decrypted_len, options.game, base, count);
-                    if id == 0 {
-                        log::warn!("likely could not brute force the id");
-                    } else {
-                        log::info!("brute forced id={id}");
-                    }
-                    options.id = Some(id);
-                    id
+                // for RE4, it uses LIME instead of MANDARIN, frick you capcom
+                // I think DD2 PS5 also uses it
+                if options.game == Game::RE4 {
+                    log::info!("Doing Lime instead of Mandarin for RE4");
+                    let id = options.id
+                        .ok_or(SaveError::RequiresID(SaveFlags::LIME))?;
+                    let key = options.game.get_key_from_steamid(id);
+                    let decrypted = Lime::decrypt(data, key, decrypted_len)?;
+                    data[..decrypted.len()].copy_from_slice(&decrypted);
+                    cursor.get_mut().truncate(offset + decrypted.len());
                 } else {
-                    options.id
-                        .ok_or(SaveError::RequiresID(SaveFlags::MANDARIN))?
-                };
-                let key = options.game.get_key_from_steamid(id);
-                let decrypted = mandarin.decrypt(&data, decrypted_len as u64, key)?;
-                data[..decrypted.len()].copy_from_slice(&decrypted);
-                cursor.get_mut().truncate(offset + decrypted.len());
-                log::info!("Decrypted Mandarin");
+                    let mandarin = Mandarin::init_from_game(options.game)?;
+                    let id = if let Some((base, count)) = options.brute_force {
+                        let id = mandarin.brute_force(&data, decrypted_len, options.game, base, count);
+                        if id == 0 {
+                            log::warn!("likely could not brute force the id");
+                        } else {
+                            log::info!("brute forced id={id}");
+                        }
+                        options.id = Some(id);
+                        id
+                    } else {
+                        options.id
+                            .ok_or(SaveError::RequiresID(SaveFlags::MANDARIN))?
+                    };
+                    let key = options.game.get_key_from_steamid(id);
+                    let decrypted = mandarin.decrypt(&data, decrypted_len as u64, key)?;
+                    data[..decrypted.len()].copy_from_slice(&decrypted);
+                    cursor.get_mut().truncate(offset + decrypted.len());
+                    log::info!("Decrypted Mandarin");
+                }
             }
             else if flags.contains(SaveFlags::CITRUS) {
                 let key = options.id
@@ -423,10 +435,18 @@ impl SaveFile {
         let decrypted_size = payload.len() as u64;
 
         if self.flags.contains(SaveFlags::MANDARIN) {
-            let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::MANDARIN))?;
-            let mandarin = Mandarin::init_from_game(options.game)?;
-            let steam_key = options.game.get_key_from_steamid(id);
-            payload = mandarin.encrypt(&payload, steam_key)?;
+            if options.game == Game::RE4 {
+                log::info!("Doing Lime instead of Mandarin for RE4");
+                let id = options.id
+                    .ok_or(SaveError::RequiresID(SaveFlags::LIME))?;
+                let key = options.game.get_key_from_steamid(id);
+                payload = Lime::encrypt(&payload, key)?;
+            } else {
+                let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::MANDARIN))?;
+                let mandarin = Mandarin::init_from_game(options.game)?;
+                let steam_key = options.game.get_key_from_steamid(id);
+                payload = mandarin.encrypt(&payload, steam_key)?;
+            }
         } else if self.flags.contains(SaveFlags::CITRUS) {
             let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::CITRUS))?;
             let citrus = Citrus::new(id, options.curve_index);

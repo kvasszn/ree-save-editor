@@ -1,3 +1,4 @@
+use bytemuck::{Pod, Zeroable};
 use num_integer::Integer;
 
 pub struct SplitMix64;
@@ -257,4 +258,107 @@ pub fn scalar_mult<T: EccInteger>(k: &T, point: (T, T), a: &T, p: &T) -> Option<
         k = k.div_2();
     }
     result
+}
+
+pub mod elgamal {
+    use bytemuck::{Pod, Zeroable};
+    use hex_literal::hex;
+    use super::backend::num_bigint::*;
+
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy, Pod, Zeroable)]
+    pub struct Pair(pub [u8; 64], pub [u8; 64]);
+
+    // elgamal??
+    #[derive(Debug, Clone)]
+    pub struct Elgamal {
+        p: Integer, // prime
+        #[allow(unused)]
+        q: Integer, // prime
+        r: Integer, // integer
+        s: Integer, // r ^ u mod q
+        u: Integer, // id mod q
+        e: Integer, // 0x14
+    }
+
+    impl Elgamal {
+        pub const P: [u8; 32] =
+            hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
+        pub const Q: [u8; 32] =
+            hex!("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b269a2a63c648855c39b0b");
+        pub const R: [u8; 32] =
+            hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
+
+        pub fn init(u: u64) -> crate::reerr::Result<Self> {
+            let p = bytes_to_int(&Self::P);
+            let q = bytes_to_int(&Self::Q);
+            let r = bytes_to_int(&Self::R);
+            let u = Integer::from(u);
+            let u = u % &q;
+            let s = mod_exp(&r, &u, &p);
+            let e = Integer::from(0x14u64);
+            Ok(Elgamal { p, q, r, s, u, e })
+        }
+
+        /*pub fn update_u(&mut self, u: u64) {
+          let u = Integer::from(u) % &self.q;
+          let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
+          self.u = u;
+          self.s = s;
+          }*/
+
+        pub fn encrypt(&self, pt: [u8; 8]) -> Pair {
+            let x0 = mod_exp(&self.r, &self.e, &self.p);
+            let x1 = mod_exp(&self.s, &self.e, &self.p);
+            let pt = bytes_to_int(&pt);
+            let ct = x1 * pt;
+            let res0 = int_to_bytes_le::<64>(&x0);
+            let res1 = int_to_bytes_le::<64>(&ct);
+            Pair(res0, res1)
+        }
+
+        pub fn decrypt(&self, chunk: &Pair) -> [u8; 8] {
+            let x0 = bytes_to_int(&chunk.0);
+            let ct = bytes_to_int(&chunk.1);
+            let x = mod_exp(&x0, &self.u, &self.p);
+            let k = ct / x;
+            int_to_bytes_le::<8>(&k)
+        }
+
+        pub fn encrypt_bytes(&self, pt: [u8; 32]) -> [Pair; 4] {
+            let mut chunks = [Pair([0u8; 64], [0u8; 64]); 4];
+            for i in 0..4 {
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&pt[i * 8..i * 8 + 8]);
+                chunks[i] = self.encrypt(buf);
+            }
+            chunks
+        }
+
+        pub fn decrypt_pairs(&self, pairs: [Pair; 4]) -> [u8; 32] {
+            let mut res = [0u8; 32];
+            for (i, pair) in pairs.iter().enumerate() {
+                let x = self.decrypt(pair);
+                res[i * 8..i * 8 + 8].copy_from_slice(&x);
+            }
+            res
+        }
+
+        pub fn decrypt_block(&self, block: Block) -> [u8; 32] {
+            let mut res = [0u8; 32];
+            for (i, chunk) in block.chunks.iter().enumerate() {
+                let x = self.decrypt(chunk);
+                res[i * 8..i * 8 + 8].copy_from_slice(&x);
+            }
+            res
+        }
+    }
+
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy, Pod, Zeroable)]
+    pub struct Block {
+        pub chunks: [Pair; 4], // key/iv checker
+        pub checksum: u64,     // computed from city64 or farmhash of decrypted data
+        pub litterally_no_idea: [u8; 8],
+    }
 }

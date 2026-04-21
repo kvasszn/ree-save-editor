@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::save::{SaveFlags, crypto::{MandarinError, blowfish}};
+use crate::save::{SaveFlags, crypto::{LimeError, MandarinError, blowfish}};
 
 pub type Result<T> = std::result::Result<T, SaveError>;
 #[derive(Error, Debug)]
@@ -21,6 +21,8 @@ pub enum SaveError {
     IO(#[from] std::io::Error),
     #[error("mandarin error: {0}")]
     MandarinError(#[from] MandarinError),
+    #[error("lime error: {0}")]
+    LimeError(#[from] LimeError),
     #[error("serialize error: {0}")]
     SerializationError(#[from] Box<dyn std::error::Error>),
 }

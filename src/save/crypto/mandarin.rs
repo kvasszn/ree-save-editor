@@ -1,10 +1,11 @@
 use crate::save::game::Game;
 
-//#[cfg(target_os = "linux")]
-//use super::backend::rug::*;
-//#[cfg(not(target_os = "linux"))]
-use super::util::SplitMix64;
+#[cfg(target_os = "linux")]
+use super::util::backend::rug::*;
+#[cfg(not(target_os = "linux"))]
 use super::util::backend::num_bigint::*;
+use super::util::SplitMix64;
+use super::util::elgamal::{Elgamal, Block};
 
 use std::{
     error::Error,
@@ -16,100 +17,9 @@ use aes::{
     Aes128,
     cipher::{KeyIvInit, StreamCipher},
 };
-use bytemuck::{Pod, Zeroable};
 use hex_literal::hex;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use web_time::Instant;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct Pair([u8; 64], [u8; 64]);
-
-// elgamal??
-#[derive(Debug, Clone)]
-struct AuthCtx {
-    p: Integer, // prime
-    #[allow(unused)]
-    q: Integer, // prime
-    r: Integer, // integer
-    s: Integer, // r ^ u mod q
-    u: Integer, // id mod q
-    e: Integer, // 0x14
-}
-
-type Aes128Ofb = ofb::Ofb<Aes128>;
-
-impl AuthCtx {
-    pub const P: [u8; 32] =
-        hex!("f33b6fb972a0b72515e45c391829e182ad8a9bdc0a64d3444d79c810ab863717");
-    pub const Q: [u8; 32] =
-        hex!("f99db75c39d0db920a72ae1c8c9470c156c54d6e05b269a2a63c648855c39b0b");
-    pub const R: [u8; 32] =
-        hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
-
-    pub fn init(u: u64) -> crate::reerr::Result<Self> {
-        let p = bytes_to_int(&Self::P);
-        let q = bytes_to_int(&Self::Q);
-        let r = bytes_to_int(&Self::R);
-        let u = Integer::from(u);
-        let u = u % &q;
-        let s = mod_exp(&r, &u, &p);
-        let e = Integer::from(0x14u64);
-        Ok(AuthCtx { p, q, r, s, u, e })
-    }
-
-    /*pub fn update_u(&mut self, u: u64) {
-    let u = Integer::from(u) % &self.q;
-    let s = self.r.pow_mod_ref(&u, &self.p).unwrap().complete();
-    self.u = u;
-    self.s = s;
-    }*/
-
-    pub fn encrypt(&self, pt: [u8; 8]) -> Pair {
-        let x0 = mod_exp(&self.r, &self.e, &self.p);
-        let x1 = mod_exp(&self.s, &self.e, &self.p);
-        let pt = bytes_to_int(&pt);
-        let ct = x1 * pt;
-        let res0 = int_to_bytes_le::<64>(&x0);
-        let res1 = int_to_bytes_le::<64>(&ct);
-        Pair(res0, res1)
-    }
-
-    pub fn decrypt(&self, chunk: &Pair) -> [u8; 8] {
-        let x0 = bytes_to_int(&chunk.0);
-        let ct = bytes_to_int(&chunk.1);
-        let x = mod_exp(&x0, &self.u, &self.p);
-        let k = ct / x;
-        int_to_bytes_le::<8>(&k)
-    }
-
-    pub fn encrypt_bytes(&self, pt: [u8; 32]) -> [Pair; 4] {
-        let mut chunks = [Pair([0u8; 64], [0u8; 64]); 4];
-        for i in 0..4 {
-            let mut buf = [0u8; 8];
-            buf.copy_from_slice(&pt[i * 8..i * 8 + 8]);
-            chunks[i] = self.encrypt(buf);
-        }
-        chunks
-    }
-
-    pub fn decrypt_block(&self, block: Block) -> [u8; 32] {
-        let mut res = [0u8; 32];
-        for (i, chunk) in block.chunks.iter().enumerate() {
-            let x = self.decrypt(chunk);
-            res[i * 8..i * 8 + 8].copy_from_slice(&x);
-        }
-        res
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct Block {
-    chunks: [Pair; 4], // key/iv checker
-    checksum: u64,     // computed from city64 or farmhash of decrypted data
-    litterally_no_idea: [u8; 8],
-}
 
 #[derive(Debug)]
 pub enum MandarinError {
@@ -162,6 +72,9 @@ impl Display for MandarinError {
     }
 }
 
+
+type Aes128Ofb = ofb::Ofb<Aes128>;
+
 // Note: keys are different for pragmata, seems to not be steamid, or they just don't care because
 // its the demo, or a single player game, its constant
 #[derive(Debug)]
@@ -182,88 +95,6 @@ impl Mandarin {
         }
     }
 
-    /*pub fn recover_state_from_mask(mask: [u8; 8]) -> u64 {
-        let cfg = Config::new();
-        let ctx = Context::new(&cfg);
-        let solver = Solver::new(&ctx);
-
-        // Create our unknown 64-bit starting state
-        let mut state = BV::new_const(&ctx, "state", 64);
-        let start_state = state.clone();
-
-        let add = BV::from_u64(&ctx, SplitMix64::ADD, 64);
-        let mul1 = BV::from_u64(&ctx, SplitMix64::MUL1, 64);
-        let mul2 = BV::from_u64(&ctx, SplitMix64::MUL2, 64);
-
-        for &expected_byte in &mask {
-            // state = state.wrapping_add(ADD);
-            state = state.bvadd(&add);
-            let mut z = state.clone();
-
-            // z = (z ^ (z >> 30)).wrapping_mul(MUL1);
-            let z_sh30 = z.bvlshr(&BV::from_u64(&ctx, 30, 64));
-            z = z.bvxor(&z_sh30).bvmul(&mul1);
-
-            // z = (z ^ (z >> 27)).wrapping_mul(MUL2);
-            let z_sh27 = z.bvlshr(&BV::from_u64(&ctx, 27, 64));
-            z = z.bvxor(&z_sh27).bvmul(&mul2);
-
-            // state = z ^ (z >> 31);
-            let z_sh31 = z.bvlshr(&BV::from_u64(&ctx, 31, 64));
-            state = z.bvxor(&z_sh31);
-
-            // mask[i] == state as u8; (extract the lowest 8 bits)
-            let extracted_byte = state.extract(7, 0);
-            let target = BV::from_u64(&ctx, expected_byte as u64, 8);
-            solver.assert(&extracted_byte._eq(&target));
-        }
-
-        // Crunch the equations
-        assert_eq!(solver.check(), z3::SatResult::Sat, "Z3 failed to find a valid PRNG state");
-
-        let model = solver.get_model().unwrap();
-        let resolved = model.eval(&start_state, true).unwrap();
-
-        resolved.as_u64().unwrap()
-    }*/
-
-    /*pub fn find_seed(&self, encrypted: &[u8], key: u64, decrypted_len: u64) -> u64 {
-        let p = bytes_to_int(&AuthCtx::P);
-        let r = bytes_to_int(&AuthCtx::R);
-        let e = Integer::from(0x14u64);
-
-        let expected_x0 = mod_exp(&r, &e, &p);
-        let expected_x0_bytes = int_to_bytes_le::<64>(&expected_x0);
-
-        let mut target_prng_mask = [0u8; 8];
-        for i in 0..8 {
-            target_prng_mask[i] = encrypted[i] ^ expected_x0_bytes[i];
-        }
-        println!("{target_prng_mask:?}");
-
-        // 1. Solve for the true 64-bit state using our leaked 8 bytes
-        println!("[+] Running Z3 solver to reconstruct 64-bit state from mask...");
-        let mut state = 0;//Self::recover_state_from_mask(target_prng_mask);
-
-        // 2. Undo the 16 key/iv iterations (MUST subtract ADD)
-        for _ in 0..16 {
-            state = SplitMix64::unmix(state).wrapping_sub(SplitMix64::ADD);
-        }
-
-        // 3. Undo the inverted key injection
-        state = state.wrapping_sub(!key);
-
-        // 4. Undo the block sizes loop
-        let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
-        for _ in 0..num_potential_blocks {
-            state = SplitMix64::unmix(state).wrapping_sub(SplitMix64::ADD);
-        }
-
-        println!("[+] Successfully recovered seed_for_enc_rand: {:#018x} ({})", state, state);
-
-        state
-    }*/
-
     #[cfg(target_arch = "wasm32")]
     pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game, base: u64, count: u64) -> u64 {
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
@@ -274,8 +105,8 @@ impl Mandarin {
             state_p = SplitMix64::next_int(&mut state_p);
         }
 
-        let p = bytes_to_int(&AuthCtx::P);
-        let r = bytes_to_int(&AuthCtx::R);
+        let p = bytes_to_int(&Elgamal::P);
+        let r = bytes_to_int(&Elgamal::R);
         let e = Integer::from(0x14u64);
 
         let expected_x0 = mod_exp(&r, &e, &p);
@@ -323,6 +154,7 @@ impl Mandarin {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn brute_force(&self, encrypted: &[u8], decrypted_len: u64, game: Game, base: u64, count: u64) -> u64 {
+
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize];
         let mut state_p: u64 = self.seed_for_enc_rand;
@@ -331,8 +163,8 @@ impl Mandarin {
             state_p = SplitMix64::next_int(&mut state_p);
         }
 
-        let p = bytes_to_int(&AuthCtx::P);
-        let r = bytes_to_int(&AuthCtx::R);
+        let p = bytes_to_int(&Elgamal::P);
+        let r = bytes_to_int(&Elgamal::R);
         let e = Integer::from(0x14u64);
 
         let expected_x0 = mod_exp(&r, &e, &p);
@@ -448,7 +280,7 @@ impl Mandarin {
         let mut buf = vec![0u8; 0x20210];
         let mut decrypted = vec![0u8; decrypted_len as usize];
         let mut remaining_bytes = decrypted_len as usize;
-        let auth = AuthCtx::init(!key).unwrap();
+        let auth = Elgamal::init(!key).unwrap();
 
         for i in 0..num_real_blocks as usize {
             //println!("BLOCK {} out of {num_real_blocks}", i + 1);
@@ -591,7 +423,7 @@ impl Mandarin {
         let mut encrypted = vec![0u8; total_encrypted_len as usize];
         let mut remaining_bytes = data_len as usize;
 
-        let auth = AuthCtx::init(!key).unwrap();
+        let auth = Elgamal::init(!key).unwrap();
 
         for i in 0..num_real_blocks as usize {
             // generate key and iv

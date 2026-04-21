@@ -9,7 +9,8 @@ macro_rules! define_games {
             $variant:ident ( 
                 $name:expr, 
                 $appid:expr 
-                $(, seeds: $seeds:expr, calc: $steam_calc:expr )? 
+                $(, seeds: $seeds:expr)? 
+                $(, calc: $steam_calc:expr)?
                 $(, blowfish: $blowfish:expr )? 
             )
         ),* $(,)?
@@ -79,16 +80,17 @@ macro_rules! define_games {
 }
 
 define_games! {
-    MHWILDS  ("MH Wilds",         2246340, seeds: (0xBFACF76C3F96, 0x7A36955255266CED),     calc: |id| id),
-    DD2      ("Dragon's Dogma 2", 2054970, seeds: (0x90EDB79172FDBE51, 0x5EC646997D69AE1B), calc: |id| id & 0xffffffff),
-    PRAGMATA ("Pragmata",         3357650, seeds: (0x3F90D767F13ABE2E, 0x7DA24A9E1479F3D7), calc: |id| id),
-    MHST3    ("MH Stories 3",     2852190, seeds: (0x4DB2A5EC6AD4005A, 0xA40139F12BA19EDB), calc: |id| id),
-    RE9      ("RE Requiem",       3764200, seeds: (0, 0x61f6868699c14dfa),                  calc: |id| id),
-    MHRISE   ("MH Rise",          1446780),
-    SF6      ("SF6",              1364780),
-    RE2      ("RE 2",             883710,  blowfish: crypto::blowfish::KEY_RE2),
-    RE3      ("RE 3",             952060,  blowfish: crypto::blowfish::KEY_RE3),
-    RE7      ("RE 7",             418370, blowfish: crypto::blowfish::KEY_RE7),
-    RE8      ("RE 8",             1196590, blowfish: crypto::blowfish::KEY_RE8),
-    MISC     ("Misc",             0),
+    MHWILDS ("MH Wilds",         2246340, seeds: (0xBFACF76C3F96, 0x7A36955255266CED),     calc: |id| id),
+    DD2     ("Dragon's Dogma 2", 2054970, seeds: (0x90EDB79172FDBE51, 0x5EC646997D69AE1B), calc: |id| id & 0xffffffff),
+    PRAGMATA("Pragmata",         3357650, seeds: (0x3F90D767F13ABE2E, 0x7DA24A9E1479F3D7), calc: |id| id),
+    MHST3   ("MH Stories 3",     2852190, seeds: (0x4DB2A5EC6AD4005A, 0xA40139F12BA19EDB), calc: |id| id),
+    RE9     ("RE Requiem",       3764200, seeds: (0, 0x61f6868699c14dfa),                  calc: |id| id),
+    MHRISE  ("MH Rise",          1446780),
+    SF6     ("SF6",              1364780),
+    RE2     ("RE 2", 883710,  blowfish: crypto::blowfish::KEY_RE2),
+    RE3     ("RE 3", 952060,  blowfish: crypto::blowfish::KEY_RE3),
+    RE7     ("RE 7", 418370, blowfish: crypto::blowfish::KEY_RE7),
+    RE8     ("RE 8", 1196590, blowfish: crypto::blowfish::KEY_RE8),
+    RE4     ("RE 4", 2050650, calc: |id: u64| id),// & 0xffffffff),
+    MISC    ("Misc", 0),
 }
