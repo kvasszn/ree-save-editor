@@ -107,6 +107,8 @@ pub struct GameCtx {
 impl GameCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(paths: &AssetPaths) -> Self {
+        use std::default;
+
         let mut type_map = TypeMap::default();
         if let Some(path) = &paths.rsz {
             let _ = type_map.load_rsz_from_path(path)

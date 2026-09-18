@@ -30,6 +30,7 @@ bitflags! {
         const DEFLATE = 0x8;
         const MANDARIN = 0x10;
         const LIME = 0x10;
+        const NOFLAG = 0x0;
     }
 }
 
@@ -231,9 +232,13 @@ impl SaveFile {
         }
 
         // flags.is_empty is for when i fix a dumped save and just want it to load
-        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS | SaveFlags::LIME) || flags.is_empty() {
+        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS | SaveFlags::LIME) {
             seek_align_up(&mut cursor, 16)?;
         }
+        // if flags.contains(SaveFlags::NOFLAG){
+
+        // }
+        
 
         // Read the actual data in the file according to flags
         // I think games accept versions from some minimum up to 2, (0, 1, 2 maybe?), but I

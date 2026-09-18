@@ -6,6 +6,7 @@ pub mod viewer;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod code_editor;
+pub mod save_transfer;
 
 use eframe::egui::{self};
 
