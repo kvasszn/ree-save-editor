@@ -169,6 +169,7 @@ impl Editable for SaveFile {
             let type_name = ctx.type_map.get_by_hash(field.1.hash)
                 .map(|t| t.name.clone())
                 .unwrap_or(format!("{:08x}", field.1.hash));
+            
             let field_name = ctx.type_map.get_hash_str(field.0)
                 .cloned()
                 .unwrap_or(format!("{:08x}", field.0));
