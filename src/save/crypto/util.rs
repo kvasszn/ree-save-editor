@@ -192,7 +192,6 @@ pub fn point_add<T: EccInteger>(
     a: &T,
     p: &T,
 ) -> Option<(T, T)> {
-    // Handle identity element (Point at Infinity)
     let (x1, y1) = match &p1 {
         Some(val) => val.clone(),
         None => return p2,
@@ -202,38 +201,29 @@ pub fn point_add<T: EccInteger>(
         None => return p1,
     };
 
-    // If x coordinates are same
     if x1 == x2 {
-        // If y coordinates are different, it's P + (-P) = O
         if y1 != y2 {
             return None;
         }
-        // If y is 0, doubling gives Point at Infinity
         if y1 == T::from_u64(0) {
             return None;
         }
     }
 
     let lambda = if x1 == x2 && y1 == y2 {
-        // Case: Point Doubling
-        // lambda = (3x1^2 + a) / (2y1) mod p
         let x_sq = x1.mul_mod(&x1, p);
         let num = x_sq.mul_mod(&T::from_u64(3), p).add_mod(a, p);
         let den = y1.mul_mod(&T::from_u64(2), p);
         num.mul_mod(&mod_inverse(&den, p), p)
     } else {
-        // Case: Standard Addition
-        // lambda = (y2 - y1) / (x2 - x1) mod p
         let num = y2.sub_mod(&y1, p);
         let den = x2.sub_mod(&x1, p);
         num.mul_mod(&mod_inverse(&den, p), p)
     };
 
-    // x3 = lambda^2 - x1 - x2 mod p
     let lam_sq = lambda.mul_mod(&lambda, p);
     let x3 = lam_sq.sub_mod(&x1, p).sub_mod(&x2, p);
 
-    // y3 = lambda(x1 - x3) - y1 mod p
     let x_diff = x1.sub_mod(&x3, p);
     let y3 = lambda.mul_mod(&x_diff, p).sub_mod(&y1, p);
 
@@ -245,12 +235,10 @@ pub fn scalar_mult<T: EccInteger>(k: &T, point: (T, T), a: &T, p: &T) -> Option<
     let mut addend = Some(point);
     let mut k = k.clone();
 
-    // Double-and-Add Algorithm
     while k > T::from_u64(0) {
         if k.is_odd() {
             result = point_add(result, addend.clone(), a, p);
         }
-        // Double the point for the next bit
         if let Some(p_val) = addend {
             addend = point_add(Some(p_val.clone()), Some(p_val), a, p);
         }
@@ -291,7 +279,8 @@ pub mod elgamal {
         pub const R: [u8; 32] =
             hex!("e66f544afcce68c5ef07b9a07b277585344a1db61376e831f73b9fbd5f44f715");
 
-        pub fn init(u: u64) -> crate::reerr::Result<Self> {
+        // why does this return a result?
+        pub fn init(u: u64) -> Self {
             let p = bytes_to_int(&Self::P);
             let q = bytes_to_int(&Self::Q);
             let r = bytes_to_int(&Self::R);
@@ -299,7 +288,7 @@ pub mod elgamal {
             let u = u % &q;
             let s = mod_exp(&r, &u, &p);
             let e = Integer::from(0x14u64);
-            Ok(Elgamal { p, q, r, s, u, e })
+            Elgamal { p, q, r, s, u, e }
         }
 
         /*pub fn update_u(&mut self, u: u64) {

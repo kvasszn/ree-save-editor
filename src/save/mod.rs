@@ -1,4 +1,6 @@
 pub mod corrupt;
+pub mod json;
+pub mod eval;
 pub mod crypto;
 pub mod game;
 pub mod remap;
@@ -19,10 +21,12 @@ use flate2::{
 };
 
 use crypto::Mandarin;
-use util::{WriteAlign, align_up, murmur3, seek_align_up};
+use ree_lib::util::*;
+use serde::{Deserialize, Serialize};
+use util::{WriteAlign, align_up, seek_align_up};
 
 bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SaveFlags: u32 {
         const BLOWFISH = 0x1;
         const HAS_ID = 0x2;
@@ -43,7 +47,7 @@ impl SaveFlags {
             Game::PRAGMATA => SaveFlags::MANDARIN,
             Game::MHRISE | Game::SF6 => SaveFlags::CITRUS,
             Game::RE2 | Game::RE3 | Game::RE7 | Game::RE8 => SaveFlags::BLOWFISH | SaveFlags::HAS_ID,
-            Game::RE4 => SaveFlags::LIME,
+            Game::RE4 | Game::DD2PS5 => SaveFlags::LIME,
             _ => SaveFlags::empty(),
         }
     }
@@ -59,6 +63,38 @@ impl SaveFlags {
             res += 8;
         }
         res
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseSaveFlagsError(String);
+
+impl std::fmt::Display for ParseSaveFlagsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for ParseSaveFlagsError {}
+
+impl std::str::FromStr for SaveFlags {
+    type Err = ParseSaveFlagsError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut flags = SaveFlags::empty();
+
+        for part in s.split('|') {
+            match part.trim() {
+                "BLOWFISH" => flags |= SaveFlags::BLOWFISH,
+                "HAS_ID"   => flags |= SaveFlags::HAS_ID,
+                "CITRUS"   => flags |= SaveFlags::CITRUS,
+                "DEFLATE"  => flags |= SaveFlags::DEFLATE,
+                "MANDARIN" | "LIME" => flags |= SaveFlags::MANDARIN, 
+                "" => continue, 
+                unknown => return Err(ParseSaveFlagsError(format!("Unknown flag: '{}'", unknown))),
+            }
+        }
+        Ok(flags)
     }
 }
 
@@ -154,7 +190,7 @@ impl SaveFile {
         let mut end_hash = [0u8; 4];
         end_hash.copy_from_slice(&data[len-4..len]);
         let end_hash = u32::from_le_bytes(end_hash);
-        let file_hash = murmur3(&data[..(len - 4)], 0xffffffff);
+        let file_hash = murmur3(&data[..(len - 4)]);
         if end_hash != file_hash {
             log::warn!(
                 "[File Hash Check] Invalid File Hashes: target={:x}, calculated={:x}",
@@ -231,7 +267,8 @@ impl SaveFile {
         }
 
         // flags.is_empty is for when i fix a dumped save and just want it to load
-        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS | SaveFlags::LIME) || flags.is_empty() {
+        // if SaveFlags == 0x0, the serialized stream starts at offset 0xc (from mhst3)
+        if flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS | SaveFlags::LIME) {
             seek_align_up(&mut cursor, 16)?;
         }
 
@@ -268,7 +305,7 @@ impl SaveFile {
                 if options.game.get_is_lime() {
                     log::info!("Doing Lime instead of Mandarin for RE4");
                     let id = if let Some((base, count)) = options.brute_force {
-                        let id = Lime::brute_force(&data, decrypted_len, options.game, base, count)
+                        let id = Lime::brute_force(data, decrypted_len, options.game, base, count)
                             .ok_or(SaveError::RequiresID(SaveFlags::LIME))?;
                         options.id = Some(id);
                         id
@@ -285,7 +322,9 @@ impl SaveFile {
                 } else {
                     let mandarin = Mandarin::init_from_game(options.game)?;
                     let id = if let Some((base, count)) = options.brute_force {
-                        let id = mandarin.brute_force(&data, decrypted_len, options.game, base, count);
+                        let id = mandarin.brute_force(data, decrypted_len, options.game, base, count);
+                        //let id = mandarin.brute_force_binary(data, decrypted_len, options.game, "/home/nikola/mh/eboot_re9/eboot.bin");
+                        //let id = mandarin.brute_force_binary(data, decrypted_len, options.game, "/home/nikola/programming/save-files/re9ps5/PPSA30803/sdimg_SAVESERVICE-LINE-0--1/sce_sys/param.sfo");
                         if id == 0 {
                             log::warn!("likely could not brute force the id");
                         } else {
@@ -298,7 +337,7 @@ impl SaveFile {
                             .ok_or(SaveError::RequiresID(SaveFlags::MANDARIN))?
                     };
                     let key = options.game.get_key_from_steamid(id);
-                    let decrypted = mandarin.decrypt(&data, decrypted_len as u64, key)?;
+                    let decrypted = mandarin.decrypt(data, decrypted_len, key)?;
                     data[..decrypted.len()].copy_from_slice(&decrypted);
                     cursor.get_mut().truncate(offset + decrypted.len());
                     log::info!("Decrypted Mandarin");
@@ -309,11 +348,11 @@ impl SaveFile {
                         .ok_or(SaveError::RequiresID(SaveFlags::CITRUS))?;
                 let citrus = Citrus::new(key, options.curve_index);
                 let mut curve_index = options.curve_index;
-                if let Some(curve) = citrus.brute_force_find_params(&data, decrypted_len as usize) {
+                if let Some(curve) = citrus.brute_force_find_params(data, decrypted_len as usize) {
                     curve_index = Some(curve.index as usize);
                 }
                 let citrus = Citrus::new(key, curve_index);
-                let decrypted = citrus.decrypt(&data, decrypted_len as usize).unwrap();
+                let decrypted = citrus.decrypt(data, decrypted_len as usize).unwrap();
                 options.curve_index = curve_index;
                 data[..decrypted.len()].copy_from_slice(&decrypted);
                 cursor.get_mut().truncate(offset + decrypted.len());
@@ -360,6 +399,8 @@ impl SaveFile {
     // just pass in the data as mutable so that we can do decryption in place, no copies, no reference
     pub fn read_save(data: Vec<u8>, options: &mut SaveOptions) -> error::Result<Self> {
         let (data, data_offset, blowfish_options, flags): (Vec<u8>, u64, u32, SaveFlags) = Self::process_bytes_to_stream(data, options)?;
+        // TODO: the dump should be with SaveFlags ^ ProcessedSaveFlags (to remove any save flags
+        // that were undone)
         if options.dump {
             std::fs::create_dir_all("./outputs")?;
             std::fs::write("./outputs/dump.bin", &data)?;
@@ -476,7 +517,7 @@ impl SaveFile {
         let aligned_len = align_up(file_buf.len(), 4);
         file_buf.resize(aligned_len, 0);
 
-        let file_hash = murmur3(&file_buf, 0xffffffff);
+        let file_hash = murmur3(&file_buf);
         file_buf.extend_from_slice(&file_hash.to_le_bytes());
 
         Ok(file_buf)
@@ -488,7 +529,7 @@ impl SaveFile {
             match types::Class::read(data) {
                 Ok(field_value) => fields.push((h, field_value)),
                 Err(e) => {
-                    //log::error!("error reading class native_field_hash={h:010x}: {e}");
+                    log::debug!("error reading class native_field_hash={h:010x}: {e}");
                 }
             }
             if data.position() >= end {

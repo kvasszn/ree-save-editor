@@ -174,6 +174,7 @@ impl Mandarin {
         for i in 0..8 {
             target_prng_mask[i] = encrypted[i] ^ expected_x0_bytes[i];
         }
+        println!("EXPECTED: {:?}", target_prng_mask);
 
         let progress = AtomicUsize::new(0);
         let initial_state_p = state_p;
@@ -227,6 +228,78 @@ impl Mandarin {
         0x0
     }
 
+    pub fn brute_force_binary(
+        &self, 
+        encrypted: &[u8], 
+        decrypted_len: u64, 
+        game: Game,
+        binary_path: &str
+    ) -> u64 {
+        let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
+        let mut block_sizes = vec![0u8; num_potential_blocks as usize];
+        let mut state_p: u64 = self.seed_for_enc_rand;
+        for i in 0..num_potential_blocks as usize {
+            block_sizes[i] = (state_p & 7) as u8 + 1;
+            state_p = SplitMix64::next_int(&mut state_p);
+        }
+
+        let p = bytes_to_int(&Elgamal::P);
+        let r = bytes_to_int(&Elgamal::R);
+        let e = Integer::from(0x14u64);
+
+        let expected_x0 = mod_exp(&r, &e, &p);
+        let expected_x0_bytes = int_to_bytes_le::<64>(&expected_x0);
+
+        let mut target_prng_mask = [0u8; 8];
+        for i in 0..8 {
+            target_prng_mask[i] = encrypted[i] ^ expected_x0_bytes[i];
+        }
+
+        let binary_data = std::fs::read(binary_path).expect("Failed to read game binary");
+        let total_offsets = binary_data.len() - 8;
+
+        let initial_state_p = state_p;
+        let s = Instant::now();
+        println!("[BRUTE FORCE] Scanning {} bytes of binary for the key...", binary_data.len());
+
+        let good_key = (0..total_offsets)
+            .into_par_iter()
+            .find_map_any(|i| {
+                let chunk: [u8; 8] = binary_data[i..i + 8].try_into().unwrap();
+
+                let potential_key = u64::from_le_bytes(chunk); 
+                let key = game.get_key_from_steamid(potential_key);
+
+                let inv_key = !potential_key;
+                let mut state_p = initial_state_p.wrapping_add(inv_key);
+
+                for _ in 0..16 {
+                    state_p = SplitMix64::next_int(&mut state_p);
+                }
+
+                let mut mask = [0u8; 8];
+                for j in 0..8 {
+                    state_p = SplitMix64::next_int(&mut state_p);
+                    mask[j] = state_p as u8;
+                }
+
+                if mask == target_prng_mask[0..8] {
+                    Some(potential_key)
+                } else {
+                    None
+                }
+            });
+
+        let taken = s.elapsed().as_secs_f64();
+        if let Some(key) = good_key {
+            println!("[SUCCESS] Found key {:#018x} in {:.2}s!", key, taken);
+            return key;
+        }
+
+        println!("[FAILED] Key not found in binary. Took {:.2}s", taken);
+        0x0
+    }
+
     pub fn decrypt(
         &self,
         encrypted: &[u8],
@@ -250,8 +323,8 @@ impl Mandarin {
         // calculate the block sizes >> 0xe for each "potential block"
         let num_potential_blocks = ((decrypted_len & 0x3fff != 0) as u64) + (decrypted_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
-        // allocated, its on the stack
-        // but like variable size
+                                                                        // allocated, its on the stack
+                                                                        // but like variable size
 
         let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
@@ -280,7 +353,7 @@ impl Mandarin {
         let mut buf = vec![0u8; 0x20210];
         let mut decrypted = vec![0u8; decrypted_len as usize];
         let mut remaining_bytes = decrypted_len as usize;
-        let auth = Elgamal::init(!key).unwrap();
+        let auth = Elgamal::init(!key);
 
         for i in 0..num_real_blocks as usize {
             //println!("BLOCK {} out of {num_real_blocks}", i + 1);
@@ -392,8 +465,8 @@ impl Mandarin {
         let data_len = data.len() as u64;
         let num_potential_blocks = ((data_len & 0x3fff != 0) as u64) + (data_len >> 0xe);
         let mut block_sizes = vec![0u8; num_potential_blocks as usize]; // honestly no idea when this is
-        // allocated, its on the stack
-        // but like variable size
+                                                                        // allocated, its on the stack
+                                                                        // but like variable size
         let mut state_p: u64 = self.seed_for_enc_rand;
         for i in 0..num_potential_blocks as usize {
             block_sizes[i] = (state_p & 7) as u8 + 1;
@@ -425,7 +498,7 @@ impl Mandarin {
         let mut encrypted = vec![0u8; total_encrypted_len as usize];
         let mut remaining_bytes = data_len as usize;
 
-        let auth = Elgamal::init(!key).unwrap();
+        let auth = Elgamal::init(!key);
 
         for i in 0..num_real_blocks as usize {
             // generate key and iv

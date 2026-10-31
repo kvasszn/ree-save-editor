@@ -1,4 +1,6 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use strum::EnumString;
+use strum_macros::EnumIter;
 
 use crate::save::crypto;
 
@@ -16,7 +18,7 @@ macro_rules! define_games {
         ),* $(,)?
     ) => {
         #[repr(i32)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Hash)]
+        #[derive(EnumIter, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash, EnumString)]
         pub enum Game {
             $( $variant, )*
         }
@@ -29,6 +31,11 @@ macro_rules! define_games {
             pub fn from_string(id: &str) -> Option<Game> {
                 $( if id == stringify!($variant) { return Some(Game::$variant); } )*
                 None
+            }
+
+            pub fn to_string(&self) -> &str {
+                $( if *self == Game::$variant { return $name; } )*
+                ""
             }
 
             pub fn get_mandarin_seeds(&self) -> Option<(u64, u64)> {
@@ -104,7 +111,41 @@ define_games! {
     RE3     ("RE 3", 952060,  blowfish: crypto::blowfish::KEY_RE3),
     RE7     ("RE 7", 418370, blowfish: crypto::blowfish::KEY_RE7),
     RE8     ("RE 8", 1196590, blowfish: crypto::blowfish::KEY_RE8),
-    RE4     ("RE 4", 2050650, calc: |id: u64| id & 0xffffffff),
+    RE4     ("RE 4", 2050650, calc: |id: u64| id & 0xffffffff, lime: true),
     DD2PS5  ("DD2 PS5", 0, calc: |id: u64| id, lime: true),
     MISC    ("Misc", 0),
+}
+
+// this is kinda dumb, could probably macro this? idk
+#[allow(clippy::derivable_impls)]
+impl Default for Game {
+    fn default() -> Self {
+        if cfg!(feature = "mhwilds") {
+            Self::MHWILDS
+        } else if cfg!(feature = "dd2") {
+            Self::DD2
+        } else if cfg!(feature = "pragmata") {
+            Self::PRAGMATA
+        } else if cfg!(feature = "mhst3") {
+            Self::MHST3
+        } else if cfg!(feature = "re9") {
+            Self::RE9
+        } else if cfg!(feature = "mhrise") {
+            Self::MHRISE
+        } else if cfg!(feature = "sf6") {
+            Self::SF6
+        } else if cfg!(feature = "re2") {
+            Self::RE2
+        } else if cfg!(feature = "re3") {
+            Self::RE3
+        } else if cfg!(feature = "re4") {
+            Self::RE4
+        } else if cfg!(feature = "re7") {
+            Self::RE7
+        } else if cfg!(feature = "re8") {
+            Self::RE8
+        } else {
+            Self::MHWILDS
+        }
+    }
 }

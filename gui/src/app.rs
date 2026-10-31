@@ -1,177 +1,125 @@
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::PathBuf;
+use std::{collections::{HashMap}, sync::{Arc, RwLock, mpsc::{Receiver, Sender, channel}}};
 
 use eframe::{
     self,
     egui::{Align, CentralPanel, Layout, MenuBar, TopBottomPanel},
 };
 use egui_dock::{DockArea, DockState};
-use ree_lib::{sdk::type_map::ContentLanguage};
+use ree_lib::language::Language;
+use ree_save_core::{edit::copy::CopyBuffer, game_context::{GameConfigs, GameData, load_game_configs}, save::game::Game};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::code_editor::CodeEditor;
 
-use crate::{Config, file::{FilePicker, FileView}, tab::Tab, viewer::Viewer};
+use crate::{config::{Config, load_config_checked}, tab::{SaveFileView, Tab}, viewer::Viewer};
 
-pub struct TameApp {
-    viewer: Viewer,
+pub struct App {
     tree: DockState<Tab>,
-    file_opener: FilePicker<false>,
+    config: Config,
+    config_path: String,
+    game_configs: GameConfigs,
+    game_contexts: Arc<RwLock<HashMap<Game, GameData>>>,
+    loading: HashMap<Game, Receiver<anyhow::Result<GameData>>>,
+    load_sender: Sender<Game>,
+    load_receiver: Receiver<Game>,
+    copy_buffer: CopyBuffer
 }
 
-impl TameApp {
-    pub fn new(config: Config) -> Self {
-        let file_view = FileView::new(&config, 0, ContentLanguage::English);
-        let tab = Tab::from(file_view);
-        let mut viewer = Viewer::new(config);
-        let dock_state = DockState::new(vec![tab]);
-        viewer.num_tabs += 1;
+impl App {
+    pub fn new(config_path: String, config: Config) -> Self {
+        let dock_state = DockState::new(vec![Tab::from(SaveFileView::new(&config))]);
+        let game_configs = load_game_configs("game_configs.json")
+            .unwrap_or_default();
+
+        let (tx, rx) = channel();
         Self {
-            viewer,
             tree: dock_state,
-            file_opener: FilePicker::new("Open"),
-        }
-    }
-    fn add_tab(&mut self, tab: Tab) {
-        if self.viewer.num_tabs == 0 {
-            self.viewer.num_tabs += 1;
-            self.tree = DockState::new(vec![tab])
-        } else {
-            self.viewer.num_tabs += 1;
-            let surface = self.tree.main_surface_mut();
-            surface.push_to_focused_leaf(tab);
+            game_configs,
+            config_path,
+            game_contexts: Arc::new(RwLock::new(HashMap::new())),
+            config,
+            loading: HashMap::new(),
+            load_sender: tx,
+            load_receiver: rx,
+            copy_buffer: CopyBuffer::default()
         }
     }
 }
 
-impl eframe::App for TameApp {
+
+
+impl eframe::App for App {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(file_pick_res) = self.file_opener.take() {
-            use crate::file::FilePickResult;
 
-            if let FilePickResult::Wasm {name, data} = file_pick_res {
-                log::info!("Loading Save File {name}");
-                let file_view = FileView::from_data(
-                    &self.viewer.config,
-                    name, data,
-                    self.viewer.num_tabs,
-                    self.viewer.default_language,
-                );
-                let tab = Tab::from(file_view);
-                self.add_tab(tab);
-            }
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(path) = self.file_opener.take() {
-            #[cfg(not(target_arch = "wasm32"))]
-            if path.ends_with("lua") {
-                log::info!("Loading Lua Script From {path}");
-                let tab = Tab::load_script(&path, self.viewer.num_tabs);
-                self.add_tab(tab);
-            } else {
-                log::info!("Loading Save File From {path}");
-                let file_view = FileView::from_path(
-                    &self.viewer.config,
-                    path,
-                    self.viewer.num_tabs,
-                    self.viewer.default_language,
-                );
-                let tab = Tab::from(file_view);
-                self.add_tab(tab);
-            }
+        while let Ok(game) = self.load_receiver.try_recv() {
+            self.request_game(game);
         }
 
-        self.viewer.update(ctx);
+        self.loading.retain(|game, rx| {
+            match rx.try_recv() {
+                Ok(Ok(data)) => { self.game_contexts.write().unwrap().insert(*game, data); false }
+                Ok(Err(e))   => { log::error!("Failed to load {game:?}: {e}"); false }
+                Err(_)       => true
+            }
+        });
 
-        TopBottomPanel::top("MenuBar").show(ctx, |ui| {
+        TopBottomPanel::top("Menu Bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label("REE Save Editor");
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.hyperlink_to("GitHub", "https://github.com/kvasszn/ree_lib");
+                    ui.hyperlink_to("GitHub", "https://github.com/kvasszn/ree-save-editor");
                     ui.separator();
                 });
             });
 
             MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("Open").clicked() {
-                        self.file_opener.spawn_dialog();
-                    }
                     if ui.button("Empty Save File").clicked() {
-                        let file_view = FileView::new(
-                            &self.viewer.config,
-                            self.viewer.num_tabs,
-                            self.viewer.default_language,
-                        );
-                        self.add_tab(Tab::from(file_view));
+                        let file_view = SaveFileView::new(&self.config);
+                        let surface = self.tree.main_surface_mut();
+                        surface.push_to_focused_leaf(Tab::from(file_view));
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button("New Script").clicked() {
-                        self.add_tab(Tab::from(CodeEditor::new_default(self.viewer.num_tabs)));
-                    } 
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button("Open Script").clicked() {
-                        let cur = std::env::current_dir().unwrap_or(PathBuf::from("~"));
-                        let file_path = rfd::FileDialog::new()
-                            .set_title("Select Lua Script")
-                            .add_filter("Lua Script", &["lua"])
-                            .add_filter("All Files", &["*"])
-                            .set_directory(cur)
-                            .pick_file();
-                        // ahh whatever who cares
-                        if let Some(file_path) = file_path {
-                            let file_path = file_path.to_str();
-                            if let Some(file_path) = file_path {
-                                self.add_tab(Tab::from(CodeEditor::new(&file_path, self.viewer.num_tabs)));
-                            }
-                        }
+                });
+
+                // TODO: add a live update type thing that looks at file modification time from last
+                // reloaded
+                if ui.button("Reload Config").clicked() {
+                    match load_config_checked(&self.config_path) {
+                        Ok(config) => self.config = config,
+                        Err(e) => log::error!("Error: {e}. Could not load config from path {}", self.config_path),
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    ui.menu_button("Run Script", |ui| {
-                        if let Ok(paths) = std::fs::read_dir("./scripts/") {
-                            for path in paths {
-                                if let Ok(path) = path {
-                                    let path = path.path().display().to_string();
-                                    if path.ends_with("lua") {
-                                        if ui.button(&path).clicked() {
-                                            self.add_tab(Tab::from(CodeEditor::new(&path, self.viewer.num_tabs)));
-                                            self.viewer.run_script(&path);
-                                        }
-                                    }
-                                }
-                            }
+
+                    match load_game_configs("game_configs.json") {
+                        Ok(config) => self.game_configs = config,
+                        Err(e) => log::error!("Error: {e}. Could not load game_config"),
+                    }
+                    self.game_contexts.write().unwrap().clear();
+                }
+
+                ui.menu_button("Options", |ui| {
+                    ui.style_mut().wrap_mode = Some(eframe::egui::TextWrapMode::Extend);
+                    ui.menu_button(self.config.language.to_string(), |ui| {
+                        use strum::IntoEnumIterator;
+                        for option in Language::iter().filter(|x| INGAME_LANGUAGES.contains(x)) {
+                            ui.selectable_value(
+                                &mut self.config.language,
+                                option,
+                                option.to_string(),
+                            );
                         }
                     });
                 });
-                ui.menu_button("Options", |ui| {
-                    ui.menu_button(
-                        format!("Language ({})", LANGUAGE_OPTIONS[self.viewer.default_language as usize].0),
-                        |ui| {
-                            for option in LANGUAGE_OPTIONS.iter().filter(|x| INGAME_LANGUAGES.contains(&x.1)) {
-                                ui.selectable_value(
-                                    &mut self.viewer.default_language,
-                                    option.1,
-                                    option.0,
-                                );
-                            }
-                        },
-                    );
-                });
-                if ui.button("Reload").clicked() {
-                    println!("[INFO] Requested Full Reload");
-                    self.viewer.reload = true;
-                }
             });
         });
 
-        //let style = ctx.style();
         CentralPanel::default()
             //.frame(egui::Frame::central_panel(style)).inner_margin(0.))
-            // TODO: fix bug in egui_dock where it crashes if you close a panel while one is being
-            // dragged
             .show(ctx, |ui| {
+                let mut viewer = Viewer {
+                    game_contexts: &self.game_contexts,
+                    config: &self.config,
+                    load_request: &self.load_sender,
+                    copy_buffer: &mut self.copy_buffer
+                };
                 DockArea::new(&mut self.tree)
                     .show_close_buttons(true)
                     .tab_context_menus(true)
@@ -181,65 +129,44 @@ impl eframe::App for TameApp {
                     .show_secondary_button_hint(true)
                     .secondary_button_context_menu(true)
                     .secondary_button_on_modifier(true)
-                    .show_inside(ui, &mut self.viewer);
+                    .show_inside(ui, &mut viewer);
                 });
+
+        //log::info!("queue: {:?}", self.game_load_queue);
+        //log::info!("loaded: {:?}", self.game_contexts.read().unwrap().keys());
+
     }
 }
 
-const INGAME_LANGUAGES: [ContentLanguage; 15] = [
-    ContentLanguage::Japanese,
-    ContentLanguage::English,
-    ContentLanguage::French,
-    ContentLanguage::German,
-    ContentLanguage::Italian,
-    ContentLanguage::Spanish,
-    ContentLanguage::Russian,
-    ContentLanguage::Polish,
-    ContentLanguage::PortugueseBr,
-    ContentLanguage::Korean,
-    ContentLanguage::TransitionalChinese,
-    ContentLanguage::SimplelifiedChinese,
-    ContentLanguage::Arabic,
-    ContentLanguage::Thai,
-    ContentLanguage::LatinAmericanSpanish,
-];
+impl App {
+    fn request_game(&mut self, game: Game) {
+        if self.game_contexts.read().unwrap().contains_key(&game) { return; }
+        if self.loading.contains_key(&game) { return; }
 
-const LANGUAGE_OPTIONS: [(&'static str, ContentLanguage); 34] = [
-    ("Japanese", ContentLanguage::Japanese),
-    ("English", ContentLanguage::English),
-    ("French", ContentLanguage::French),
-    ("Italian", ContentLanguage::Italian),
-    ("German", ContentLanguage::German),
-    ("Spanish", ContentLanguage::Spanish),
-    ("Russian", ContentLanguage::Russian),
-    ("Polish", ContentLanguage::Polish),
-    ("Dutch", ContentLanguage::Dutch),
-    ("Portuguese", ContentLanguage::Portuguese),
-    ("Portuguese (Brazil)", ContentLanguage::PortugueseBr),
-    ("Korean", ContentLanguage::Korean),
-    ("Traditional Chinese", ContentLanguage::TransitionalChinese),
-    ("Simplified Chinese", ContentLanguage::SimplelifiedChinese),
-    ("Finnish", ContentLanguage::Finnish),
-    ("Swedish", ContentLanguage::Swedish),
-    ("Danish", ContentLanguage::Danish),
-    ("Norwegian", ContentLanguage::Norwegian),
-    ("Czech", ContentLanguage::Czech),
-    ("Hungarian", ContentLanguage::Hungarian),
-    ("Slovak", ContentLanguage::Slovak),
-    ("Arabic", ContentLanguage::Arabic),
-    ("Turkish", ContentLanguage::Turkish),
-    ("Bulgarian", ContentLanguage::Bulgarian),
-    ("Greek", ContentLanguage::Greek),
-    ("Romanian", ContentLanguage::Romanian),
-    ("Thai", ContentLanguage::Thai),
-    ("Ukrainian", ContentLanguage::Ukrainian),
-    ("Vietnamese", ContentLanguage::Vietnamese),
-    ("Indonesian", ContentLanguage::Indonesian),
-    ("Fiction", ContentLanguage::Fiction),
-    ("Hindi", ContentLanguage::Hindi),
-    (
-        "Spanish (Latin America)",
-        ContentLanguage::LatinAmericanSpanish,
-    ),
-    ("Unknown", ContentLanguage::Unknown),
-    ];
+        let Some(config) = self.game_configs.get(&game).cloned() else { return };
+        let (tx, rx) = channel();
+        self.loading.insert(game, rx);
+
+        std::thread::spawn(move || {
+            tx.send(GameData::load(&config, false)).ok();
+        });
+    }
+}
+
+const INGAME_LANGUAGES: [Language; 15] = [
+    Language::Japanese,
+    Language::English,
+    Language::French,
+    Language::German,
+    Language::Italian,
+    Language::Spanish,
+    Language::Russian,
+    Language::Polish,
+    Language::PortugueseBr,
+    Language::Korean,
+    Language::TransitionalChinese,
+    Language::SimplelifiedChinese,
+    Language::Arabic,
+    Language::Thai,
+    Language::LatinAmericanSpanish,
+];

@@ -9,11 +9,11 @@ use crate::{
     save::{
         SaveFile, SaveFlags, game::Game, types::{Array, ArrayType, Class, EnumValue, Field, FieldType, FieldValue, Struct}
     },
-    sdk::{
-        StringU16,
-        type_map::{FieldInfo, TypeInfo, TypeMap, murmur3},
-    },
 };
+
+use ree_lib::types::StringU16;
+use ree_lib::rsz::{FieldInfo, TypeInfo, RszMap};
+use ree_lib::util::murmur3;
 
 // There are two types of corruption that I think can be fixed
 // The first is missing data/incorrect headers, where the size of the data has not changed
@@ -28,13 +28,15 @@ use crate::{
 //
 // Also, It's important to note that saves corrupted at the deflate or encryption level are
 // probably unrecoverable (definitely for encryption, maybe possible for deflate?)
+// it is possible to recover some parts of a corrupted deflate stream
+// for encryption, it might be possible to test single bit flips
 pub struct CorruptSaveReader<'a> {
-    type_map: &'a TypeMap,
+    type_map: &'a RszMap,
     game: Game,
 }
 
 impl<'a> CorruptSaveReader<'a> {
-    pub fn new(type_map: &'a TypeMap, game: Game) -> Self {
+    pub fn new(type_map: &'a RszMap, game: Game) -> Self {
         Self { type_map, game }
     }
 
@@ -50,7 +52,10 @@ impl<'a> CorruptSaveReader<'a> {
         let array_type = ArrayType::try_from(reader.read_i32()?)?;
         let mut values: Vec<FieldValue> = Vec::with_capacity(len as usize);
         let mut broken = false;
-        let type_info = field_info.get_original_type_array(self.type_map).unwrap();
+
+        let base_original_type = field_info.original_type.replace("[]", "");
+        let type_info = self.type_map.get_type(&base_original_type)
+            .ok_or(format!("Type {base_original_type} does not exist in type map"))?;
 
         let mut hashes = None;
 
@@ -68,37 +73,35 @@ impl<'a> CorruptSaveReader<'a> {
             }
         }
 
-
         for _i in 0..len {
             let value = match array_type {
                 ArrayType::Value => {
                     if member_type == FieldType::String {
                         reader.seek_align_up(4)?;
                         let size = reader.read_u32()?;
-                        let data = (0..size).map(|_| Ok(reader.read_u16()?)).collect::<Result<
-                            Vec<u16>,
-                            Box<dyn Error>,
-                        >>(
-                        )?;
-                        FieldValue::String(Box::new(StringU16::new(data)))
+                        let data = (0..size)
+                            .map(|_| Ok(reader.read_u16()?)).collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                        FieldValue::String(Box::new(StringU16(data)))
                     } else {
                         self.read_field_value_sized(reader, member_type, member_size, field_info)?
                     }
                 }
                 ArrayType::Class => {
                     let class = self.read_class(reader, type_info);
-                    if class.is_err() {
-                        eprintln!("[ERROR] in array class element {class:?}");
-                        broken = true;
-                        let last_value = values[0].clone();
-                        last_value
-                    } else {
-                        let class = class.unwrap();
-                        FieldValue::Class(class.into())
+                    match class {
+                        Ok(class) => {
+                            FieldValue::Class(class.into())
+                        }
+                        Err(e) => {
+                            log::error!("Error in array class element {e}");
+                            broken = true;
+                            values[0].clone()
+                        }
                     }
                 }
             };
 
+            // TODO: wtf to do with this, maybe an option for the reader?
             if broken {
                 //eprintln!("[WARNING] Replacing Array Elements");
                 for _ in _i..len {
@@ -132,8 +135,9 @@ impl<'a> CorruptSaveReader<'a> {
             }
             FieldType::Array => FieldValue::Array(self.read_array(reader, field_info)?.into()),
             FieldType::Class => {
-                // TODO: remove unwrap
-                let type_info = field_info.get_original_type(self.type_map).unwrap();
+                let type_info = self.type_map.get_type(&field_info.original_type)
+                    .ok_or(format!("Type {} does not exist in type map", field_info.original_type))?;
+
                 FieldValue::Class(self.read_class(reader, type_info)?.into())
             }
             FieldType::String => {
@@ -142,7 +146,7 @@ impl<'a> CorruptSaveReader<'a> {
                 let data = (0..size)
                     .map(|_| Ok(reader.read_u16()?))
                     .collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
-                FieldValue::String(Box::new(StringU16::new(data)))
+                FieldValue::String(Box::new(StringU16(data)))
             }
             // TODO: Add Struct weird shit handling
             // These values actually need a size/len
@@ -167,13 +171,16 @@ impl<'a> CorruptSaveReader<'a> {
         let pos = reader.stream_position()?;
         let size = if field_type != FieldType::String && field_type != FieldType::Struct 
             && size != field_info.size as u32 {
-            eprintln!("[WARNING] invalid size={size:x}, good={:x} for field {}: {}: @{pos:#x}", field_info.size, field_info.name, field_info.original_type);
-            field_info.size as u32
-        } else {
-            size
-        };
-        if field_type != FieldType::String {
-            reader.seek_align_up(size as u64)?;
+                eprintln!("[WARNING] invalid size={size:x}, good={:x} for field {}: {}: @{pos:#x}", field_info.size, field_info.name, field_info.original_type);
+                field_info.size as u32
+            } else {
+                size
+            };
+        if field_type != FieldType::String && size != 1 {
+            let size = size as u64;
+            let pos = reader.stream_position()?;
+            let new_offset = (pos + size - 1) & !(size - 1);
+            reader.seek(std::io::SeekFrom::Start(new_offset))?;
         }
         let value = match field_type {
             FieldType::Enum => {
@@ -211,7 +218,7 @@ impl<'a> CorruptSaveReader<'a> {
                 );
             }
         };
-        return Ok(value);
+        Ok(value)
     }
 
     pub fn read_field<R: Read + Seek>(
@@ -219,7 +226,7 @@ impl<'a> CorruptSaveReader<'a> {
         reader: &mut R,
         parent: &TypeInfo,
         field: &FieldInfo,
-    ) -> crate::file::Result<Field> {
+    ) -> crate::save::error::Result<Field> {
         let _hash = reader.read_u32()?;
         let field_type_raw = reader.read_i32()?;
         let field_type = FieldType::try_from(field_type_raw);
@@ -240,7 +247,7 @@ impl<'a> CorruptSaveReader<'a> {
         let value = self.read_field_value(reader, field_type, field)?;
         seek_align_up(reader, 4)?;
         Ok(Field {
-            hash: field.hash,
+            hash: field.hash(),
             field_type,
             value,
         })
@@ -250,7 +257,7 @@ impl<'a> CorruptSaveReader<'a> {
         &mut self,
         reader: &mut R,
         type_info: &TypeInfo,
-    ) -> crate::file::Result<Class> {
+    ) -> Result<Class, Box<dyn Error>> {
         let num_fields = match reader.read_u32() {
             Err(e) => {
                 eprintln!(
@@ -273,7 +280,7 @@ impl<'a> CorruptSaveReader<'a> {
             }
             Ok(r) => r,
         };
-        let correct_hash = murmur3(&type_info.name, 0xffffffff);
+        let correct_hash = murmur3(&type_info.name);
         if hash != correct_hash {
             hash = correct_hash;
         }
@@ -311,12 +318,12 @@ impl<'a> CorruptSaveReader<'a> {
                 }
                 Err(e) => {
                     eprintln!("[ERROR] Parsing error on field {}, {e}", field_info.name);
-                    return Err(e);
+                    return Err(Box::new(e));
                 }
             }
         }
 
- 
+
         Ok(Class {
             num_fields,
             hash,
@@ -329,7 +336,7 @@ impl<'a> CorruptSaveReader<'a> {
         &mut self,
         reader: &mut R,
         type_info: &TypeInfo,
-    ) -> crate::file::Result<Class> {
+    ) -> Result<Class, Box<dyn Error>> {
         let num_fields = match reader.read_u32() {
             Err(e) => {
                 eprintln!(
@@ -353,7 +360,7 @@ impl<'a> CorruptSaveReader<'a> {
             Ok(r) => r,
         };
         let pos = reader.stream_position()?;
-        let correct_hash = murmur3(&type_info.name, 0xffffffff);
+        let correct_hash = murmur3(&type_info.name);
         if hash != correct_hash {
             eprintln!("[WARNING] different hashes correct_hash={correct_hash:x}, read_hash={hash:x}: @{pos:#x}");
             hash = correct_hash;
@@ -437,29 +444,27 @@ impl<'a> CorruptSaveReader<'a> {
     pub fn read_missing_and_scan<R: Read + Seek>(&mut self, reader: &mut R) -> SaveFile {
         // First get the top level struct for each game/file
         // TODO: rn just for wilds, add based on game later
-        let type_info = self
-            .type_map
-            .get_by_name("app.savedata.cUserSaveData")
+        let type_info = self.type_map
+            .get_type("app.savedata.cUserSaveData")
             .unwrap();
         // need to add custom class readers that also have type information along side them when
         let mut fields = Vec::new();
         if let Ok(native_field_hash) = reader.read_u32() {
             let class = self.read_class(reader, type_info).unwrap();
             if native_field_hash == 0 {
-                fields.push((murmur3(&"app.savedata.cUserSaveData", 0xffffffff), class));
+                fields.push((murmur3("app.savedata.cUserSaveData"), class));
             } else {
                 fields.push((native_field_hash, class));
             }
         }
-        let type_info = self
-            .type_map
-            .get_by_name("via.storage.saveService.SaveFileDetail")
+        let type_info = self.type_map
+            .get_type("via.storage.saveService.SaveFileDetail")
             .unwrap();
         if let Ok(native_field_hash) = reader.read_u32() {
             let class = self.read_class(reader, type_info).unwrap();
             if native_field_hash == 0 {
                 fields.push((
-                        murmur3(&"via.storage.saveService.SaveFileDetail", 0xffffffff),
+                        murmur3("via.storage.saveService.SaveFileDetail"),
                         class,
                 ));
             } else {
@@ -501,7 +506,7 @@ impl<'a> CorruptSaveReader<'a> {
         let mut fields = Vec::new();
         reader.seek(std::io::SeekFrom::Start(0)).unwrap();
 
-        let hash = murmur3(name, 0xffffffff);
+        let hash = murmur3(name);
         for _ in 0..n {
             let pos = reader.stream_position().unwrap();
             let scanned_class = self.scan_class_fields(reader, hash, pos);
@@ -519,9 +524,8 @@ impl<'a> CorruptSaveReader<'a> {
     pub fn read_missing<R: Read + Seek>(&mut self, reader: &mut R, types: &[(u32, &str)]) -> SaveFile {
         let mut fields = Vec::new();
         for (field_hash, type_name) in types {
-            let type_info = self
-                .type_map
-                .get_by_name(&type_name)
+            let type_info = self.type_map
+                .get_type(type_name)
                 .unwrap();
             if let Ok(native_field_hash) = reader.read_u32() {
                 let class = self.read_class(reader, type_info).unwrap();
@@ -575,7 +579,7 @@ impl<'a> CorruptSaveReader<'a> {
             reader.seek(std::io::SeekFrom::Start(start)).unwrap();
 
             //println!("[INFO] Checking {}", field_info.name);
-            let original_type_hash = murmur3(&field_info.original_type, 0xffffffff);
+            let original_type_hash = murmur3(&field_info.original_type);
             if field_info.r#type == "Object" && !field_info.array {
                 while let Ok(value) = reader.read_u32() {
                     if value == original_type_hash {
@@ -586,7 +590,7 @@ impl<'a> CorruptSaveReader<'a> {
                                 break;
                             }
                         }
-                        let type_info = self.type_map.get_by_name(&field_info.original_type);
+                        let type_info = self.type_map.get_type(&field_info.original_type);
                         let Some(type_info) = type_info else {
                             break;
                         };
@@ -641,11 +645,11 @@ impl<'a> CorruptSaveReader<'a> {
                 }
             }
         }
-        return Class {
+        Class {
             num_fields: fields.len() as u32,
             hash,
             fields,
-        };
+        }
     }
 
     fn scan_classes<R: Read + Seek>(&mut self, reader: &mut R) -> Vec<Class> {

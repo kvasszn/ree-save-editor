@@ -9,6 +9,5 @@ path = "src/lib.rs"
 crate-type = ["lib"]
 
 [dependencies]
-murmur3 = "0.5.2"
 uuid = "1.19.0"
 

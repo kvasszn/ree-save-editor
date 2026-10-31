@@ -80,38 +80,4 @@ This tool supports transferring some games between PC and PS5. You have to load 
 You can also use repos by [mi5hmash](https://github.com/mi5hmash/) such as [MandarinJuice](https://github.com/mi5hmash/MandarinJuice) for resigning/transferring unsupported games.
 
 ## Previous REPO (file dumping/mhtame)
-File dumping should still work. It can convert some files to json for readability and data mining.
-
-Files that it currently supports are `user, tex, msg, pog, poglst, oft` and `wilds saves`.
-Some basic support exists for `scn` files, but it's rough, RSZ works for it though.
-
-Makes use of texture codecs, and file reading stuff from [https://github.com/wwylele/mhrice](https://github.com/wwylele/mhrice)
-
-Also looked at it to figure out how to read some of the file formats.
-
-Uses praydog's emulation dumper for the rsz files.
-
-### Build
-```
-cargo build --release --bin ree-dump
-```
-
-### Usage
-```
-Usage: ree-dump [OPTIONS]
-
-Options:
-  -f, --file-name <FILE_NAME>
-  -r, --root-dir <ROOT_DIR>
-  -l, --list <LIST>
-  -p, --preserve
-  -d, --dump-rsz
-  -s, --dump-sdk
-  -o, --out-dir <OUT_DIR>      [default: outputs]
-      --rsz <RSZ>              [default: assets/mhwilds/rszmhwilds.json]
-      --enums <ENUMS>          [default: assets/mhwilds/enumsmhwilds.json]
-      --save-file <SAVE_FILE>
-      --steamid <STEAMID>
-  -h, --help                   Print help
-  -V, --version                Print version
-```
+This has been partially deleted or moved to ree-lib-rs as of `d33a087`

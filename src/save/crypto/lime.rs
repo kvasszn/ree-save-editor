@@ -32,7 +32,7 @@ impl Lime {
         //let mut remaining = decrypted_len;
         let mut buf_offset = 0;
         let mut dec_offset = 0;
-        let elgamal_ctx = Elgamal::init(!key)?;
+        let elgamal_ctx = Elgamal::init(!key);
         for i in 0..num_blocks {
             log::info!("Processing block {i}");
             let block_slice = &buf[buf_offset..buf_offset+0x1220];
@@ -76,7 +76,7 @@ impl Lime {
         let mut buf_offset = 0;
         let mut enc_offset = 0;
         let mut remaining = len;
-        let elgamal_ctx = Elgamal::init(!key)?;
+        let elgamal_ctx = Elgamal::init(!key);
         for i in 0..num_blocks {
             log::info!("Processing block {i}");
             let block_slice = &mut encrypted[enc_offset..enc_offset+0x1220];

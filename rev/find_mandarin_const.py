@@ -4,6 +4,7 @@ with open(sys.argv[1], 'rb') as f:
     data = f.read()
 
 aob = bytes.fromhex("4531c049b9157c4a7fb979379e49bab9e5e41c6d4758bf49bbeb113113bb49d094")
+#aob = bytes(reversed(list(bytes.fromhex("61f6868699c14dfa"))))
 
 offset = data.find(aob)
 
