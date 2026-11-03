@@ -2,6 +2,7 @@ use crate::{file::FileView};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::code_editor::CodeEditor;
+use crate::{save_transfer::SaveMover};
 
 pub struct Tab {
     pub tab: TabType,
@@ -11,7 +12,8 @@ pub struct Tab {
 pub enum TabType {
     SaveFileView(FileView),
     #[cfg(not(target_arch = "wasm32"))]
-    Script(CodeEditor)
+    Script(CodeEditor),
+    Mover(SaveMover)
 }
 
 impl Tab {
@@ -40,6 +42,16 @@ impl From<FileView> for Tab {
         let idx = value.idx;
         Self {
             tab: TabType::SaveFileView(value),
+            idx
+        }
+    }
+}
+
+impl From<SaveMover> for Tab {
+    fn from(value: SaveMover) -> Self {
+        let idx = value.idx;
+        Self {
+            tab: TabType::Mover(value),
             idx
         }
     }

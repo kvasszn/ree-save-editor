@@ -10,7 +10,7 @@ use ree_lib::{sdk::type_map::ContentLanguage};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::code_editor::CodeEditor;
-
+use crate::save_transfer::{SaveMover};
 use crate::{Config, file::{FilePicker, FileView}, tab::Tab, viewer::Viewer};
 
 pub struct TameApp {
@@ -128,6 +128,14 @@ impl eframe::App for TameApp {
                             }
                         }
                     }
+                    if ui.button("Transfer Saves").clicked() {
+                        let mover_view = SaveMover::new(
+                            &self.viewer.config,
+                            self.viewer.num_tabs,
+                            self.viewer.default_language,
+                        );
+                        self.add_tab(Tab::from(mover_view));
+                    }
                     #[cfg(not(target_arch = "wasm32"))]
                     ui.menu_button("Run Script", |ui| {
                         if let Ok(paths) = std::fs::read_dir("./scripts/") {
@@ -144,6 +152,7 @@ impl eframe::App for TameApp {
                             }
                         }
                     });
+ 
                 });
                 ui.menu_button("Options", |ui| {
                     ui.menu_button(

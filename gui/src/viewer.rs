@@ -112,6 +112,24 @@ impl egui_dock::TabViewer for Viewer {
                         }
                     }
                 },
+                TabType::Mover(save_file) => {
+                    save_file.language = self.default_language;
+                    let game = save_file.game;
+                    let mut game_contexts: std::sync::RwLockWriteGuard<'_, HashMap<Game, GameCtx>> = self.game_contexts.write().unwrap();
+                    #[cfg(target_arch = "wasm32")]
+                    if !game_contexts.contains_key(&game) && !self.loading_games.contains(&game) {
+                        let assets = AssetPaths::from_game(game);
+                        GameCtx::start_loading_wasm(self.tx.clone(), game, assets);
+                        self.loading_games.insert(game);
+                    }
+                    
+                    #[cfg(not(target_arch = "wasm32"))]
+                    game_contexts.entry(game).or_insert_with(|| {
+                        let asset_paths = AssetPaths::from_game(game);
+                        GameCtx::new(&asset_paths)
+                    });
+                    save_file.ui(ui, &mut *game_contexts)
+                },
             }
         });
     }
@@ -121,6 +139,7 @@ impl egui_dock::TabViewer for Viewer {
             TabType::SaveFileView(_) => format!("File #{}", tab.idx).into(),
             #[cfg(not(target_arch = "wasm32"))]
             TabType::Script(script) => script.path.clone().unwrap_or(format!("File #{}", tab.idx).into()),
+            TabType::Mover(script) => format!("Save #{}", tab.idx).into(),
         };
         title.into()
     }
