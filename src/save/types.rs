@@ -940,3 +940,178 @@ impl Class {
         self.get_value_mut(name)?.as_array_mut()
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn roundtrip(v: FieldValue) -> FieldValue {
+        let mut buf = Cursor::new(Vec::new());
+        v.write(&mut buf).unwrap();
+        buf.set_position(0);
+        FieldValue::read(&mut buf, type_of(&v)).unwrap()
+    }
+
+    fn type_of(v: &FieldValue) -> FieldType {
+        match v {
+            FieldValue::Boolean(_) => FieldType::Boolean,
+            FieldValue::S8(_) => FieldType::S8,
+            FieldValue::U8(_) => FieldType::U8,
+            FieldValue::S16(_) => FieldType::S16,
+            FieldValue::U16(_) => FieldType::U16,
+            FieldValue::S32(_) => FieldType::S32,
+            FieldValue::U32(_) => FieldType::U32,
+            FieldValue::S64(_) => FieldType::S64,
+            FieldValue::U64(_) => FieldType::U64,
+            FieldValue::F32(_) => FieldType::F32,
+            FieldValue::F64(_) => FieldType::F64,
+            FieldValue::C8(_) => FieldType::C8,
+            FieldValue::C16(_) => FieldType::C16,
+            FieldValue::Enum(_) => FieldType::Enum,
+            FieldValue::String(_) => FieldType::String,
+            FieldValue::Struct(_) => FieldType::Struct,
+            FieldValue::Array(_) => FieldType::Array,
+            FieldValue::Class(_) => FieldType::Class,
+            FieldValue::Unknown => FieldType::Unknown,
+        }
+    }
+
+    #[test]
+    fn primitives_roundtrip() {
+        for v in [
+            FieldValue::Boolean(true),
+            FieldValue::Boolean(false),
+            FieldValue::S8(-128),
+            FieldValue::U8(255),
+            FieldValue::S16(i16::MIN),
+            FieldValue::U16(u16::MAX),
+            FieldValue::S32(i32::MIN),
+            FieldValue::U32(u32::MAX),
+            FieldValue::S64(i64::MIN),
+            FieldValue::U64(u64::MAX),
+            FieldValue::F32(1.5),
+            FieldValue::F64(-2.25),
+            FieldValue::C8(b'A'),
+            FieldValue::C16(0x3042),
+        ] {
+            assert_eq!(v, roundtrip(v.clone()), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn enums_roundtrip_all_widths() {
+        for v in [
+            FieldValue::Enum(EnumValue::E1(-1)),
+            FieldValue::Enum(EnumValue::E2(-2)),
+            FieldValue::Enum(EnumValue::E4(-3)),
+            FieldValue::Enum(EnumValue::E8(-4)),
+        ] {
+            assert_eq!(v, roundtrip(v.clone()), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn string_roundtrip() {
+        // chars + length prefix, aligned to 4
+        for s in ["", "hello", "こんにちは世界", "a", &"x".repeat(1000)] {
+            let v = FieldValue::String(Box::new(ree_lib::types::StringU16(
+                        s.encode_utf16().collect(),
+            )));
+            assert_eq!(v, roundtrip(v.clone()), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn string_lone_surrogate_preserved() {
+        // round-trip must not go through String; lone surrogates must survive
+        let units = vec![0x0041, 0xD800, 0x0042, 0xDC00];
+        let v = FieldValue::String(Box::new(ree_lib::types::StringU16(units.clone())));
+        let back = roundtrip(v);
+        assert_eq!(back.as_string_u16().unwrap().0, units);
+    }
+
+    #[test]
+    fn struct_roundtrip_various_sizes() {
+        // sizes deliberately include non-pow2 to lock in the engine's
+        // (pos + size - 1) & !(size - 1) alignment behaviour
+        for size in [1usize, 2, 3, 4, 5, 7, 8, 12, 13, 16, 32] {
+            let data: Vec<u8> = (0..size).map(|i| i as u8).collect();
+            let v = FieldValue::Struct(Box::new(Struct { data }));
+            assert_eq!(v, roundtrip(v.clone()), "size={size}");
+        }
+    }
+
+    #[test]
+    fn struct_size_preserved() {
+        let v = FieldValue::Struct(Box::new(Struct { data: vec![0xAB; 7] }));
+        assert_eq!(v.get_size(), 7);
+    }
+
+    fn make_array(member_type: FieldType, member_size: u32, values: Vec<FieldValue>) -> FieldValue {
+        FieldValue::Array(Box::new(Array {
+            member_type, member_size,
+            array_type: ArrayType::Value,
+            values, hashes: None,
+        }))
+    }
+
+    #[test]
+    fn array_of_primitives_roundtrip() {
+        let v = make_array(FieldType::U32, 4,
+            (0..10).map(FieldValue::U32).collect());
+        assert_eq!(v, roundtrip(v.clone()));
+    }
+
+    #[test]
+    fn empty_array_roundtrip() {
+        let v = make_array(FieldType::U8, 1, vec![]);
+        assert_eq!(v, roundtrip(v.clone()));
+    }
+
+    #[test]
+    fn array_of_strings_roundtrip() {
+        let vals = ["one", "two", "three"].iter()
+            .map(|s| FieldValue::String(Box::new(StringU16(s.encode_utf16().collect()))))
+            .collect();
+        let v = make_array(FieldType::String, 4, vals);
+        assert_eq!(v, roundtrip(v.clone()));
+    }
+
+    #[test]
+    fn array_of_classes_with_hash_table_roundtrip() {
+        let inner = |hash| FieldValue::Class(Box::new(Class {
+            num_fields: 1, hash,
+            fields: vec![Field { hash: 0xdead, field_type: FieldType::U32, value: FieldValue::U32(7) }],
+        }));
+        let v = FieldValue::Array(Box::new(Array {
+            member_type: FieldType::Class,
+            member_size: 4,
+            array_type: ArrayType::Class,
+            values: vec![inner(0x1111), inner(0x2222)],
+            hashes: Some(vec![0x1111, 0x2222]),
+        }));
+        assert_eq!(v, roundtrip(v.clone()));
+    }
+
+    #[test]
+    fn class_roundtrip_nested() {
+        let inner = Class {
+            num_fields: 1, hash: 0xAAAA,
+            fields: vec![Field { hash: 0x1, field_type: FieldType::Boolean, value: FieldValue::Boolean(true) }],
+        };
+        let outer = Class {
+            num_fields: 2, hash: 0xBBBB,
+            fields: vec![
+                Field { hash: 0x2, field_type: FieldType::U32, value: FieldValue::U32(42) },
+                Field { hash: 0x3, field_type: FieldType::Class,
+                value: FieldValue::Class(Box::new(inner)) },
+            ],
+        };
+        let mut buf = Cursor::new(Vec::new());
+        outer.write(&mut buf).unwrap();
+        buf.set_position(0);
+        assert_eq!(Class::read(&mut buf).unwrap(), outer);
+    }
+}

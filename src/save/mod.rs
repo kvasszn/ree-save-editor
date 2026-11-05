@@ -569,3 +569,228 @@ impl SaveFile {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::save::types::Field;
+
+    use super::*;
+
+    fn dummy_class() -> Class {
+        Class {
+            num_fields: 1,
+            hash: 0xDEADBEEF,
+            fields: vec![Field {
+                hash: 0x1111,
+                field_type: types::FieldType::U32,
+                value: types::FieldValue::U32(0xCAFEBABE),
+            }],
+        }
+    }
+
+    fn dummy_save(flags: SaveFlags) -> SaveFile {
+        SaveFile {
+            game: Game::MHWILDS,
+            flags,
+            blowfish_options: 0,
+            fields: vec![(0x12345678, dummy_class())],
+        }
+    }
+
+    // ---- header / rejection ----
+
+    #[test]
+    fn rejects_short_input() {
+        for len in 0..4 {
+            let mut opts = SaveOptions::new(Game::MHWILDS);
+            assert!(matches!(
+                    SaveFile::process_bytes_to_stream(vec![0xFF; len], &mut opts),
+                    Err(SaveError::InvalidFileSize(_)) | Err(SaveError::NullFile)
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_all_zero_file() {
+        let mut opts = SaveOptions::new(Game::MHWILDS);
+        assert!(matches!(
+                SaveFile::process_bytes_to_stream(vec![0u8; 64], &mut opts),
+                Err(SaveError::NullFile)
+        ));
+    }
+
+    #[test]
+    fn rejects_bad_magic() {
+        let mut data = b"XXXX".to_vec();
+        data.extend([0u8; 60]);
+        let mut opts = SaveOptions::new(Game::MHWILDS);
+        assert!(matches!(
+                SaveFile::process_bytes_to_stream(data, &mut opts),
+                Err(SaveError::InvalidMagic)
+        ));
+    }
+
+    #[test]
+    fn rejects_bad_version() {
+        let mut data = b"DSSS".to_vec();
+        data.extend(1u32.to_le_bytes());     // version 1
+        data.extend(0u32.to_le_bytes());     // flags
+        data.extend([0u8; 60]);
+        let mut opts = SaveOptions::new(Game::MHWILDS);
+        assert!(matches!(
+                SaveFile::process_bytes_to_stream(data, &mut opts),
+                Err(SaveError::UnsupportedVersion(1))
+        ));
+    }
+
+    /// the fuzz that locks in "never panics on garbage"
+    #[test]
+    fn never_panics_on_arbitrary_input() {
+        for len in 0..300usize {
+            let mut opts = SaveOptions::new(Game::MHWILDS);
+            let _ = SaveFile::process_bytes_to_stream(vec![0x5A; len], &mut opts);
+            let mut opts = SaveOptions::new(Game::MHWILDS);
+            let _ = SaveFile::process_bytes_to_stream(vec![0u8; len], &mut opts);
+        }
+    }
+
+    // ---- flags ----
+
+    #[test]
+    fn flag_string_parsing() {
+        use std::str::FromStr;
+        assert_eq!(SaveFlags::from_str("MANDARIN").unwrap(), SaveFlags::MANDARIN);
+        assert_eq!(SaveFlags::from_str("LIME").unwrap(), SaveFlags::MANDARIN);
+        assert_eq!(SaveFlags::from_str("DEFLATE|MANDARIN").unwrap(),
+        SaveFlags::DEFLATE | SaveFlags::MANDARIN);
+        assert_eq!(SaveFlags::from_str("").unwrap(), SaveFlags::empty());
+        assert!(SaveFlags::from_str("NOPE").is_err());
+    }
+
+    #[test]
+    fn header_length_per_flag_combo() {
+        // DEFLATE alone is the documented 12-byte case
+        assert_eq!(SaveFlags::DEFLATE.get_header_length(), 12);
+        assert_eq!(SaveFlags::empty().get_header_length(), 16);
+        assert_eq!((SaveFlags::BLOWFISH | SaveFlags::HAS_ID).get_header_length(), 32);
+        assert_eq!(SaveFlags::MANDARIN.get_header_length(), 16);
+    }
+
+    // ---- round-trip, cleartext path only (no crypto needed) ----
+
+    #[test]
+    fn roundtrip_no_flags() {
+        let file = dummy_save(SaveFlags::empty());
+        let opts = SaveOptions::new(Game::MHWILDS);
+        let bytes = file.write_save(&opts).unwrap();
+
+        let mut ropts = SaveOptions::new(Game::MHWILDS);
+        let back = SaveFile::read_save(bytes, &mut ropts).unwrap();
+        assert_eq!(back.fields, file.fields);
+        assert_eq!(back.flags, file.flags);
+    }
+
+    #[test]
+    fn roundtrip_deflate_only() {
+        let file = dummy_save(SaveFlags::DEFLATE);
+        let opts = SaveOptions::new(Game::MHWILDS);
+        let bytes = file.write_save(&opts).unwrap();
+
+        let mut ropts = SaveOptions::new(Game::MHWILDS);
+        let back = SaveFile::read_save(bytes, &mut ropts).unwrap();
+        assert_eq!(back.fields, file.fields);
+    }
+
+    #[test]
+    fn written_file_hash_validates() {
+        let file = dummy_save(SaveFlags::empty());
+        let opts = SaveOptions::new(Game::MHWILDS);
+        let bytes = file.write_save(&opts).unwrap();
+
+       let split = bytes.len() - 4;
+       let (body, hash_bytes) = bytes.split_at(split);
+       let stored = u32::from_le_bytes(hash_bytes.try_into().unwrap());
+       assert_eq!(stored, ree_lib::util::murmur3(body));
+    }
+
+    #[test]
+    fn output_is_4_byte_aligned() {
+        let file = dummy_save(SaveFlags::empty());
+        let bytes = file.write_save(&SaveOptions::new(Game::MHWILDS)).unwrap();
+        assert_eq!((bytes.len() - 4) % 4, 0, "body (minus hash) must be 4-aligned");
+    }
+
+    // ---- parse_classes error context ----
+
+    #[test]
+    fn parse_classes_reports_class_hash() {
+        // one good class, then garbage
+        let mut buf = Cursor::new(Vec::new());
+        buf.write_u32::<LE>(0xAAAA).unwrap();
+        dummy_class().write(&mut buf).unwrap();
+        buf.write_u32::<LE>(0xBBBB).unwrap();          // hash
+        buf.write_all(&[0xFF; 3]).unwrap();            // truncated class body
+
+        let data = buf.into_inner();
+        let mut cur = Cursor::new(data.as_slice());
+        let err = SaveFile::parse_classes(&mut cur, u64::MAX).unwrap_err();
+        match err {
+            SaveError::ParseClassError(hash, _) => assert_eq!(hash, 0xBBBB),
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    // ---- real fixture ----
+
+    const WILDS_FIXTURE: &str = "assets/mhwilds/empty_user_save.bin";
+    const WILDS_FIXTURE_ID: u64 = 0x1;
+
+    // here, we dont care about full byte values since the engine writes over non zeroed memory
+    #[test]
+    fn fixture_wilds_roundtrip() {
+        let path = std::path::Path::new(WILDS_FIXTURE);
+        assert!(path.exists(), "missing fixture {WILDS_FIXTURE}");
+
+
+        let mut opts = SaveOptions::new(Game::MHWILDS);
+        opts.id = Some(WILDS_FIXTURE_ID);
+        let file = SaveFile::load(path, &mut opts).expect("fixture should load");
+
+        assert!(!file.fields.is_empty());
+        assert!(file.flags.contains(SaveFlags::DEFLATE | SaveFlags::MANDARIN));
+
+        let mut wopts = SaveOptions::new(Game::MHWILDS);
+        wopts.id = Some(WILDS_FIXTURE_ID);
+        let bytes = file.write_save(&wopts).expect("write should succeed");
+
+        let mut ropts = SaveOptions::new(Game::MHWILDS);
+        ropts.id = Some(WILDS_FIXTURE_ID);
+        let back = SaveFile::read_save(bytes.clone(), &mut ropts)
+            .expect("our own output must re-read");
+
+        // same class count and same class types, not necessarily identical bytes
+        assert_eq!(back.fields.len(), file.fields.len());
+        let hashes = |f: &SaveFile| f.fields.iter().map(|(h, _)| *h).collect::<Vec<_>>();
+        assert_eq!(hashes(&back), hashes(&file));
+
+        // hash trailer must validate on what we produced
+        let (body, tail) = bytes.split_at(bytes.len() - 4);
+        assert_eq!(u32::from_le_bytes(tail.try_into().unwrap()),
+        ree_lib::util::murmur3(body));
+    }
+
+    #[test]
+    fn fixture_wilds_class_hashes_are_unique() {
+        let path = std::path::Path::new(WILDS_FIXTURE);
+        if !path.exists() { return; }
+
+        let mut opts = SaveOptions::new(Game::MHWILDS);
+        opts.id = Some(WILDS_FIXTURE_ID);
+        let file = SaveFile::load(path, &mut opts).unwrap();
+
+        let mut seen = std::collections::HashSet::new();
+        for (hash, _) in &file.fields {
+            assert!(seen.insert(*hash), "duplicate top-level class hash {hash:08x}");
+        }
+    }
+}
