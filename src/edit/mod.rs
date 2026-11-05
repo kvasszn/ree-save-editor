@@ -635,14 +635,21 @@ impl Editable for String {
     }
 }
 
-impl Editable for StringU16 {
-    fn ui(&mut self, ui: &mut egui::Ui, _ctx: &mut EditContext) {
-        let mut s = String::from_utf16_lossy(&self.0);
-        ui.add(TextEdit::singleline(&mut s).clip_text(false));
-        let encoded: Vec<u16> = s.encode_utf16().collect();
-        *self = Self(encoded);
-    }
-}
+   impl Editable for StringU16 {
+       fn ui(&mut self, ui: &mut egui::Ui, _ctx: &mut EditContext) {
+           match String::from_utf16(&mut self.0) {
+               Ok(valid) => {
+                   let mut s = valid;
+                   if ui.add(TextEdit::singleline(&mut s).clip_text(false)).changed() {
+                       self.0 = s.encode_utf16().collect();
+                   }
+               }
+               Err(_) => {
+                   self.0.ui(ui, _ctx)
+               }
+           }
+       }
+   }
 
 impl<T: Editable> Editable for Vec<T> {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut EditContext) {

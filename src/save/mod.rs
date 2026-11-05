@@ -13,7 +13,7 @@ use std::{
 };
 
 use crate::save::{crypto::{Lime, blowfish::BlowfishError, citrus::Citrus}, error::SaveError, game::Game, types::Class};
-use bitflags::bitflags;
+use bitflags::{bitflags, parser::ParseError};
 use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use flate2::{
     Compression,
@@ -33,6 +33,7 @@ bitflags! {
         const CITRUS = 0x4;
         const DEFLATE = 0x8;
         const MANDARIN = 0x10;
+        #[deprecated(note="Lime is just an older version of mandarin, should use get_is_lime, it's fine ")]
         const LIME = 0x10;
     }
 }
@@ -187,6 +188,16 @@ impl SaveFile {
     pub fn process_bytes_to_stream(data: Vec<u8>, options: &mut SaveOptions) -> error::Result<(Vec<u8>, u64, u32, SaveFlags)> {
         let len = data.len();
 
+        // this is sometimes common with corrupted data, so just handle it here early
+        if data.iter().all(|x| *x == 0) {
+            return Err(error::SaveError::NullFile.into())
+        }
+
+        // need the header at least 4, realistically the minimum is higher
+        if len < 4 {
+            return Err(error::SaveError::InvalidFileSize(len).into())
+        }
+
         let mut end_hash = [0u8; 4];
         end_hash.copy_from_slice(&data[len-4..len]);
         let end_hash = u32::from_le_bytes(end_hash);
@@ -279,6 +290,13 @@ impl SaveFile {
 
         // the game also checks some passed in options for what flags are accepted, and only
         // decrypts if the files flags match that, this is irrelevant here
+
+        // length check for safety here, hopefully this works with all versions of encryption
+        // (including no encryption?)
+        let offset = cursor.position() as usize;
+        if len < offset + 4 {
+            return Err(error::SaveError::InvalidFileSize(len).into())
+        }
 
         // first check blowfish
         if flags.contains(SaveFlags::BLOWFISH) {
@@ -530,6 +548,7 @@ impl SaveFile {
                 Ok(field_value) => fields.push((h, field_value)),
                 Err(e) => {
                     log::debug!("error reading class native_field_hash={h:010x}: {e}");
+                    return Err(error::SaveError::ParseClassError(h, e).into())
                 }
             }
             if data.position() >= end {

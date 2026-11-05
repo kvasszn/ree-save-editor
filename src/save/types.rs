@@ -827,7 +827,7 @@ impl Field {
     }
 
     pub fn is_class_same(&self, other: &Self) -> bool {
-        self.field_type == other.field_type && self.is_class_same(other)
+        self.field_type == other.field_type && self.value.is_class_same(&other.value)
     }
 }
 
