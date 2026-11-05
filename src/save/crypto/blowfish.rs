@@ -44,3 +44,65 @@ pub enum BlowfishError {
     #[error("game {0:?} does not have blowfish support ")]
     UnsupportedGame(Game),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_KEYED: [Game; 4] = [Game::RE2, Game::RE3, Game::RE7, Game::RE8];
+
+    #[test]
+    fn roundtrip_all_games() {
+        for game in ALL_KEYED {
+            let mut data: Vec<u8> = (0..64).map(|i| i as u8).collect();
+            let original = data.clone();
+            encrypt_in_place(&mut data, game).unwrap();
+            assert_ne!(data, original, "{game:?} encryption was a no-op");
+            decrypt_in_place(&mut data, game).unwrap();
+            assert_eq!(data, original, "{game:?} roundtrip failed");
+        }
+    }
+
+    #[test]
+    fn roundtrip_non_multiple_of_8() {
+        for game in ALL_KEYED {
+            let mut data = vec![0xABu8; 37];
+            let original = data.clone();
+            encrypt_in_place(&mut data, game).unwrap();
+            decrypt_in_place(&mut data, game).unwrap();
+            assert_eq!(data[..32], original[..32]);
+            assert_eq!(data[32..], original[32..], "tail must be untouched");
+        }
+    }
+
+    #[test]
+    fn empty_input_is_ok() {
+        for game in ALL_KEYED {
+            let mut data: Vec<u8> = vec![];
+            encrypt_in_place(&mut data, game).unwrap();
+            decrypt_in_place(&mut data, game).unwrap();
+            assert!(data.is_empty());
+        }
+    }
+
+    #[test]
+    fn unsupported_game_errors() {
+        let mut data = vec![0u8; 16];
+        assert!(matches!(
+                encrypt_in_place(&mut data, Game::MHWILDS),
+                Err(BlowfishError::UnsupportedGame(Game::MHWILDS))
+        ));
+        assert!(matches!(
+                decrypt_in_place(&mut data, Game::MHWILDS),
+                Err(BlowfishError::UnsupportedGame(Game::MHWILDS))
+        ));
+    }
+
+    #[test]
+    fn wrong_key_does_not_roundtrip() {
+        let mut data = vec![0u8; 32];
+        encrypt_in_place(&mut data, Game::RE2).unwrap();
+        decrypt_in_place(&mut data, Game::RE3).unwrap();
+        assert_ne!(data, vec![0u8; 32]);
+    }
+}

@@ -7,6 +7,10 @@ pub type Result<T> = std::result::Result<T, SaveError>;
 pub enum SaveError {
     #[error("invalid magic")]
     InvalidMagic,
+    #[error("invalid file size {0}")]
+    InvalidFileSize(usize),
+    #[error("file is all zeros")]
+    NullFile,
     #[error("unsupported version {0}")]
     UnsupportedVersion(u32),
     #[error("unsupported flag {0:08x}")]
@@ -21,9 +25,13 @@ pub enum SaveError {
     IO(#[from] std::io::Error),
     #[error("mandarin error: {0}")]
     MandarinError(#[from] MandarinError),
+    #[error("citrus error: {0}")]
+    CitrusError(Box<dyn std::error::Error + Send + Sync>),
     #[error("lime error: {0}")]
     LimeError(#[from] LimeError),
-    #[error("serialize error: {0}")]
-    SerializationError(#[from] Box<dyn std::error::Error>),
+    #[error("parsing error: {1}, hash={0}")]
+    ParseClassError(u32, Box<dyn std::error::Error + Send + Sync>),
+    #[error("error: {0}")]
+    Error(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 

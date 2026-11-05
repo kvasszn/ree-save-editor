@@ -1,4 +1,6 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use strum::EnumString;
+use strum_macros::EnumIter;
 
 use crate::save::crypto;
 
@@ -16,7 +18,7 @@ macro_rules! define_games {
         ),* $(,)?
     ) => {
         #[repr(i32)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Hash)]
+        #[derive(EnumIter, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash, EnumString)]
         pub enum Game {
             $( $variant, )*
         }
@@ -25,10 +27,23 @@ macro_rules! define_games {
             $( ($name, Game::$variant), )*
         ];
 
+
+        impl ToString for Game {
+            fn to_string(&self) -> String {
+                $( if *self == Game::$variant { return $name.to_string(); } )*
+                String::default()
+            }
+        }
+
         impl Game {
             pub fn from_string(id: &str) -> Option<Game> {
                 $( if id == stringify!($variant) { return Some(Game::$variant); } )*
                 None
+            }
+
+            pub fn to_str(&self) -> &str {
+                $( if *self == Game::$variant { return $name; } )*
+                ""
             }
 
             pub fn get_mandarin_seeds(&self) -> Option<(u64, u64)> {
@@ -104,7 +119,25 @@ define_games! {
     RE3     ("RE 3", 952060,  blowfish: crypto::blowfish::KEY_RE3),
     RE7     ("RE 7", 418370, blowfish: crypto::blowfish::KEY_RE7),
     RE8     ("RE 8", 1196590, blowfish: crypto::blowfish::KEY_RE8),
-    RE4     ("RE 4", 2050650, calc: |id: u64| id & 0xffffffff),
+    RE4     ("RE 4", 2050650, calc: |id: u64| id & 0xffffffff, lime: true),
     DD2PS5  ("DD2 PS5", 0, calc: |id: u64| id, lime: true),
     MISC    ("Misc", 0),
+}
+
+impl Default for Game {
+    fn default() -> Self {
+        #[cfg(feature = "mhwilds")]  { return Self::MHWILDS; }
+        #[cfg(feature = "dd2")]      { return Self::DD2; }
+        #[cfg(feature = "pragmata")] { return Self::PRAGMATA; }
+        #[cfg(feature = "mhst3")]    { return Self::MHST3; }
+        #[cfg(feature = "re9")]      { return Self::RE9; }
+        #[cfg(feature = "mhrise")]   { return Self::MHRISE; }
+        #[cfg(feature = "sf6")]      { return Self::SF6; }
+        #[cfg(feature = "re2")]      { return Self::RE2; }
+        #[cfg(feature = "re3")]      { return Self::RE3; }
+        #[cfg(feature = "re4")]      { return Self::RE4; }
+        #[cfg(feature = "re7")]      { return Self::RE7; }
+        #[cfg(feature = "re8")]      { return Self::RE8; }
+        Self::MHWILDS
+    }
 }

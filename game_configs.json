@@ -1,0 +1,73 @@
+{
+	"MHWILDS": {
+		"rsz": "assets/mhwilds/rszmhwilds_packed.json",
+		"enums": "assets/mhwilds/enumsmhwilds.json",
+		"enums_raw": "assets/raw_enums/enumsmhwilds.hpp",
+		"remaps": "assets/mhwilds/remapmhwilds.json",
+		"bundle": "assets/mhwilds/bundlemhwilds.bincode",
+		"schemas": {
+			"UserSaveData": {
+				"0xdbe3f199": "app.savedata.cUserSaveData",
+				"0x85e904c1": "via.storage.saveService.SaveFileDetail"
+			}
+		}
+	},
+	"MHST3": {
+		"rsz": "assets/mhst3/rszmhst3.json",
+		"enums": "assets/mhst3/enumsmhst3.json"
+	},
+	"RE9": {
+		"rsz": "assets/re9/rszre9.json",
+		"enums": "assets/re9/enumsre9.json",
+		"enums_raw": "assets/raw_enums/re9_enums.hpp",
+		"remap": "assets/re9/remapre9.json"
+	},
+	"DD2": {
+		"rsz": "assets/dd2/rszdd2.json",
+		"enums": "assets/dd2/enumsdd2.json",
+		"enums_raw": "assets/raw_enums/dd2_enums.hpp"
+	},
+	"DD2PS5": {
+		"rsz": "assets/dd2/rszdd2.json",
+		"enums": "assets/dd2/enumsdd2.json",
+		"enums_raw": "assets/raw_enums/dd2_enums.hpp"
+	},
+	"PRAGMATA": {
+		"rsz": "assets/pragmata/rszpragmata.json",
+		"enums": "assets/pragmata/enumspragmata.json",
+		"enums_raw": "assets/raw_enums/pragmata_enums.hpp"
+	},
+	"MHRISE": {
+		"rsz": "assets/mhrise/rszmhrise.json",
+		"enums": "assets/mhrise/enumsmhrise.json",
+		"enums_raw": "assets/raw_enums/enumsmhrise.hpp"
+	},
+	"SF6": {
+		"rsz": "assets/sf6/rszsf6.json",
+		"enums": "assets/sf6/enumssf6.json"
+	},
+	"RE7": {
+		"rsz": "assets/re7/rszre7.json",
+		"enums": "assets/re7/enumsre7.json",
+		"enums_raw": "assets/raw_enums/re7_enums.hpp"
+	},
+	"RE8": {
+		"rsz": "assets/re8/rszre8.json",
+		"enums": "assets/re8/enumsre8.json",
+		"enums_raw": "assets/raw_enums/re8_enums.hpp"
+	},
+	"RE2": {
+		"rsz": "assets/re2/rszre2.json",
+		"enums": "assets/re2/enumsre2.json",
+		"enums_raw": "assets/raw_enums/re2_enums.hpp"
+	},
+	"RE3": {
+		"rsz": "assets/re3/rszre3.json",
+		"enums": "assets/re3/enumsre3.json"
+	},
+	"RE4": {
+		"rsz": "assets/re4/rszre4.json",
+		"enums": "assets/re4/enumsre4.json",
+		"enums_raw": "assets/raw_enums/re4_enums.hpp"
+	}
+}

@@ -7,51 +7,54 @@ edition = "2024"
 name = "ree-save-editor"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [features]
 default = []
-re9 = []
 mhwilds = []
-mhst3 = []
-mhrise = []
+dd2 = []
 pragmata = []
+mhst3 = []
+re9 = []
+mhrise = []
+sf6 = []
+re2 = []
+re3 = []
+re4 = []
+re7 = []
+re8 = []
 
 [dependencies]
+ree-save-core = { path = "../" }
 util = { path = "../util" }
+ree-lib = { path = "../../ree-lib-rs" }
+#ree-lib = { git = "https://github.com/kvasszn/ree-lib-rs" }
+
 
 eframe = "0.33.0"
 egui_dock = "0.18.0"
-egui_extras = { version = "0.33.3", features = ["syntect"] }
+egui_extras = { version = "0.33.3", features = ["syntect", "image"] }
+image = {version = "0.25.5", features = ["webp"]}
+
+rfd = "0.17.2"
 
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4.27"
 shellexpand = "3.1.1"
-rfd = "0.15.4"
 web-time = "1.1.0"
 keyvalues-parser = "0.2.2"
 keyvalues-serde = "0.2.3"
 serde_json = "1.0.147"
 syntect = { version = "5.3.0", default-features = false, features = ["regex-fancy", "html"] }
 hex = "0.4.3"
+anyhow = "1.0.102"
+uuid = { version = "1.23.3", features = ["v4"] }
+strum = "0.28.0"
+chrono = "0.4.45"
+bytemuck = "1.25.2"
 
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
-js-sys = "0.3.83"
-wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = [
-    "Document",
-    "Window",
-    "Element",
-    "HtmlCanvasElement",
-	"Storage"
-] }
-reqwest = { version = "0.11", features = ["json"] }
-console_error_panic_hook = "0.1"
-ree-lib = { path = "../", default-features = false }
+bitfield = "0.19.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-mlua = {version = "0.11.5", features = ["lua54", "vendored", "async", "send"] }
 clap = { version = "4.5.20", features = ["derive"] }
 env_logger = "0.11.8"
-ree-lib = { path = "../", features = ["scripting"] }
