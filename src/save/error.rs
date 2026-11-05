@@ -25,11 +25,13 @@ pub enum SaveError {
     IO(#[from] std::io::Error),
     #[error("mandarin error: {0}")]
     MandarinError(#[from] MandarinError),
+    #[error("citrus error: {0}")]
+    CitrusError(Box<dyn std::error::Error + Send + Sync>),
     #[error("lime error: {0}")]
     LimeError(#[from] LimeError),
     #[error("parsing error: {1}, hash={0}")]
-    ParseClassError(u32, Box<dyn std::error::Error>),
+    ParseClassError(u32, Box<dyn std::error::Error + Send + Sync>),
     #[error("error: {0}")]
-    Error(#[from] Box<dyn std::error::Error>),
+    Error(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 

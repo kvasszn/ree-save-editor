@@ -1,7 +1,8 @@
 use bitfield::BitMut;
 use eframe::egui::{CollapsingHeader, ScrollArea, Ui};
+use ree_save_core::{edit::EditContext, save::types::{Array, Class, FieldValue}};
 
-use crate::{edit::{EditContext, Editable}, save::types::{Array, Class, FieldValue}};
+use crate::edit::Editable;
 
 pub fn edit_as_bitset(
     class: &mut Class,

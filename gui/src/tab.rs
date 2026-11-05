@@ -2,11 +2,11 @@ use std::{collections::HashMap, error::Error, io::Write, ops::Range, path::{Path
 
 use eframe::egui::{ComboBox, DragValue, Ui};
 use ree_lib::{assets::bundle::Bundle, context::EngineContext, enums::EnumMap, rsz::RszMap};
-use ree_save_core::{edit::{EditContext, Editable, copy::CopyBuffer}, game_context::GameData, save::{SaveFile, SaveOptions, game::Game, json}};
+use ree_save_core::{copy::CopyBuffer, edit::EditContext, game_context::GameData, save::{SaveFile, SaveOptions, game::Game, json}};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::{config::Config, dialog::{AsyncFileDialog, DialogType}, steam::{Steam}};
+use crate::{config::Config, dialog::{AsyncFileDialog, DialogType}, edit::Editable, steam::Steam};
 
 pub struct Tab {
     pub tab: TabType,

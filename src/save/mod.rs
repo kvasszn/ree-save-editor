@@ -12,7 +12,7 @@ use std::{
     path::Path,
 };
 
-use crate::save::{crypto::{Lime, blowfish::BlowfishError, citrus::Citrus}, error::SaveError, game::Game, types::Class};
+use crate::save::{crypto::{CitrusError, Lime, blowfish::BlowfishError, citrus::Citrus}, error::SaveError, game::Game, types::Class};
 use bitflags::{bitflags, parser::ParseError};
 use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use flate2::{
@@ -54,6 +54,7 @@ impl SaveFlags {
     }
 
     pub fn get_header_length(&self) -> usize {
+        // stupid but its literally this (deflate ALONE is offset 12)
         let mut res = if *self == SaveFlags::DEFLATE {
             12
         } else { 16 };
@@ -151,7 +152,7 @@ impl SaveOptions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SaveFile {
     pub game: Game,
     pub flags: SaveFlags,
@@ -370,7 +371,8 @@ impl SaveFile {
                     curve_index = Some(curve.index as usize);
                 }
                 let citrus = Citrus::new(key, curve_index);
-                let decrypted = citrus.decrypt(data, decrypted_len as usize).unwrap();
+                let decrypted = citrus.decrypt(data, decrypted_len as usize)
+                    .ok_or_else(|| SaveError::CitrusError("Failed to decrypt with citrus idk why todo fix".into()))?;
                 options.curve_index = curve_index;
                 data[..decrypted.len()].copy_from_slice(&decrypted);
                 cursor.get_mut().truncate(offset + decrypted.len());
@@ -427,7 +429,7 @@ impl SaveFile {
         let mut cursor = Cursor::new(data.as_slice());
         cursor.set_position(data_offset);
 
-        let end = data.len() as u64 - 7;
+        let end = data.len().saturating_sub(7) as u64;
         let classes = Self::parse_classes(&mut cursor, end)?;
 
         Ok(SaveFile {
@@ -519,7 +521,8 @@ impl SaveFile {
         } else if self.flags.contains(SaveFlags::CITRUS) {
             let id = options.id.ok_or(SaveError::RequiresID(SaveFlags::CITRUS))?;
             let citrus = Citrus::new(id, options.curve_index);
-            payload = citrus.encrypt(&payload).expect("Failed to encrypt with citrus");
+            payload = citrus.encrypt(&payload)
+                .ok_or_else(|| SaveError::CitrusError("Failed to encrypt with citrus idk why todo fix".into()))?;
         }
 
         if self.flags.intersects(SaveFlags::MANDARIN | SaveFlags::CITRUS) {

@@ -4,7 +4,7 @@ use eframe::egui::{Ui};
 use egui_dock::tab_viewer::OnCloseResponse;
 
 use ree_save_core::{
-    edit::copy::CopyBuffer, game_context::GameData, save::game::Game
+    copy::CopyBuffer, game_context::GameData, save::game::Game
 };
 
 use crate::{config::Config, tab::{self, TabType}};

@@ -44,7 +44,7 @@ impl<'a> CorruptSaveReader<'a> {
         &mut self,
         reader: &mut R,
         field_info: &FieldInfo,
-    ) -> Result<Array, Box<dyn Error>> {
+    ) -> Result<Array, Box<dyn Error + Send + Sync>> {
         reader.seek_align_up(4)?;
         let member_type = FieldType::try_from(reader.read_i32()?)?;
         let member_size = reader.read_u32()?;
@@ -80,7 +80,7 @@ impl<'a> CorruptSaveReader<'a> {
                         reader.seek_align_up(4)?;
                         let size = reader.read_u32()?;
                         let data = (0..size)
-                            .map(|_| Ok(reader.read_u16()?)).collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                            .map(|_| Ok(reader.read_u16()?)).collect::<Result<Vec<u16>, Box<dyn Error + Send + Sync>>>()?;
                         FieldValue::String(Box::new(StringU16(data)))
                     } else {
                         self.read_field_value_sized(reader, member_type, member_size, field_info)?
@@ -127,7 +127,7 @@ impl<'a> CorruptSaveReader<'a> {
         reader: &mut R,
         field_type: FieldType,
         field_info: &FieldInfo,
-    ) -> Result<FieldValue, Box<dyn Error>> {
+    ) -> Result<FieldValue, Box<dyn Error + Send + Sync>> {
         let value = match field_type {
             FieldType::Unknown => {
                 /*println!("Unknown Field Type found");*/
@@ -145,7 +145,7 @@ impl<'a> CorruptSaveReader<'a> {
                 let size = reader.read_u32()?;
                 let data = (0..size)
                     .map(|_| Ok(reader.read_u16()?))
-                    .collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                    .collect::<Result<Vec<u16>, Box<dyn Error + Send + Sync>>>()?;
                 FieldValue::String(Box::new(StringU16(data)))
             }
             // TODO: Add Struct weird shit handling
@@ -167,7 +167,7 @@ impl<'a> CorruptSaveReader<'a> {
         field_type: FieldType,
         size: u32,
         field_info: &FieldInfo,
-    ) -> Result<FieldValue, Box<dyn Error>> {
+    ) -> Result<FieldValue, Box<dyn Error + Send + Sync>> {
         let pos = reader.stream_position()?;
         let size = if field_type != FieldType::String && field_type != FieldType::Struct 
             && size != field_info.size as u32 {
@@ -257,7 +257,7 @@ impl<'a> CorruptSaveReader<'a> {
         &mut self,
         reader: &mut R,
         type_info: &TypeInfo,
-    ) -> Result<Class, Box<dyn Error>> {
+    ) -> Result<Class, Box<dyn Error + Send + Sync>> {
         let num_fields = match reader.read_u32() {
             Err(e) => {
                 eprintln!(
@@ -336,7 +336,7 @@ impl<'a> CorruptSaveReader<'a> {
         &mut self,
         reader: &mut R,
         type_info: &TypeInfo,
-    ) -> Result<Class, Box<dyn Error>> {
+    ) -> Result<Class, Box<dyn Error + Send + Sync>> {
         let num_fields = match reader.read_u32() {
             Err(e) => {
                 eprintln!(

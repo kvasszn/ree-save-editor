@@ -138,11 +138,7 @@ pub fn main() -> anyhow::Result<()> {
 
             log::info!("Writing save file to: {}", output_file.display());
 
-            // TODO: make this return Err out of main
-            let res = save_file.save(&output_file, &write_opts);
-            if let Err(e) = res {
-                log::error!("Error writing save: {e}");
-            }
+            save_file.save(&output_file, &write_opts).context("writing save")?;
         },
         Command::DumpBytes => {
             let mut save_file = match SaveFile::read_save(save_file_data, &mut read_opts) {
@@ -157,10 +153,7 @@ pub fn main() -> anyhow::Result<()> {
             save_file.flags = SaveFlags::empty();
             let write_opts = SaveOptions::new(cli.game);
             log::info!("Dumping save bytes to: {}", output_file.display());
-            let res = save_file.save(&output_file, &write_opts);
-            if let Err(e) = res {
-                log::error!("Error writing save: {e}");
-            }
+            save_file.save(&output_file, &write_opts).context("writing save")?;
         }
         Command::CorruptFix { classes, typeids, schema } => {
             if read_opts.brute_force.is_some() && let Some(id) = read_opts.id {
@@ -202,18 +195,15 @@ pub fn main() -> anyhow::Result<()> {
 
             let mut write_opts = SaveOptions::new(cli.game);
             write_opts.id = read_opts.id;
-            let res = save_file.save(&output_file, &write_opts);
-            if let Err(e) = res {
-                log::error!("Error writing save: {e}");
-            }
+            save_file.save(&output_file, &write_opts).context("writing save")?;
         }
         Command::Misc => {
-            let mandarin = Mandarin::init_from_game(cli.game).unwrap();
+            let mandarin = Mandarin::init_from_game(cli.game)?;
             let data = &save_file_data[16..];
             let id = mandarin.brute_force(data, data.len() as u64, cli.game, 0x0110000100000000, 0xffffffff);
             println!("id={id}");
         }
-        _ => {}
+        _ => { todo!() }
     }
     Ok(())
 }

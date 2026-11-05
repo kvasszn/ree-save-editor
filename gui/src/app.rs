@@ -6,7 +6,7 @@ use eframe::{
 };
 use egui_dock::{DockArea, DockState};
 use ree_lib::language::Language;
-use ree_save_core::{edit::copy::CopyBuffer, game_context::{GameConfigs, GameData, load_game_configs}, save::game::Game};
+use ree_save_core::{copy::CopyBuffer, game_context::{GameConfigs, GameData, load_game_configs}, save::game::Game};
 
 
 use crate::{config::{Config, load_config_checked}, tab::{SaveFileView, Tab}, viewer::Viewer};

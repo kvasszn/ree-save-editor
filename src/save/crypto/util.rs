@@ -376,3 +376,63 @@ pub mod elgamal {
         pub litterally_no_idea: [u8; 8],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::backend::rug::*;
+
+    #[test]
+    fn unmix_inverts_next_int() {
+        for seed in [0u64, 1, 0xdeadbeef, u64::MAX, 0xbfacf76c3f96] {
+            let mut state = seed;
+            let value = SplitMix64::next_int(&mut state);
+            assert_eq!(SplitMix64::unmix(value), state);
+        }
+    }
+
+    #[test]
+    fn next_int_is_deterministic_and_changes_state() {
+        let mut a = 42u64;
+        let mut b = 42u64;
+        for _ in 0..64 {
+            assert_eq!(SplitMix64::next_int(&mut a), SplitMix64::next_int(&mut b));
+        }
+        assert_ne!(a, 42);
+    }
+
+    #[test]
+    fn last_int_matches_next_int() {
+        let mut a = 7u64;
+        let mut b = 7u64;
+        assert_eq!(SplitMix64::next_int(&mut a), SplitMix64::last_int(&mut b));
+    }
+
+    #[test]
+    fn elgamal_pair_roundtrip() {
+        use super::elgamal::Elgamal;
+        let e = Elgamal::init(!0x0110000100000000u64);
+        let pt: [u8; 32] = *b"0123456789abcdef0123456789abcdef";
+        let pairs = e.encrypt_bytes(pt);
+        let back = e.decrypt_pairs(pairs);
+        assert_eq!(pt, back);
+    }
+
+    #[test]
+    fn elgamal_decrypt_block_roundtrip() {
+        use super::elgamal::{Block, Elgamal};
+        let e = Elgamal::init(1234);
+        let pt: [u8; 32] = core::array::from_fn(|i| i as u8);
+        let chunks = e.encrypt_bytes(pt);
+        let block = Block { chunks, checksum: 0, litterally_no_idea: [0; 8] };
+        assert_eq!(pt, e.decrypt_block(block));
+    }
+
+    #[test]
+    fn int_byte_roundtrip() {
+        let bytes = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        let n = bytes_to_int(&bytes);
+        let back = int_to_bytes_le::<8>(&n);
+        assert_eq!(bytes, back);
+    }
+}

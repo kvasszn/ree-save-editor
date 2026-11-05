@@ -1,9 +1,13 @@
+use std::error::Error;
+
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use sha3::Digest;
 
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
+
+use crate::save::game::Game;
 
 //#[cfg(target_os = "linux")]
 //use super::backend::rug::*;
@@ -12,6 +16,19 @@ use super::util::EccInteger;
 use super::util::backend::num_bigint::*;
 use super::util::{point_add, scalar_mult};
 use hex_literal::hex;
+
+// this shit should just be a generic CryptoError, and then i wrap a Citrus/Mandarin/FooError around that
+#[derive(Debug)]
+pub enum CitrusError {
+    InvalidChecksum { target: u64, real: u64 },
+    InvalidKey { target: [u8; 16], real: [u8; 16] },
+    InvalidIV { target: [u8; 16], real: [u8; 16] },
+    GameNotSupported { game: Game },
+    AuthFailed,
+    // (index, len)
+    OutOfBounds(usize, usize),
+}
+
 
 #[derive(Debug)]
 pub struct CurveParams {
@@ -187,28 +204,28 @@ impl Citrus {
         let iv_hi = u64::from_le_bytes(iv[8..16].try_into().unwrap());
 
         out[0..128].copy_from_slice(&Self::encrypt_key_segment(
-            &k0,
-            key_lo,
-            pub_key.clone(),
-            params,
+                &k0,
+                key_lo,
+                pub_key.clone(),
+                params,
         )?);
         out[128..256].copy_from_slice(&Self::encrypt_key_segment(
-            &k1,
-            key_hi,
-            pub_key.clone(),
-            params,
+                &k1,
+                key_hi,
+                pub_key.clone(),
+                params,
         )?);
         out[256..384].copy_from_slice(&Self::encrypt_key_segment(
-            &k2,
-            iv_lo,
-            pub_key.clone(),
-            params,
+                &k2,
+                iv_lo,
+                pub_key.clone(),
+                params,
         )?);
         out[384..512].copy_from_slice(&Self::encrypt_key_segment(
-            &k3,
-            iv_hi,
-            pub_key.clone(),
-            params,
+                &k3,
+                iv_hi,
+                pub_key.clone(),
+                params,
         )?);
         Some(out)
     }
@@ -222,23 +239,23 @@ impl Citrus {
         let mut iv = [0u8; 16];
         key[0..8].copy_from_slice(
             &self
-                .decrypt_key_segment(&buf[0..128], params)?
-                .to_u64_le_bytes(),
+            .decrypt_key_segment(&buf[0..128], params)?
+            .to_u64_le_bytes(),
         );
         key[8..16].copy_from_slice(
             &self
-                .decrypt_key_segment(&buf[128..256], params)?
-                .to_u64_le_bytes(),
+            .decrypt_key_segment(&buf[128..256], params)?
+            .to_u64_le_bytes(),
         );
         iv[0..8].copy_from_slice(
             &self
-                .decrypt_key_segment(&buf[256..384], params)?
-                .to_u64_le_bytes(),
+            .decrypt_key_segment(&buf[256..384], params)?
+            .to_u64_le_bytes(),
         );
         iv[8..16].copy_from_slice(
             &self
-                .decrypt_key_segment(&buf[384..512], params)?
-                .to_u64_le_bytes(),
+            .decrypt_key_segment(&buf[384..512], params)?
+            .to_u64_le_bytes(),
         );
         Some((key, iv))
     }
@@ -277,9 +294,9 @@ impl Citrus {
             Self::aes_decrypt(&mut dec_buf, key, iv);
             //println!("{}, {:?}", curve.index, &dec_buf[0..32]);
             /*if &dec_buf[5..8] == &[0u8; 3] {
-                println!("[INFO] Found params at index {}", curve_params.index);
-                return Some(curve_params)
-            }*/
+              println!("[INFO] Found params at index {}", curve_params.index);
+              return Some(curve_params)
+              }*/
             // idk how much this actually works, could probably lower it to like 10%
             let num_zeros = dec_buf.iter().filter(|&&b| b == 0).count();
             if num_zeros > dec_buf.len() / 2 {
@@ -375,14 +392,14 @@ impl Citrus {
         }
 
         /* Ok so, 0x8 right after the data is probably a hash of some kind, im guessing the
-        * plaintext
+         * plaintext
 
-           I THINK IVE BEEN HALLUCINATING THE 0x8 LOLOLOLOLOL thats just part of the fucking keccak hash thing shit
+         I THINK IVE BEEN HALLUCINATING THE 0x8 LOLOLOLOLOL thats just part of the fucking keccak hash thing shit
 
-        * the 0x1000 block right after that can just be zeroed out, the game doesnt seem to care
-        * if i had to guess, it's some signature of some key related stuff, since its so big, maybe
-        * the ecc params?
-        */
+         * the 0x1000 block right after that can just be zeroed out, the game doesnt seem to care
+         * if i had to guess, it's some signature of some key related stuff, since its so big, maybe
+         * the ecc params?
+         */
         // NOTE: the 0x1000 at the end is aes encrypted with something, i dont thinnk i really need it but its fine
         // TODO: for completeness, at least read the block, maybe store it in the save to copy it
         // over to a new one?
@@ -494,6 +511,36 @@ mod tests {
         // pass plaintext.len() as decrypted_len
         let decrypted = citrus.decrypt(&encrypted, plaintext.len()).unwrap();
         assert_eq!(plaintext, decrypted, "Full roundtrip failed");
+    }
+
+    #[test]
+    fn roundtrip_multiple_curve_indices() {
+        for idx in [0usize, 1, 2, 3] {
+            let citrus = Citrus::new(0x0110000112345678, Some(idx));
+            let pt: Vec<u8> = (0..0x1000).map(|i| (i % 256) as u8).collect();
+            let enc = citrus.encrypt(&pt).unwrap();
+            let dec = citrus.decrypt(&enc, pt.len()).unwrap();
+            assert_eq!(pt, dec, "curve {idx}");
+        }
+    }
+
+    #[test]
+    fn roundtrip_partial_last_block() {
+        let citrus = Citrus::new(0x0110000112345678, Some(0));
+        for len in [1usize, 15, 16, 17, 0x1000, 0x1001] {
+            let pt: Vec<u8> = (0..len).map(|i| i as u8).collect();
+            let enc = citrus.encrypt(&pt).unwrap();
+            let dec = citrus.decrypt(&enc, pt.len()).unwrap();
+            assert_eq!(pt, dec, "len={len}");
+        }
+    }
+
+    #[test]
+    fn different_ids_produce_different_output() {
+        let pt = vec![0u8; 0x100];
+        let a = Citrus::new(1, Some(0)).encrypt(&pt).unwrap();
+        let b = Citrus::new(2, Some(0)).encrypt(&pt).unwrap();
+        assert_ne!(a, b);
     }
 }
 
@@ -1531,4 +1578,4 @@ pub const CURVES: [CurveParamsRaw; 128] = [
         gx: hex!("19e7a6d01750bf46873f0d5d85e3cdd9189417231553c82020db0d0000000000"),
         gy: hex!("d9e5d622978768cd62e43cc6533ad8cef04f7a758be02a224517040000000000"),
     },
-];
+    ];

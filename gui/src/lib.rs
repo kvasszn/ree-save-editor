@@ -4,6 +4,10 @@ pub mod tab;
 pub mod viewer;
 pub mod config;
 pub mod dialog;
+pub mod edit;
+pub mod photo;
+pub mod bitset;
+pub mod wilds;
 
 use eframe::egui::{self};
 

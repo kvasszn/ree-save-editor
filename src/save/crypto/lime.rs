@@ -103,8 +103,8 @@ impl Lime {
             cipher.apply_keystream(&mut block.data);
 
             enc_offset += 0x1220;
-            buf_offset += 0x1000;
-            remaining -= 0x1000;
+            buf_offset += dec_bytes_len;
+            remaining -= dec_bytes_len;
         }
 
         // this might not be right, but it doesnt matter since it doesnt even get read (i just took
@@ -160,7 +160,7 @@ impl Lime {
             len.copy_from_slice(&first_block[4..8]);
             let len = u32::from_le_bytes(len);
             let mut is_match = false;
-            
+
             if len <= 1000 {
                 let mut full_data = block.data.clone();
                 let mut full_cipher = Aes128Ofb::new_from_slices(key, iv).unwrap();
@@ -205,11 +205,67 @@ pub enum LimeError {
     #[error("cipher error {0}")]
     CipherError(#[from] cipher::InvalidLength),
     #[error("error {0}")]
-    Misc(#[from] Box<dyn std::error::Error>)
+    Misc(#[from] Box<dyn std::error::Error + Send + Sync>)
 }
 
 impl From<PodCastError> for LimeError {
     fn from(value: PodCastError) -> Self {
         Self::BlockError(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KEY: u64 = 0x0110000112345678;
+
+    #[test]
+    fn roundtrip_single_block() {
+        let plaintext = vec![0x42u8; 0x1000];
+        let enc = Lime::encrypt(&plaintext, KEY).unwrap();
+        let dec = Lime::decrypt(&enc, KEY, plaintext.len() as u64).unwrap();
+        assert_eq!(plaintext, dec);
+    }
+
+    #[test]
+    fn roundtrip_partial_last_block() {
+        let plaintext: Vec<u8> = (0..0x1234).map(|i| (i % 251) as u8).collect();
+        let enc = Lime::encrypt(&plaintext, KEY).unwrap();
+        let dec = Lime::decrypt(&enc, KEY, plaintext.len() as u64).unwrap();
+        assert_eq!(plaintext, dec);
+    }
+
+    #[test]
+    fn roundtrip_multi_block() {
+        let plaintext: Vec<u8> = (0..0x3000).map(|i| (i % 256) as u8).collect();
+        let enc = Lime::encrypt(&plaintext, KEY).unwrap();
+        let dec = Lime::decrypt(&enc, KEY, plaintext.len() as u64).unwrap();
+        assert_eq!(plaintext, dec);
+    }
+
+    #[test]
+    fn empty_roundtrip() {
+        let enc = Lime::encrypt(&[], KEY).unwrap();
+        // 0 blocks + 0x80 RSA trailer
+        assert_eq!(enc.len(), 0x80);
+        let dec = Lime::decrypt(&enc, KEY, 0).unwrap();
+        assert!(dec.is_empty());
+    }
+
+    #[test]
+    fn different_keys_produce_different_ciphertext() {
+        let pt = vec![0u8; 0x1000];
+        let a = Lime::encrypt(&pt, KEY).unwrap();
+        let b = Lime::encrypt(&pt, KEY + 1).unwrap();
+        assert_ne!(a[..0x1220], b[..0x1220]);
+    }
+
+    #[test]
+    fn wrong_key_roundtrip_does_not_match() {
+        let pt = vec![0x11u8; 0x1000];
+        let enc = Lime::encrypt(&pt, KEY).unwrap();
+        let dec = Lime::decrypt(&enc, KEY + 1, pt.len() as u64).unwrap();
+        assert_ne!(pt, dec);
     }
 }

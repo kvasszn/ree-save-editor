@@ -27,13 +27,21 @@ macro_rules! define_games {
             $( ($name, Game::$variant), )*
         ];
 
+
+        impl ToString for Game {
+            fn to_string(&self) -> String {
+                $( if *self == Game::$variant { return $name.to_string(); } )*
+                String::default()
+            }
+        }
+
         impl Game {
             pub fn from_string(id: &str) -> Option<Game> {
                 $( if id == stringify!($variant) { return Some(Game::$variant); } )*
                 None
             }
 
-            pub fn to_string(&self) -> &str {
+            pub fn to_str(&self) -> &str {
                 $( if *self == Game::$variant { return $name; } )*
                 ""
             }
@@ -116,36 +124,20 @@ define_games! {
     MISC    ("Misc", 0),
 }
 
-// this is kinda dumb, could probably macro this? idk
-#[allow(clippy::derivable_impls)]
 impl Default for Game {
     fn default() -> Self {
-        if cfg!(feature = "mhwilds") {
-            Self::MHWILDS
-        } else if cfg!(feature = "dd2") {
-            Self::DD2
-        } else if cfg!(feature = "pragmata") {
-            Self::PRAGMATA
-        } else if cfg!(feature = "mhst3") {
-            Self::MHST3
-        } else if cfg!(feature = "re9") {
-            Self::RE9
-        } else if cfg!(feature = "mhrise") {
-            Self::MHRISE
-        } else if cfg!(feature = "sf6") {
-            Self::SF6
-        } else if cfg!(feature = "re2") {
-            Self::RE2
-        } else if cfg!(feature = "re3") {
-            Self::RE3
-        } else if cfg!(feature = "re4") {
-            Self::RE4
-        } else if cfg!(feature = "re7") {
-            Self::RE7
-        } else if cfg!(feature = "re8") {
-            Self::RE8
-        } else {
-            Self::MHWILDS
-        }
+        #[cfg(feature = "mhwilds")]  { return Self::MHWILDS; }
+        #[cfg(feature = "dd2")]      { return Self::DD2; }
+        #[cfg(feature = "pragmata")] { return Self::PRAGMATA; }
+        #[cfg(feature = "mhst3")]    { return Self::MHST3; }
+        #[cfg(feature = "re9")]      { return Self::RE9; }
+        #[cfg(feature = "mhrise")]   { return Self::MHRISE; }
+        #[cfg(feature = "sf6")]      { return Self::SF6; }
+        #[cfg(feature = "re2")]      { return Self::RE2; }
+        #[cfg(feature = "re3")]      { return Self::RE3; }
+        #[cfg(feature = "re4")]      { return Self::RE4; }
+        #[cfg(feature = "re7")]      { return Self::RE7; }
+        #[cfg(feature = "re8")]      { return Self::RE8; }
+        Self::MHWILDS
     }
 }

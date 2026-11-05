@@ -1,87 +1,35 @@
-pub mod copy;
-pub mod photo;
-pub mod bitset;
-pub mod wilds;
-
-use std::{collections::HashMap, io::Cursor, sync::Arc, time::Instant};
+use std::{io::Cursor, sync::Arc, time::Instant};
 
 use anyhow::Result;
 use eframe::egui::{self, CollapsingHeader, Frame, InnerResponse, Layout, ScrollArea, TextEdit, Ui, collapsing_header::CollapsingState};
-use serde::{Deserialize, Serialize};
-use ree_lib::{context::EngineContext, rsz::{self, FieldInfo, RszMap, TypeInfo, Value, deserializer::RszDeserializer}, types::{Color, Mandrake, StringU16, Vec2, Vec3, Vec4}, util::murmur3};
 
-use crate::{edit::{bitset::edit_as_bitset, copy::CopyBuffer, photo::edit_as_photo, wilds::edit_as_equip_work}, save::{SaveFile, SaveFlags, remap::Remap, types::{Array, Class, EnumValue, Field, FieldValue, Struct}}};
+use ree_lib::{rsz::{self, FieldInfo, RszMap, TypeInfo, deserializer::RszDeserializer}, types::{Color, Mandrake, StringU16, Vec2, Vec3, Vec4}, util::murmur3};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathNode {
-    Class(u32),
-    Field(u32),
-    Index(usize),
+
+use ree_save_core::{copy::CopyBuffer, edit::{ArrayConfig, EditContext, PathNode}, save::{SaveFile, SaveFlags, types::{Array, Class, EnumValue, Field, FieldValue, Struct}}};
+use crate::{bitset::edit_as_bitset, photo::edit_as_photo, wilds::edit_as_equip_work};
+
+
+pub trait EditContextUi {
+    fn draw_remapped_dropdown(
+        &mut self,
+        ui: &mut egui::Ui,
+        value: &mut FieldValue,
+        remap_key: &str,
+        id_salt: impl std::hash::Hash + Copy,
+    ) -> bool;
+
+    fn draw_labeled_dropdown(
+        &mut self,
+        ui: &mut egui::Ui,
+        value: &mut FieldValue,
+        remap_key: &str,
+        label: &str
+    ) -> bool;
 }
 
-pub fn path_to_string(path: &Vec<PathNode>) -> String {
-    let mut res = String::new();
-    for node in path {
-        match node {
-            PathNode::Class(v) | PathNode::Field(v) => res.push_str(&v.to_string()),
-            PathNode::Index(v) => res.push_str(&v.to_string()),
-        }
-    }
-    res
-}
-
-pub enum Action {
-    CopyObject(Class),
-    CopyArray(Array),
-    PasteObject(Class),
-    PasteArray(Array),
-    ModifyReference
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct ArrayConfig {
-    pub right_margin: f32,
-    pub target_row_height: f32,
-    pub item_spacing: f32,
-    pub max_inf_height: f32,
-    pub available_height_delta: f32,
-    pub min_max_height: f32,
-    pub height_clamp: f32,
-    pub max_rows: f32,
-}
-
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct EditorConfig {
-    pub array: ArrayConfig
-}
-
-impl Default for ArrayConfig {
-    fn default() -> Self {
-        Self {
-            right_margin: 5.0,
-            target_row_height: 22.0,
-            item_spacing: 6.0,
-            max_inf_height: 1000.0,
-            available_height_delta: 5.0,
-            min_max_height: 500.0,
-            height_clamp: 40.0,
-            max_rows: 50.0,
-        }
-    }
-}
-
-pub struct EditContext<'a> {
-    pub engine_context: &'a EngineContext<'a>,
-    pub remaps: &'a HashMap<String, Remap>,
-    pub config: &'a EditorConfig,
-    pub path: &'a mut Vec<PathNode>,
-    pub query_cache: &'a mut HashMap<(String, String), Value>,
-    pub copy_buffer: &'a mut CopyBuffer
-}
-
-impl<'a> EditContext<'a> {
-    pub fn draw_labeled_dropdown(
+impl<'a> EditContextUi for EditContext<'a> {
+    fn draw_labeled_dropdown(
         &mut self,
         ui: &mut egui::Ui,
         value: &mut FieldValue,
@@ -94,7 +42,7 @@ impl<'a> EditContext<'a> {
         }).inner
     }
 
-    pub fn draw_remapped_dropdown(
+    fn draw_remapped_dropdown(
         &mut self,
         ui: &mut egui::Ui,
         value: &mut FieldValue,
@@ -317,7 +265,7 @@ impl Editable for Array {
             let type_info = parent_class_hash.and_then(|h| ctx.engine_context.rsz_map.get_by_hash(h))?;
             let field_info = type_info.get_field_by_hash(parent_field_hash?)?;
             let remap = ctx.remaps.get(&type_info.name)?;
-            let type_label = remap.fields.get(&field_info.name)?;//.unwrap_or(&field_info.original_type);
+            let type_label = remap.fields.get(&field_info.name).unwrap_or(&field_info.original_type);
             Some(type_label)
         };
 
@@ -354,7 +302,7 @@ impl Editable for Array {
                         };
 
                         collapsing_header_with_buttons(
-                            ui, ctx, value, &index_label, 
+                            ui, ctx, value, &index_label, i,
                             |ui, ctx, value| {
                                 ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
                                     if ui.button("Copy").clicked() {
@@ -500,7 +448,7 @@ impl Editable for Field {
             match &mut self.value {
                 FieldValue::Class(_) | FieldValue::Array(_) => {
                     let header_label = format!("{}: {}", field_name, type_label);
-                    collapsing_header_with_buttons(ui, ctx, &mut self.value, &header_label, |ui, ctx, value| {
+                    collapsing_header_with_buttons(ui, ctx, &mut self.value, &header_label, self.hash, |ui, ctx, value| {
                         ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
                             if ui.button("Copy").clicked() {
                                 *ctx.copy_buffer = CopyBuffer::FieldValue(value.clone())
@@ -559,10 +507,11 @@ pub fn collapsing_header_with_buttons<T,R>(
     ctx: &mut EditContext,
     state_data: &mut T,
     header_label: &str,
+    id_salt: impl std::hash::Hash + Copy,
     add_header_content: impl FnOnce(&mut Ui, &mut EditContext, &mut T),
     add_body_content: impl FnOnce(&mut Ui, &mut EditContext, &mut T) -> R,
 ) -> Option<InnerResponse<R>> {
-    let id = ui.id().with(header_label);
+    let id = ui.id().with(id_salt);
     let toggle_id = id.with("toggle_flag");
     let mut state = CollapsingState::load_with_default_open(ui.ctx(), id, false);
 
@@ -635,21 +584,21 @@ impl Editable for String {
     }
 }
 
-   impl Editable for StringU16 {
-       fn ui(&mut self, ui: &mut egui::Ui, _ctx: &mut EditContext) {
-           match String::from_utf16(&mut self.0) {
-               Ok(valid) => {
-                   let mut s = valid;
-                   if ui.add(TextEdit::singleline(&mut s).clip_text(false)).changed() {
-                       self.0 = s.encode_utf16().collect();
-                   }
-               }
-               Err(_) => {
-                   self.0.ui(ui, _ctx)
-               }
-           }
-       }
-   }
+impl Editable for StringU16 {
+    fn ui(&mut self, ui: &mut egui::Ui, _ctx: &mut EditContext) {
+        match String::from_utf16(&mut self.0) {
+            Ok(valid) => {
+                let mut s = valid;
+                if ui.add(TextEdit::singleline(&mut s).clip_text(false)).changed() {
+                    self.0 = s.encode_utf16().collect();
+                }
+            }
+            Err(_) => {
+                self.0.ui(ui, _ctx)
+            }
+        }
+    }
+}
 
 impl<T: Editable> Editable for Vec<T> {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut EditContext) {

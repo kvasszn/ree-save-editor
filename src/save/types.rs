@@ -209,7 +209,7 @@ impl FieldValue {
     pub fn read<R: Read + Seek>(
         reader: &mut R,
         field_type: FieldType,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let value = match field_type {
             FieldType::Unknown => {
                 /*println!("Unknown Field Type found");*/
@@ -222,7 +222,7 @@ impl FieldValue {
                 let size = reader.read_u32()?;
                 let data = (0..size)
                     .map(|_| Ok(reader.read_u16()?))
-                    .collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                    .collect::<Result<Vec<u16>, Box<dyn Error + Send + Sync>>>()?;
                 FieldValue::String(Box::new(StringU16(data)))
             }
             // TODO: Add Struct weird shit handling
@@ -242,7 +242,7 @@ impl FieldValue {
         reader: &mut R,
         field_type: FieldType,
         size: u32,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         if size != 1 {
             let size = size as u64;
             let pos = reader.stream_position()?;
@@ -288,7 +288,7 @@ impl FieldValue {
         Ok(value)
     }
 
-    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error + Send + Sync>> {
         match self {
             FieldValue::Unknown => {
                 panic!("Unknown Field Type found")
@@ -314,7 +314,7 @@ impl FieldValue {
         }
     }
 
-    pub fn write_sized<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+    pub fn write_sized<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error + Send + Sync>> {
         let size = self.get_size();
         if size != 1 {
             let size = size as u64;
@@ -652,7 +652,7 @@ pub struct Array {
 }
 
 impl Array {
-    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error>> {
+    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error + Send + Sync>> {
         reader.seek_align_up(4)?;
         let member_type = FieldType::try_from(reader.read_i32()?)?;
         let member_size = reader.read_u32()?;
@@ -682,7 +682,7 @@ impl Array {
                         reader.seek_align_up(4)?;
                         let size = reader.read_u32()?;
                         let data = (0..size)
-                            .map(|_| Ok(reader.read_u16()?)).collect::<Result<Vec<u16>, Box<dyn Error>>>()?;
+                            .map(|_| Ok(reader.read_u16()?)).collect::<Result<Vec<u16>, Box<dyn Error + Send + Sync>>>()?;
                         FieldValue::String(Box::new(StringU16(data)))
                     } else {
                         FieldValue::read_sized(reader, member_type, member_size)?
@@ -706,7 +706,7 @@ impl Array {
         })
     }
 
-    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error + Send + Sync>> {
         w.write_align_up(4)?;
         w.write_all(&(self.member_type as i32).to_le_bytes())?;
         w.write_all(&self.member_size.to_le_bytes())?;
@@ -788,7 +788,7 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error>> {
+    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let hash = reader.read_u32()?;
         // I definitely wrote this but kinda forget what it means?
         // maybe that Array should not be checked here? since its not a TypeKind?
@@ -810,7 +810,7 @@ impl Field {
         })
     }
 
-    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error + Send + Sync>> {
         w.write_all(&self.hash.to_le_bytes())?;
         w.write_all(&(self.field_type as i32).to_le_bytes())?;
         self.value.write(w)?;
@@ -844,7 +844,7 @@ pub struct Class {
 }
 
 impl Class {
-    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error>> {
+    pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let num_fields = reader.read_u32()?;
         let hash = reader.read_u32()?;
         //println!("hash: {hash:0x}, num_fields: {num_fields}");
@@ -861,7 +861,7 @@ impl Class {
         })
     }
 
-    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error>> {
+    pub fn write<W: Write + Seek>(&self, w: &mut W) -> Result<(), Box<dyn Error + Send + Sync>> {
         w.write_all(&self.num_fields.to_le_bytes())?;
         w.write_all(&self.hash.to_le_bytes())?;
         for field in &self.fields {
