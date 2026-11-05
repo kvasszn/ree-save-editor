@@ -35,8 +35,8 @@ re8 = []
 
 [dependencies]
 util = { path = "./util/" }
-#ree-lib = { path = "../ree-lib-rs/" }
-ree-lib = { git = "https://github.com/kvasszn/ree-lib-rs" }
+ree-lib = { path = "../ree-lib-rs/" }
+#ree-lib = { git = "https://github.com/kvasszn/ree-lib-rs" }
 clap = { version = "4.5.20", features = ["derive"] }
 image = {version = "0.25.5", features = ["webp"]}
 log = "0.4.27"

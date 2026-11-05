@@ -26,8 +26,8 @@ re8 = []
 
 [dependencies]
 ree-save-core = { path = "../" }
-#ree-lib = { path = "../../ree-lib-rs" }
-ree-lib = { git = "https://github.com/kvasszn/ree-lib-rs" }
+ree-lib = { path = "../../ree-lib-rs" }
+#ree-lib = { git = "https://github.com/kvasszn/ree-lib-rs" }
 
 
 eframe = "0.33.0"

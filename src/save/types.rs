@@ -185,6 +185,26 @@ impl From<&FieldValue> for Value {
     }
 }
 
+impl From<&Value> for FieldValue {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::S8(v) => FieldValue::S8(*v),
+            Value::S16(v) => FieldValue::S16(*v),
+            Value::S32(v) => FieldValue::S32(*v),
+            Value::S64(v) => FieldValue::S64(*v),
+            Value::U8(v) => FieldValue::U8(*v),
+            Value::U16(v) => FieldValue::U16(*v),
+            Value::U32(v) => FieldValue::U32(*v),
+            Value::U64(v) => FieldValue::U64(*v),
+            Value::F32(v) => FieldValue::F32(*v),
+            Value::F64(v) => FieldValue::F64(*v),
+            Value::Bool(v) => FieldValue::Boolean(*v),
+            Value::String(v) => FieldValue::String(Box::new(v.clone())),
+            _ => FieldValue::Unknown,
+        }
+    }
+}
+
 impl FieldValue {
     pub fn read<R: Read + Seek>(
         reader: &mut R,

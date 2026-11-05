@@ -1,19 +1,33 @@
 pub mod copy;
+pub mod photo;
+pub mod bitset;
+pub mod wilds;
 
 use std::{collections::HashMap, io::Cursor, sync::Arc, time::Instant};
 
 use anyhow::Result;
 use eframe::egui::{self, CollapsingHeader, Frame, InnerResponse, Layout, ScrollArea, TextEdit, Ui, collapsing_header::CollapsingState};
 use serde::{Deserialize, Serialize};
-use ree_lib::{context::EngineContext, rsz::{self, FieldInfo, RszMap, TypeInfo, Value, deserializer::RszDeserializer}, types::{Mandrake, StringU16, Vec2, Vec3, Vec4, Color}};
+use ree_lib::{context::EngineContext, rsz::{self, FieldInfo, RszMap, TypeInfo, Value, deserializer::RszDeserializer}, types::{Color, Mandrake, StringU16, Vec2, Vec3, Vec4}, util::murmur3};
 
-use crate::{edit::{copy::CopyBuffer}, save::{SaveFile, SaveFlags, remap::Remap, types::{Array, Class, EnumValue, Field, FieldValue, Struct}}};
+use crate::{edit::{bitset::edit_as_bitset, copy::CopyBuffer, photo::edit_as_photo, wilds::edit_as_equip_work}, save::{SaveFile, SaveFlags, remap::Remap, types::{Array, Class, EnumValue, Field, FieldValue, Struct}}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathNode {
     Class(u32),
     Field(u32),
     Index(usize),
+}
+
+pub fn path_to_string(path: &Vec<PathNode>) -> String {
+    let mut res = String::new();
+    for node in path {
+        match node {
+            PathNode::Class(v) | PathNode::Field(v) => res.push_str(&v.to_string()),
+            PathNode::Index(v) => res.push_str(&v.to_string()),
+        }
+    }
+    res
 }
 
 pub enum Action {
@@ -67,6 +81,19 @@ pub struct EditContext<'a> {
 }
 
 impl<'a> EditContext<'a> {
+    pub fn draw_labeled_dropdown(
+        &mut self,
+        ui: &mut egui::Ui,
+        value: &mut FieldValue,
+        remap_key: &str,
+        label: &str
+    ) -> bool {
+        ui.horizontal(|ui| {
+            ui.label(label);
+            self.draw_remapped_dropdown(ui, value, remap_key, label)
+        }).inner
+    }
+
     pub fn draw_remapped_dropdown(
         &mut self,
         ui: &mut egui::Ui,
@@ -77,11 +104,13 @@ impl<'a> EditContext<'a> {
         let mut changed = false;
 
         let current_preview = self.remap_format(remap_key, value)
+            .or_else(|| self.try_enum_str(remap_key, value))
             .unwrap_or_else(|| format!("{:?}", value));
 
         let enum_def = match self.engine_context.enums.get(remap_key) {
             Some(def) => def,
             None => {
+                ui.label(format!("Could not find enum of type {remap_key}"));
                 return false;
             }
         };
@@ -202,10 +231,55 @@ impl Editable for SaveFlags {
 
 impl Editable for Class {
     fn ui(&mut self, ui: &mut egui::Ui, ctx: &mut EditContext) {
+
+        let parent_class_hash = ctx.path.iter().rev().find_map(|node| {
+            if let PathNode::Class(hash) = node { Some(*hash) } else { None }
+        });
+        let parent_field_hash = ctx.path.iter().rev().find_map(|node| {
+            if let PathNode::Field(hash) = node { Some(*hash) } else { None }
+        });
+
+        let native_class_name = ctx.engine_context.rsz_map
+            .get_by_hash(self.hash)
+            .map(|t| t.name.clone())
+            .unwrap_or_default();
+
+        let remapped_type_name = parent_class_hash
+            .and_then(|h| ctx.engine_context.rsz_map.get_by_hash(h))
+            .and_then(|type_info| {
+                let field_info = type_info.get_field_by_hash(parent_field_hash?)?;
+                let remap = ctx.remaps.get(&type_info.name)?;
+                remap.fields.get(&field_info.name).cloned()
+            });
+
+
+        let type_label = remapped_type_name.unwrap_or(native_class_name);
+        let clean_type = type_label.replace("[]", "");
+        let (clean_type, generic) = clean_type.split_once("<")
+            .map(|(a, b)| (a, Some(b)))
+            .unwrap_or((&clean_type, None));
+        let generic = generic.and_then(|g| g.strip_suffix(">"));
+
         ctx.path.push(PathNode::Class(self.hash));
 
-        for field in self.fields.iter_mut() {
-            field.ui(ui, ctx);
+        match clean_type {
+            "app.savedata.cPhoto" => {
+                let hash = murmur3("SerializeData");
+                edit_as_photo(self, ui, ctx, "SerializeData");
+                for field in self.fields.iter_mut() {
+                    if field.hash == hash {
+                    } else {
+                        field.ui(ui, ctx);
+                    }
+                }
+            },
+            "ace.Bitset" => edit_as_bitset(self, generic, ui, ctx),
+            "app.savedata.cEquipWork" => edit_as_equip_work(self, ui, ctx),
+            _ => {
+                for field in self.fields.iter_mut() {
+                    field.ui(ui, ctx);
+                }
+            }
         }
 
         ctx.path.pop();
@@ -422,40 +496,32 @@ impl Editable for Field {
                 type_label = remapped_type.clone();
         }
 
-        // handle custom class types here
-        match type_label.as_str() {
-            "app.savedata.cPhoto" => {},
-            "ace.Bitset" => {}, // TODO: need a way to handle generics?
-            "app.savedata.cEquipWork" => {},
-            _ => {
-                ui.push_id(self.hash, |ui| {
-                    match &mut self.value {
-                        FieldValue::Class(_) | FieldValue::Array(_) => {
-                            let header_label = format!("{}: {}", field_name, type_label);
-                            collapsing_header_with_buttons(ui, ctx, &mut self.value, &header_label, |ui, ctx, value| {
-                                ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
-                                    if ui.button("Copy").clicked() {
-                                        *ctx.copy_buffer = CopyBuffer::FieldValue(value.clone())
-                                    }
-                                    if ui.button("Paste").clicked() && let Some(pasted) = ctx.copy_buffer.paste_into(value) {
-                                        *value = pasted;
-                                    }
-                                });
-                            }, |ui, ctx, value| {
-                                value.ui(ui, ctx);
-                            });
-                        }
-                        _ => {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}:", field_name));
-                                ctx.draw_remapped_dropdown(ui, &mut self.value, &type_label, self.hash);
-                                self.value.ui(ui, ctx);
-                            });
-                        }
-                    }
-                });
+        ui.push_id((&field_name, self.hash), |ui| {
+            match &mut self.value {
+                FieldValue::Class(_) | FieldValue::Array(_) => {
+                    let header_label = format!("{}: {}", field_name, type_label);
+                    collapsing_header_with_buttons(ui, ctx, &mut self.value, &header_label, |ui, ctx, value| {
+                        ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
+                            if ui.button("Copy").clicked() {
+                                *ctx.copy_buffer = CopyBuffer::FieldValue(value.clone())
+                            }
+                            if ui.button("Paste").clicked() && let Some(pasted) = ctx.copy_buffer.paste_into(value) {
+                                *value = pasted;
+                            }
+                        });
+                    }, |ui, ctx, value| {
+                        value.ui(ui, ctx);
+                    });
+                }
+                _ => {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{}:", field_name));
+                        ctx.draw_remapped_dropdown(ui, &mut self.value, &type_label, self.hash);
+                        self.value.ui(ui, ctx);
+                    });
+                }
             }
-        }
+        });
         ctx.path.pop();
     }
 }

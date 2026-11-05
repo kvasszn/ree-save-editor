@@ -35,6 +35,29 @@ impl<'a> EditContext<'a> {
                 let result_obj = self.engine_context.query_rsz_array(rsz_file, array_path, match_field, current_val)?;
                 Some(format!("{:?}", result_obj)) 
             }
+
+            DataSource::RszValue { rsz_file, target_query, field_path } => {
+                let row_object = self.resolve_query(target_query, remap, current_val)?;
+                // since row_obj is an obj, should be able to get the Instance it points to
+                // and then get the hash of that, then look up the type info and the field based on
+                // the type info
+                // once we have the field info, we can get the type
+                //
+                // or just provide a type in the json
+                let field_val = self.extract_field(rsz_file, &row_object, field_path)?;
+
+                if let Value::Object(id) = row_object {
+                    let rsz = self.engine_context.assets.get_rsz(rsz_file).ok()?;
+                    if let Some(instance) = rsz.instances.get(id as usize) {
+                        if let Some(type_info) = self.engine_context.rsz_map.get_by_hash(instance.hash) {
+                            if let Some(field_info) = type_info.get_field(field_path) {
+                                return self.remap_format(&field_info.original_type, &FieldValue::from(&field_val));
+                            }
+                        }
+                    }
+                }
+                Some(format!("{:?}", field_val))
+            }
         }
     }
 

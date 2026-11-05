@@ -85,6 +85,7 @@ pub fn get_asset_paths(remaps: &HashMap<String, Remap>) -> HashSet<String> {
                 | DataSource::RszQuery { rsz_file: file, .. } => {
                     res.insert(file.to_string());
                 },
+                _ => {}
             }
         }
         for query in remap.data.values() {
@@ -93,6 +94,7 @@ pub fn get_asset_paths(remaps: &HashMap<String, Remap>) -> HashSet<String> {
                 | DataSource::RszQuery { rsz_file: file, .. } => {
                     res.insert(file.to_string());
                 },
+                _ => {}
             }
         }
     }

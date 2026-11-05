@@ -54,10 +54,10 @@
     },
     "app.savedata.cItemRecipeParam": {
         "fields": {
-            "_CraftedFlag": "app.ItemRecipeDef.ID_Fixed",
-            "_FavoriteFlag": "app.ItemRecipeDef.ID_Fixed",
-            "_AutoCraftFlag": "app.ItemRecipeDef.ID_Fixed",
-            "_SetupFlag": "app.ItemRecipeDef.ID_Fixed"
+            "_CraftedFlag": "ace.Bitset<app.ItemRecipeDef.ID_Fixed>",
+            "_FavoriteFlag": "ace.Bitset<app.ItemRecipeDef.ID_Fixed>",
+            "_AutoCraftFlag": "ace.Bitset<app.ItemRecipeDef.ID_Fixed>",
+            "_SetupFlag": "ace.Bitset<app.ItemRecipeDef.ID_Fixed>"
         }
     },
     "app.savedata.cEquipParam": {
@@ -180,7 +180,7 @@
     "app.ArmorDef.SERIES_Fixed": {
         "format": "{data:name}:{enum:}",
         "queries": {
-            "row": "rsz(assets/mhwilds/ArmorSeriesData.user.3)._Value[ _Series == $self ]"
+            "row": "rsz(assets/mhwilds/ArmorSeriesData.user.3)._Values[ _Series._Value == $self ]"
         },
         "data": {
             "name": "msg(assets/mhwilds/ArmorSeries.msg.23)[ @row._Name ]"
@@ -192,7 +192,7 @@
     "app.WeaponDef.SERIES_Fixed": {
         "format": "{data:name}:{enum:}",
         "queries": {
-            "row": "rsz(assets/mhwilds/WeaponSeriesData.user.3)._Value[ _Series == $self ]"
+            "row": "rsz(assets/mhwilds/WeaponSeriesData.user.3)._Values[ _Series._Value == $self ]"
         },
         "data": {
             "name": "msg(assets/mhwilds/WeaponSeries.msg.23)[ @row._Name ]"
@@ -201,6 +201,90 @@
     "app.WeaponDef.SERIES": {
         "format": "{convert:app.WeaponDef.SERIES_Fixed}"
     },
+    "app.WeaponDef.LongSwordId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/LongSword.user.3)._Values[ _LongSword == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/LongSword.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.ShortSwordId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/ShortSword.user.3)._Values[ _ShortSword == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/ShortSword.msg.23)[ @row._Name ]" }
+    },
+	"app.WeaponDef.TwinSwordId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/TwinSword.user.3)._Values[ _TwinSword == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/TwinSword.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.TachiId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/Tachi.user.3)._Values[ _Tachi == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/Tachi.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.HammerId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/Hammer.user.3)._Values[ _Hammer == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/Hammer.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.WhistleId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/Whistle.user.3)._Values[ _Whistle == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/Whistle.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.LanceId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/Lance.user.3)._Values[ _Lance == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/Lance.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.GunLanceId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/GunLance.user.3)._Values[ _GunLance == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/GunLance.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.SlashAxeId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/SlashAxe.user.3)._Values[ _SlashAxe == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/SlashAxe.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.ChargeAxeId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/ChargeAxe.user.3)._Values[ _ChargeAxe == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/ChargeAxe.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.RodId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/Rod.user.3)._Values[ _Rod == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/Rod.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.BowId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/Bow.user.3)._Values[ _Bow == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/Bow.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.HeavyBowgunId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/HeavyBowgun.user.3)._Values[ _HeavyBowgun == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/HeavyBowgun.msg.23)[ @row._Name ]" }
+    },
+    "app.WeaponDef.LightBowgunId_Fixed": {
+        "format": "{data:name}:{enum:}",
+        "queries": { "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Weapon/LightBowgun.user.3)._Values[ _LightBowgun == $self ]" },
+        "data": { "name": "msg(../wilds_files/natives/STM/GameDesign/Text/Excel_Equip/LightBowgun.msg.23)[ @row._Name ]" }
+    },
+	"app.WeaponDef.LongSwordId": { "format": "{convert:app.WeaponDef.LongSwordId_Fixed}" },
+	"app.WeaponDef.ShortSwordId": { "format": "{convert:app.WeaponDef.ShortSwordId_Fixed}" },
+	"app.WeaponDef.TwinSwordId": { "format": "{convert:app.WeaponDef.TwinSwordId_Fixed}" },
+    "app.WeaponDef.TachiId": { "format": "{convert:app.WeaponDef.TachiId_Fixed}" },
+    "app.WeaponDef.HammerId": { "format": "{convert:app.WeaponDef.HammerId_Fixed}" },
+    "app.WeaponDef.WhistleId": { "format": "{convert:app.WeaponDef.WhistleId_Fixed}" },
+    "app.WeaponDef.LanceId": { "format": "{convert:app.WeaponDef.LanceId_Fixed}" },
+    "app.WeaponDef.GunLanceId": { "format": "{convert:app.WeaponDef.GunLanceId_Fixed}" },
+    "app.WeaponDef.SlashAxeId": { "format": "{convert:app.WeaponDef.SlashAxeId_Fixed}" },
+    "app.WeaponDef.ChargeAxeId": { "format": "{convert:app.WeaponDef.ChargeAxeId_Fixed}" },
+    "app.WeaponDef.RodId": { "format": "{convert:app.WeaponDef.RodId_Fixed}" },
+    "app.WeaponDef.BowId": { "format": "{convert:app.WeaponDef.BowId_Fixed}" },
+    "app.WeaponDef.HeavyBowgunId": { "format": "{convert:app.WeaponDef.HeavyBowgunId_Fixed}" },
+    "app.WeaponDef.LightBowgunId": { "format": "{convert:app.WeaponDef.LightBowgunId_Fixed}" },
     "app.HunterDef.Skill_Fixed": {
         "format": "{data:name}:{enum:}",
         "queries": {
@@ -213,6 +297,18 @@
     "app.HunterDef.Skill": {
         "format": "{convert:app.HunterDef.Skill_Fixed}"
     },
+	
+	"app.ArtianDef.ArtianSkillType_Fixed": {
+        "format": "{data:group},{data:series}:{enum:}",
+        "queries": {
+            "row": "rsz(../wilds_files/natives/STM/GameDesign/Common/Equip/ArtianSkillGroupData.user.3)._Values[ _ArtianSkillType == $self ]"
+        },
+        "data": {
+            "group": "rsz_value(../wilds_files/natives/STM/GameDesign/Common/Equip/ArtianSkillGroupData.user.3)[ @row._GroupSkillId ]",
+            "series": "rsz_value(../wilds_files/natives/STM/GameDesign/Common/Equip/ArtianSkillGroupData.user.3)[ @row._SeriesSkillId ]"
+        }
+	},
+
     "app.ArtianDef.PARTS_TYPE_Fixed": {
         "format": "{data:name}:{enum:}",
         "queries": {

@@ -2,7 +2,7 @@ use std::{io::Cursor, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use ree_lib::rsz::RszMap;
-use ree_save_core::{game_context::{GameConfigs, load_game_configs}, save::{SaveFile, SaveFlags, SaveOptions, corrupt::CorruptSaveReader, game::Game}};
+use ree_save_core::{game_context::{GameConfigs, load_game_configs}, save::{SaveFile, SaveFlags, SaveOptions, corrupt::CorruptSaveReader, crypto::Mandarin, game::Game}};
 use anyhow::{anyhow, Context};
 
 #[derive(Parser, Debug)]
@@ -58,7 +58,8 @@ enum Command {
         typeids: Vec<u32>,
         #[arg(long, default_value_t=String::from("UserSaveData"))]
         schema: String
-    }
+    },
+    Misc,
     // TODO: when i add lua again, add running lua scripts from cli
 }
 
@@ -205,6 +206,12 @@ pub fn main() -> anyhow::Result<()> {
             if let Err(e) = res {
                 log::error!("Error writing save: {e}");
             }
+        }
+        Command::Misc => {
+            let mandarin = Mandarin::init_from_game(cli.game).unwrap();
+            let data = &save_file_data[16..];
+            let id = mandarin.brute_force(data, data.len() as u64, cli.game, 0x0110000100000000, 0xffffffff);
+            println!("id={id}");
         }
         _ => {}
     }

@@ -3849,7 +3849,6 @@ dependencies = [
 [[package]]
 name = "ree-lib"
 version = "0.1.0"
-source = "git+https://github.com/kvasszn/ree-lib-rs#a5bd9db74ef2acdf4fe527b13a51b0813bb898a0"
 dependencies = [
  "anyhow",
  "bincode 2.0.1",
