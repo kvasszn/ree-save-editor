@@ -110,7 +110,7 @@ impl<'a> EditContext<'a> {
         let enum_def = match self.engine_context.enums.get(remap_key) {
             Some(def) => def,
             None => {
-                ui.label(format!("Could not find enum of type {remap_key}"));
+                //ui.label(format!("Could not find enum of type {remap_key}"));
                 return false;
             }
         };
@@ -317,7 +317,7 @@ impl Editable for Array {
             let type_info = parent_class_hash.and_then(|h| ctx.engine_context.rsz_map.get_by_hash(h))?;
             let field_info = type_info.get_field_by_hash(parent_field_hash?)?;
             let remap = ctx.remaps.get(&type_info.name)?;
-            let type_label = remap.fields.get(&field_info.name).unwrap_or(&field_info.original_type);
+            let type_label = remap.fields.get(&field_info.name)?;//.unwrap_or(&field_info.original_type);
             Some(type_label)
         };
 
@@ -779,11 +779,11 @@ impl Editable for Mandrake {
             self.set(real_val);
         }
         ui.horizontal(|ui| {
-            ui.label("  v");
+            ui.label("  v =");
             ui.label(format!("{}", self.v));
         });
         ui.horizontal(|ui| {
-            ui.label("  m");
+            ui.label("  m =");
             ui.label(format!("{}", self.m));
         });
     }

@@ -12,8 +12,6 @@ pub struct UserAccountRaw {
     persona_name: String,
     #[serde(rename = "MostRecent")]
     most_recent: Option<bool>,
-    #[serde(rename = "Timestamp")]
-    time_stamp: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -22,7 +20,6 @@ pub struct UserAccount {
     pub account_name: String,
     pub persona_name: String,
     pub most_recent: bool,
-    pub time_stamp: u32,
 }
 
 pub fn parse_accounts(path: &Path) -> Result<Vec<UserAccount>, Box<dyn Error>> {
@@ -34,7 +31,6 @@ pub fn parse_accounts(path: &Path) -> Result<Vec<UserAccount>, Box<dyn Error>> {
             account_name: v.account_name,
             persona_name: v.persona_name,
             most_recent: v.most_recent.unwrap_or(false),
-            time_stamp: v.time_stamp,
         }
     }).collect::<Vec<_>>();
     Ok(users)
@@ -86,9 +82,9 @@ impl Steam {
 
             let mut path = steam_path.clone();
             path.push("config/loginusers.vdf");
-            println!("Searching for users in steam path {}", steam_path.display());
+            log::info!("Searching for users in steam path {}", steam_path.display());
             let users = steam::parse_accounts(&path).unwrap_or_default();
-            println!("found {users:?}");
+            log::info!("found {users:?}");
             users
         };
 

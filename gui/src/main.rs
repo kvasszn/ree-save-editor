@@ -32,6 +32,8 @@ pub fn main() -> eframe::Result<()> {
 
     let mut config: Config = load_config(&args.config);
 
+    log::info!("Using config: {:#?}", config);
+
     config.id = args.id;
     config.steam_path = args.steam_path;
 
