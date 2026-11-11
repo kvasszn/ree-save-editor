@@ -129,6 +129,50 @@ There is also a third type which is the SS1* files, but they are not supported a
 > Otomo means Palico
 > **LongSword** means *Great Sword*, and **Tachi** means *Long Sword*
 
+#### Steam to PS5: format conversion and validation
+
+For Wilds, the PC flags are `Mandarin & Deflate`; PS5 uses `Deflate`.
+Load the source character file with its original SteamID64, clear the active
+slot's `HunterId` and `HunterShortId` as described below, select the PS5 flags,
+and save to a separate output file. Keep the original source unchanged.
+
+Changing flags must reserialize the fields, not just remove Mandarin encryption
+and reuse the decompressed bytes. With these flag combinations the serialized
+class stream starts at offset 16 on PC and 12 on PS5. Sized values align relative
+to the enclosing stream, so alignment padding can differ. See
+`Save::process_bytes_to_stream`, `Save::write_save`, and the alignment rules in
+`src/save/types.rs`. A checksum-valid DSSS file alone does not establish that
+its field layout is correct for the target platform.
+
+This editor handles the **inner game file**, not the outer PS5 encrypted save
+container or the console transfer. A separate workflow must extract and later
+re-encrypt the game file for the destination PSN account. For a first attempt,
+keep the destination's system data (`data00-1.bin`) and replace only the
+character data (`data001Slot.bin`) in its corresponding container.
+
+A contributor reported this combination on an unmodified PS5 running 14.22,
+using macOS arm64, GarlicTransfer's download/upload modules and GarlicSaves:
+
+- Both PS5 original containers were downloaded and checked against their
+  manifests before editing.
+- A local Python translation of the relevant REE format/serialization logic
+  converted the Steam character file. This was **not** a verification of the
+  editor's browser UI or a distributed desktop build.
+- Steam and PS5 source files each passed a byte-identical no-op serialization
+  check with their respective starting offsets. Conversion cleared the two
+  active hunter identifiers and preserved the other fields' semantic digest.
+- Mandarin block checksums, DSSS checksum and Deflate parsing were checked.
+- After outer-container re-encryption, another decrypt returned the exact
+  converted character file; the PSN account and title matched the destination.
+- GarlicTransfer sent both containers and completed the transfer protocol; the
+  destination rebooted. The owner reported that the original Steam character
+  was visible in the game. Entering the character, saving, reloading and online
+  behavior had **not** yet been confirmed at the time of this report.
+
+This is a single migration report, not a guarantee for other saves, game
+versions, DLC combinations or firmware. Test loading, saving and reloading
+before considering a migration complete. Preserve both original platform saves.
+
 #### Account Transfer and Slot Changing
 > [!NOTE]
 > When changing accounts and slots, you will lose online related things, since the Hunter Id is associated with your steam account and slot.

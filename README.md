@@ -65,7 +65,7 @@ Generally it's as follows
 This tool supports transferring some games between PC and PS5. You have to load the save file, then change the Save Flags to the correct flags for different each system and game. Mapping these requires more research and save files.
 |Game|PS5|PC|Notes|
 |-|-|-|-|
-|MH Wilds|Deflate|Mandarin & Deflate||
+|MH Wilds|Deflate|Mandarin & Deflate|See [conversion and validation notes](docs/USAGE.md#steam-to-ps5-format-conversion-and-validation)|
 |Pragmata|Mandarin|Mandarin|on PS5, use the id 526253637 and change _RegionHash to 3208943443|
 |Dragon's Dogma 2|Mandarin ("Game Profile: DD2 PS5")|Mandarin (Game Profile: "Dragon's Dogma 2")|on PS5, use the id 11957868291195786822. credits to nbo6y for helping find the key |
 |RE Requiem|Mandarin|Mandarin|on PS5, use the id 394424879635983|
